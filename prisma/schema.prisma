@@ -1,0 +1,210 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  STUDENT
+  ADMIN
+  INSTRUCTOR
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum PlatformStatus {
+  ACTIVE
+  MAINTENANCE
+  DISABLED
+}
+
+enum SessionStatus {
+  INITIALIZING
+  RUNNING
+  IDLE
+  PAUSED
+  STOPPED
+  ERROR
+}
+
+enum BrowserStatus {
+  LAUNCHING
+  CONNECTED
+  BUSY
+  DISCONNECTED
+  CRASHED
+}
+
+enum EventStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_IN_BLANK
+  SHORT_ANSWER
+  ESSAY
+}
+
+enum AIRequestStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RATE_LIMITED
+}
+
+model User {
+  id            String      @id @default(uuid()) @db.Uuid
+  name          String      @db.VarChar(150)
+  email         String      @unique @db.VarChar(255)
+  passwordHash  String      @map("password_hash") @db.VarChar(255)
+  role          UserRole    @default(STUDENT)
+  status        UserStatus  @default(ACTIVE)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  platformAccounts StudentPlatformAccount[]
+  browserSessions  BrowserSession[]
+  aiUsage          AIUsage[]
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+model EducationalPlatform {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String          @db.VarChar(150)
+  baseUrl     String          @map("base_url") @db.VarChar(500)
+  loginUrl    String          @map("login_url") @db.VarChar(500)
+  status      PlatformStatus  @default(ACTIVE)
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  accounts    StudentPlatformAccount[]
+  sessions    BrowserSession[]
+
+  @@map("educational_platforms")
+}
+
+model StudentPlatformAccount {
+  id                   String              @id @default(uuid()) @db.Uuid
+  userId               String              @map("user_id") @db.Uuid
+  platformId           String              @map("platform_id") @db.Uuid
+  encryptedCredentials String?             @map("encrypted_credentials") @db.Text
+  credentialsReference String?             @map("credentials_reference") @db.VarChar(255)
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform             EducationalPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platformId])
+  @@map("student_platform_accounts")
+}
+
+model BrowserSession {
+  id             String         @id @default(uuid()) @db.Uuid
+  userId         String         @map("user_id") @db.Uuid
+  platformId     String         @map("platform_id") @db.Uuid
+  sessionStatus  SessionStatus  @default(INITIALIZING) @map("session_status")
+  browserStatus  BrowserStatus  @default(LAUNCHING) @map("browser_status")
+  startedAt      DateTime?      @map("started_at")
+  endedAt        DateTime?      @map("ended_at")
+  lastActivityAt DateTime?      @map("last_activity_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform       EducationalPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  events         BrowserEvent[]
+  questions      Question[]
+
+  @@index([userId])
+  @@index([sessionStatus])
+  @@map("browser_sessions")
+}
+
+model BrowserEvent {
+  id               String       @id @default(uuid()) @db.Uuid
+  sessionId        String       @map("session_id") @db.Uuid
+  eventType        String       @map("event_type") @db.VarChar(100)
+  eventDescription String?      @map("event_description") @db.Text
+  eventStatus      EventStatus  @default(SUCCESS) @map("event_status")
+  metadata         Json?        @db.JsonB
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  session          BrowserSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([eventType])
+  @@map("browser_events")
+}
+
+model Question {
+  id               String            @id @default(uuid()) @db.Uuid
+  sessionId        String            @map("session_id") @db.Uuid
+  questionText     String            @map("question_text") @db.Text
+  questionType     QuestionType      @default(MULTIPLE_CHOICE) @map("question_type")
+  questionImage    String?           @map("question_image") @db.Text
+  extractedOptions Json?             @map("extracted_options") @db.JsonB
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  session          BrowserSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  suggestedAnswers SuggestedAnswer[]
+
+  @@index([sessionId])
+  @@map("questions")
+}
+
+model SuggestedAnswer {
+  id              String       @id @default(uuid()) @db.Uuid
+  questionId      String       @map("question_id") @db.Uuid
+  answerText      String       @map("answer_text") @db.Text
+  confidenceScore Float        @default(0.0) @map("confidence_score")
+  aiModel         String       @map("ai_model") @db.VarChar(100)
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  question        Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("suggested_answers")
+}
+
+model AIUsage {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  modelName     String          @map("model_name") @db.VarChar(100)
+  inputTokens   Int             @default(0) @map("input_tokens")
+  outputTokens  Int             @default(0) @map("output_tokens")
+  requestStatus AIRequestStatus @default(SUCCESS) @map("request_status")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("ai_usage")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String   @db.VarChar(150)
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  metadata  Json?    @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
