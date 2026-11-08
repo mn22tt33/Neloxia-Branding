@@ -1,9 +1,10 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium, Browser, BrowserContext, Page, Request as PlaywrightRequest, Response as PlaywrightResponse } from 'playwright';
 import { prisma } from '../database/prisma';
 import { wsManager } from '../websocket';
 import { logger } from '../utils/logger';
 import { vncManager } from './vnc';
 import { isAllowedEducationalUrl } from './security';
+import { platformAdapterRegistry } from './adapters';
 import { ExtractedQuestionData } from '../types';
 
 export interface ActiveSessionContext {
@@ -86,6 +87,16 @@ export class BrowserService {
 
       const page = await context.newPage();
 
+      // Network Monitoring: Track failed requests, status codes, and potential platform blocks
+      page.on('response', (res: PlaywrightResponse) => {
+        if (res.status() >= 400) {
+          logger.warn(`[NetworkMonitor] Session ${sessionId} response: ${res.status()} ${res.url()}`);
+        }
+      });
+      page.on('requestfailed', (req: PlaywrightRequest) => {
+        logger.warn(`[NetworkMonitor] Session ${sessionId} request failed: ${req.url()} (${req.failure()?.errorText})`);
+      });
+
       const sessionObj: ActiveSessionContext = {
         sessionId,
         userId,
@@ -99,15 +110,32 @@ export class BrowserService {
 
       this.activeSessions.set(sessionId, sessionObj);
 
-      // 4. Navigate to Target URL
+      // 4. Navigate to Target URL with retry handling
       logger.info(`Session ${sessionId} navigating to: ${targetUrl}`);
       wsManager.emitTaskProgress(sessionId, 'Navigating to educational portal', 40);
 
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      let navSuccess = false;
+      let lastNavError = '';
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          navSuccess = true;
+          break;
+        } catch (navErr: any) {
+          lastNavError = navErr.message;
+          logger.warn(`Navigation attempt ${attempt} failed for session ${sessionId}: ${lastNavError}`);
+          if (attempt < 2) await page.waitForTimeout(2000);
+        }
+      }
 
-      // Handle optional student authorized credentials auto-fill
+      if (!navSuccess) {
+        throw new Error(`Failed to navigate to platform after 2 attempts: ${lastNavError}`);
+      }
+
+      // Handle optional student authorized credentials auto-fill using Platform Adapter
       if (credentials) {
-        await this.handleSafeAutoFill(page, credentials);
+        const adapter = platformAdapterRegistry.getAdapterForUrl(targetUrl);
+        await adapter.login(page, credentials);
       }
 
       // Update session status to RUNNING
@@ -173,7 +201,7 @@ export class BrowserService {
   }
 
   /**
-   * Scans current page DOM to detect questions and multi-choice selections
+   * Scans current page DOM to detect questions and multi-choice selections using Platform Adapters
    */
   public async extractQuestion(sessionId: string): Promise<ExtractedQuestionData | null> {
     const session = this.activeSessions.get(sessionId);
@@ -184,52 +212,29 @@ export class BrowserService {
     session.lastActivity = new Date();
     const page = session.page;
 
-    const detected = await page.evaluate(() => {
-      // Look for standard question wrappers (e.g., .question, [data-question], form items)
-      const qElements = document.querySelectorAll(
-        '.question, [data-question], .quiz-question, .form-group, fieldset, [role="radiogroup"]'
-      );
+    const adapter = platformAdapterRegistry.getAdapterForUrl(page.url());
+    const detectedList = await adapter.detectQuestions(page);
 
-      let text = '';
-      const options: string[] = [];
-
-      if (qElements.length > 0) {
-        const first = qElements[0];
-        text = first.textContent?.trim().slice(0, 1000) || '';
-
-        // Extract options from radio buttons / labels
-        const optElements = first.querySelectorAll('label, input[type="radio"], li');
-        optElements.forEach((el: Element) => {
-          const optText = el.textContent?.trim();
-          if (optText && optText.length > 1 && !options.includes(optText)) {
-            options.push(optText);
-          }
-        });
-      } else {
-        // Fallback: Grab the primary heading or prompt
-        const h = document.querySelector('h1, h2, h3, p');
-        text = h?.textContent?.trim() || '';
-      }
-
-      return {
-        text,
-        options,
-      };
-    });
-
-    if (!detected.text) {
+    if (!detectedList || detectedList.length === 0) {
       return null;
     }
 
+    const firstQuestion = detectedList[0];
+
     // Capture screenshot of question area
-    const screenshotBuffer = await page.screenshot({ fullPage: false });
-    const imageBase64 = screenshotBuffer.toString('base64');
+    let imageBase64: string | undefined;
+    try {
+      const screenshotBuffer = await page.screenshot({ fullPage: false });
+      imageBase64 = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
+    } catch {
+      // Continue even if screenshot fails
+    }
 
     const result: ExtractedQuestionData = {
-      text: detected.text,
-      type: detected.options.length > 0 ? 'MULTIPLE_CHOICE' : 'SHORT_ANSWER',
-      options: detected.options,
-      image: `data:image/png;base64,${imageBase64}`,
+      text: firstQuestion.text,
+      type: firstQuestion.type,
+      options: firstQuestion.options,
+      image: imageBase64,
     };
 
     // Save detected question in database

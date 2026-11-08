@@ -55,10 +55,13 @@ ${request.questionText}
 
 ${request.options && request.options.length > 0 ? `Options:\n${request.options.map((o, i) => `${i + 1}. ${o}`).join('\n')}` : ''}
 
-Output format:
-Answer: <concise answer text>
-Confidence: <score between 0.0 and 1.0>
-Explanation: <brief 1-2 sentence explanation>`;
+Respond STRICTLY in JSON format with this exact structure:
+{
+  "answer": "<concise answer text or chosen option>",
+  "confidence": <number between 0.0 and 1.0>,
+  "explanation": "<brief 1-2 sentence educational explanation>",
+  "questionType": "<MULTIPLE_CHOICE | TRUE_FALSE | SHORT_ANSWER | FILL_IN_BLANK>"
+}`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
     const payload: any = {
@@ -67,6 +70,9 @@ Explanation: <brief 1-2 sentence explanation>`;
           parts: [{ text: prompt }],
         },
       ],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
     };
 
     if (request.imageData) {
@@ -79,11 +85,26 @@ Explanation: <brief 1-2 sentence explanation>`;
       });
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        throw new Error('Gemini API request timed out after 20 seconds');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const errText = await response.text();
@@ -91,15 +112,29 @@ Explanation: <brief 1-2 sentence explanation>`;
     }
 
     const data: any = await response.json();
-    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = { answer: rawText, confidence: 0.9, explanation: 'Direct model output' };
+    }
+
+    const inputTokens = data.usageMetadata?.promptTokenCount || 50;
+    const outputTokens = data.usageMetadata?.candidatesTokenCount || 30;
+    // Gemini 1.5 Pro estimated cost: ~$0.00125 / 1K in, $0.005 / 1K out
+    const estimatedCostUSD = (inputTokens / 1000) * 0.00125 + (outputTokens / 1000) * 0.005;
 
     return {
-      answerText: candidate,
-      confidenceScore: 0.95,
+      answerText: parsed.answer || rawText,
+      confidenceScore: typeof parsed.confidence === 'number' ? parsed.confidence : 0.95,
+      explanation: parsed.explanation || '',
+      questionType: parsed.questionType || 'MULTIPLE_CHOICE',
       modelName: this.model,
+      estimatedCostUSD: Number(estimatedCostUSD.toFixed(6)),
       tokensUsed: {
-        input: data.usageMetadata?.promptTokenCount || 50,
-        output: data.usageMetadata?.candidatesTokenCount || 30,
+        input: inputTokens,
+        output: outputTokens,
       },
     };
   }
@@ -119,7 +154,7 @@ export class OpenAIAIProvider implements IAIProvider {
     const messages: any[] = [
       {
         role: 'system',
-        content: 'You are an educational tutor assisting a student. Provide the exact correct answer concisely with high accuracy.',
+        content: 'You are an educational tutor assisting a student. Analyze the question and provide the answer in JSON format: {"answer": "...", "confidence": 0.95, "explanation": "...", "questionType": "MULTIPLE_CHOICE"}. Do not return Markdown wrappers.',
       },
       {
         role: 'user',
@@ -139,18 +174,34 @@ export class OpenAIAIProvider implements IAIProvider {
       });
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages,
-        max_tokens: 300,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    let response: Response;
+    try {
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages,
+          response_format: { type: 'json_object' },
+          max_tokens: 350,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        throw new Error('OpenAI API request timed out after 20 seconds');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const err = await response.text();
@@ -158,15 +209,29 @@ export class OpenAIAIProvider implements IAIProvider {
     }
 
     const resJson: any = await response.json();
-    const answer = resJson.choices?.[0]?.message?.content || 'Unable to analyze';
+    const rawContent = resJson.choices?.[0]?.message?.content || '{}';
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch {
+      parsed = { answer: rawContent, confidence: 0.95 };
+    }
+
+    const inputTokens = resJson.usage?.prompt_tokens || 40;
+    const outputTokens = resJson.usage?.completion_tokens || 20;
+    // gpt-4o-mini estimated cost: ~$0.00015 / 1K in, $0.0006 / 1K out
+    const estimatedCostUSD = (inputTokens / 1000) * 0.00015 + (outputTokens / 1000) * 0.0006;
 
     return {
-      answerText: answer,
-      confidenceScore: 0.96,
+      answerText: parsed.answer || rawContent,
+      confidenceScore: typeof parsed.confidence === 'number' ? parsed.confidence : 0.96,
+      explanation: parsed.explanation || '',
+      questionType: parsed.questionType || 'MULTIPLE_CHOICE',
       modelName: this.model,
+      estimatedCostUSD: Number(estimatedCostUSD.toFixed(6)),
       tokensUsed: {
-        input: resJson.usage?.prompt_tokens || 40,
-        output: resJson.usage?.completion_tokens || 20,
+        input: inputTokens,
+        output: outputTokens,
       },
     };
   }

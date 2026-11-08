@@ -30,6 +30,8 @@ export interface AISolverResponse {
   confidenceScore: number;
   explanation?: string;
   modelName: string;
+  questionType?: string;
+  estimatedCostUSD?: number;
   tokensUsed: {
     input: number;
     output: number;

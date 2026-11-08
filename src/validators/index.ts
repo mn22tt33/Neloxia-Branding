@@ -49,6 +49,12 @@ export const startBrowserSessionSchema = z.object({
   saveCredentials: z.boolean().optional().default(false),
 });
 
+export const savePlatformAccountSchema = z.object({
+  platformId: z.string().uuid('Platform ID must be a valid UUID'),
+  username: z.string().min(1, 'Username / Student Code is required'),
+  password: z.string().min(1, 'Password is required'),
+});
+
 export const analyzeQuestionSchema = z.object({
   questionText: z.string().min(2, 'Question text is required'),
   questionType: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'FILL_IN_BLANK', 'SHORT_ANSWER', 'ESSAY']).optional().default('MULTIPLE_CHOICE'),
