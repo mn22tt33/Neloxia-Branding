@@ -298,10 +298,18 @@ export class SPXAutomationService {
     const isLinux = process.platform === 'linux';
     const isHeadless = isLinux || config.browser.mode !== 'local' || process.env.NODE_ENV === 'production';
 
-    // Launch Chromium
+    // Launch Chromium with stealth flags to prevent bot detection
     const browser = await chromium.launch({
       headless: isHeadless,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+        '--no-first-run',
+        '--no-default-browser-check',
+      ],
     });
 
     const context = await browser.newContext({
@@ -309,6 +317,16 @@ export class SPXAutomationService {
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
       locale: 'ar-EG',
+      extraHTTPHeaders: {
+        'Accept-Language': 'ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
+
+    // Remove navigator.webdriver automation flag
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
     });
 
     const page = await context.newPage();
@@ -317,35 +335,67 @@ export class SPXAutomationService {
     session.page = page;
 
     try {
-      // 1. Login to SPX Platform
+      // 1. Direct navigation to login page
       this.emitLog(sessionId, 'info', 'جاري فتح منصة SPX Learning Square...');
-      await page.goto('https://egy.app.spx-learning-square.com/', {
+      const loginUrl = 'https://egy.app.spx-learning-square.com/login';
+      
+      await page.goto(loginUrl, {
         waitUntil: 'domcontentloaded',
         timeout: 30000,
+      }).catch(async () => {
+        // Fallback navigation if first attempt timed out
+        await page.goto(loginUrl, { waitUntil: 'load', timeout: 20000 });
       });
 
-      this.emitLog(sessionId, 'info', 'تم الوصول إلى المنصة بنجاح. جاري إدخال بيانات الدخول...');
-      await page.locator('#login-id').fill(studentId);
-      await page.locator('#password').fill(password);
+      await page.waitForTimeout(2000);
 
-      // Secure cleanup: erase password immediately from memory
-      password = '';
+      const currentUrl = page.url();
+      const pageTitle = await page.title().catch(() => '');
 
-      const submitBtn = page.locator('button[type="submit"]:has-text("Let\'s Go!"), button[type="submit"]');
-      await submitBtn.click();
+      // Check if already authenticated (e.g. redirected to dashboard/curriculum)
+      if (currentUrl.includes('/dashboard') || currentUrl.includes('/curriculum') || currentUrl.includes('/subjects')) {
+        this.emitLog(sessionId, 'success', `تم تخطي شاشة الدخول (المستخدم مسجل دخوله بالفعل في: ${currentUrl})...`);
+      } else {
+        // Locate login fields with resilient multi-selector
+        const idField = page.locator('#login-id, input[placeholder*="معرف"], input[type="text"]').first();
+        const hasLoginInput = await idField.isVisible({ timeout: 10000 }).catch(() => false);
 
-      // Wait for login redirection
-      await page.waitForURL('**/dashboard', { timeout: 20000 }).catch(async () => {
-        // Check if error displayed
-        const errorText = await page
-          .locator('.text-red-500, [role="alert"]')
-          .first()
-          .innerText()
-          .catch(() => '');
-        if (errorText) {
-          throw new Error(`فشل تسجيل الدخول بالمنصة: ${errorText}`);
+        if (!hasLoginInput) {
+          const bodySnippet = await page.evaluate(() => document.body.innerText.substring(0, 200)).catch(() => '');
+          this.emitLog(
+            sessionId,
+            'warn',
+            `تنبيه في صفحة الدخول: [العنوان: "${pageTitle}" | الرابط: ${currentUrl} | المحتوى: "${bodySnippet}"]`
+          );
         }
-      });
+
+        this.emitLog(sessionId, 'info', 'تم الوصول إلى صفحة الدخول. جاري إدخال بيانات الطالب...');
+        await idField.fill(studentId);
+
+        const passField = page.locator('#password, input[placeholder*="مرور"], input[type="password"]').first();
+        await passField.fill(password);
+
+        // Secure cleanup: erase password immediately from memory
+        password = '';
+
+        const submitBtn = page
+          .locator('button:has-text("يلا بينا!"), button[type="submit"]:has-text("Let\'s Go!"), button[type="submit"]')
+          .first();
+        await submitBtn.click();
+
+        // Wait for login redirection
+        await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 20000 }).catch(async () => {
+          // Check if error displayed
+          const errorText = await page
+            .locator('.text-red-500, [role="alert"], div.text-red-600')
+            .first()
+            .innerText()
+            .catch(() => '');
+          if (errorText) {
+            throw new Error(`فشل تسجيل الدخول بالمنصة: ${errorText}`);
+          }
+        });
+      }
 
       session.status = 'LOGGED_IN';
       session.progressPercent = 15;
