@@ -5,6 +5,7 @@ import { smartAnswerService } from '../ai/smart-answer.service';
 import { wsManager } from '../websocket';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+import { telegramService } from './telegram.service';
 
 export interface ChapterItem {
   id: string;
@@ -18,6 +19,7 @@ export interface StudentSessionStats {
   detectedQuestions: number;
   savedToKnowledge: number;
   retrievedFromMemory: number;
+  missingQuestions: number;
   currentChapterIndex: number;
   totalChapters: number;
 }
@@ -170,6 +172,7 @@ export class SPXAutomationService {
       maxLessons?: number;
       grade?: string;
       course?: string;
+      orderId?: string;
     } = {}
   ): Promise<{ sessionId: string }> {
     // 1. Capacity Check
@@ -197,6 +200,7 @@ export class SPXAutomationService {
         detectedQuestions: 0,
         savedToKnowledge: 0,
         retrievedFromMemory: 0,
+        missingQuestions: 0,
         currentChapterIndex: 0,
         totalChapters: 0,
       },
@@ -288,7 +292,7 @@ export class SPXAutomationService {
     sessionId: string,
     studentId: string,
     password: string,
-    options: { subjectUrl?: string; maxLessons?: number; grade?: string; course?: string }
+    options: { subjectUrl?: string; maxLessons?: number; grade?: string; course?: string; orderId?: string }
   ) {
     const session = this.activeSessions.get(sessionId)!;
     const targetUrl = options.subjectUrl || 'https://egy.app.spx-learning-square.com/subjects/7/curriculum';
@@ -298,6 +302,12 @@ export class SPXAutomationService {
 
     this.emitLog(sessionId, 'info', 'جاري الاتصال بالسيرفر وإنشاء جلسة متصفح معزولة...');
     this.emitLog(sessionId, 'info', `تم إنشاء جلسة مستقلة للطالب (${session.studentIdMasked}).`);
+
+    telegramService.notifySessionStarted({
+      sessionId,
+      studentIdMasked: session.studentIdMasked,
+      course: selectedCourse,
+    }).catch(() => {});
 
     const isLinux = process.platform === 'linux';
     // On Windows local development, run headed to guarantee 100% CloudFront bypass
@@ -455,49 +465,35 @@ export class SPXAutomationService {
       if (postLoginUrl.includes('/curriculum')) {
         this.emitLog(sessionId, 'info', 'تم الوصول للمنهج الدراسي مباشرة.');
       } else {
-        // Inspect available subject links & cards on dashboard
-        let targetNavigationUrl = targetUrl;
-        let matchedByDashboard = false;
-
-        try {
-          const availableLinks = await page.$$eval('a[href*="/subjects/"]', (anchors) =>
-            anchors.map((a) => ({
-              href: (a as HTMLAnchorElement).href,
-              text: (a.textContent || '').trim(),
-            }))
-          ).catch(() => []);
-
-          if (availableLinks.length > 0) {
-            // Match with user's selected course
-            const isJs = selectedCourse === 'javascript_ar' || selectedGrade === 'g10';
-            const isFin = selectedCourse === 'financial_literacy';
-            const isPy = selectedCourse === 'python_short_en';
-
-            const matchedLink = availableLinks.find((l) => {
-              const t = l.text.toLowerCase();
-              if (isJs && (t.includes('جافا') || t.includes('javascript') || t.includes('كيريو') || t.includes('qureo') || t.includes('برمج'))) return true;
-              if (isFin && (t.includes('مالي') || t.includes('financial') || t.includes('ثقاف'))) return true;
-              if (isPy && (t.includes('بايثون') || t.includes('python'))) return true;
-              return false;
-            }) || availableLinks[0];
-
-            if (matchedLink) {
-              const baseHref = matchedLink.href.split('?')[0].replace(/\/$/, '');
-              targetNavigationUrl = baseHref.endsWith('/curriculum') ? baseHref : `${baseHref}/curriculum`;
-              matchedByDashboard = true;
-              this.emitLog(sessionId, 'info', `تم العثور على مادة الطالب من لوحة التحكم: "${matchedLink.text}" -> ${targetNavigationUrl}`);
-            }
+        // Step 1: If on Dashboard, click "كمّل"
+        if (page.url().includes('/dashboard')) {
+          this.emitLog(sessionId, 'info', 'تم الوصول إلى لوحة التحكم الرئيسية. جاري الضغط على "كمّل"...');
+          const continueBtn = page.locator('button:has-text("كمّل"), div:has-text("كمّل")').last();
+          if (await continueBtn.isVisible({ timeout: 6000 }).catch(() => false)) {
+            await continueBtn.click();
+            await page.waitForTimeout(2500);
           }
-        } catch (_) {}
-
-        if (!matchedByDashboard && postLoginUrl.includes('/subjects/')) {
-          targetNavigationUrl = postLoginUrl.endsWith('/curriculum') ? postLoginUrl : `${postLoginUrl.split('?')[0]}/curriculum`;
         }
 
-        this.emitLog(sessionId, 'info', `جاري فتح المنهج الدراسي: ${targetNavigationUrl}...`);
-        await page.goto(targetNavigationUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(async () => {
-          await page.goto(targetNavigationUrl, { waitUntil: 'load', timeout: 20000 });
-        });
+        // Step 2: If on Subject screen, click "كمّل التعلم"
+        if (page.url().includes('/subjects/') && !page.url().includes('/curriculum')) {
+          this.emitLog(sessionId, 'info', 'جاري الدخول إلى خريطة المنهج بالضغط على "كمّل التعلم"...');
+          const resumeBtn = page.locator('button:has-text("كمّل التعلم"), a:has-text("كمّل التعلم")').first();
+          if (await resumeBtn.isVisible({ timeout: 6000 }).catch(() => false)) {
+            await resumeBtn.click();
+            await page.waitForTimeout(2500);
+          }
+        }
+
+        // Fallback direct navigation if not on curriculum yet
+        if (!page.url().includes('/curriculum')) {
+          const targetNavigationUrl = targetUrl.includes('/curriculum') ? targetUrl : 'https://egy.app.spx-learning-square.com/subjects/7/curriculum';
+          this.emitLog(sessionId, 'info', `جاري فتح المنهج الدراسي مباشرة: ${targetNavigationUrl}...`);
+          await page.goto(targetNavigationUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(async () => {
+            await page.goto(targetNavigationUrl, { waitUntil: 'load', timeout: 20000 });
+          });
+          await page.waitForTimeout(2500);
+        }
       }
 
       session.status = 'EXPLORING';
@@ -613,12 +609,22 @@ export class SPXAutomationService {
         session.status = 'COMPLETED';
         session.progressPercent = 100;
         this.emitLog(sessionId, 'success', 'تهانينا! تم إنجاز خطة المعالجة بنجاح لجميع الفصول المستهدفة.');
+        telegramService.notifySessionCompleted({
+          sessionId,
+          studentIdMasked: session.studentIdMasked,
+          stats: session.stats,
+        }).catch(() => {});
       }
     } catch (err: any) {
       if (!session.isStopping) {
         session.status = 'ERROR';
         session.errorMessage = err.message;
         this.emitLog(sessionId, 'error', `حدث خطأ أثناء تنفيذ الجلسة: ${err.message}`);
+        telegramService.notifySystemError({
+          context: 'SPX Browser Execution',
+          message: err.message,
+          sessionId,
+        }).catch(() => {});
       }
     } finally {
       try {
@@ -731,9 +737,10 @@ export class SPXAutomationService {
           continue; // Accordion header is NOT a lesson row!
         }
 
-        // Check if item is already completed (green checkmark badge)
-        // Accurate detection: NEVER use innerHTML.includes('check') which matches 'aria-checked="false"' or 'unchecked'!
+        // Check if item is already completed (green checkmark badge or #00bb88 hover/bg)
         const hasCheck =
+          el.className.includes('#00bb88') ||
+          el.className.includes('bg-[#00bb88]') ||
           el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check, svg.check-icon') !== null ||
           el.querySelector('.text-emerald-500, .text-green-500, .bg-emerald-500, .bg-green-500') !== null ||
           el.classList.contains('text-emerald-500') ||
@@ -743,8 +750,11 @@ export class SPXAutomationService {
           continue; // Already solved! Skip to next row.
         }
 
-        // Check if item has lock icon (locked) - NEVER use innerHTML.includes('lock') which matches 'block'!
+        // Check if item has lock icon (locked) or opacity-40 / cursor-default
         const hasLock =
+          el.className.includes('opacity-40') ||
+          el.className.includes('cursor-default') ||
+          el.getAttribute('title') === 'مقفول' ||
           el.querySelector('.lucide-lock, svg.lock-icon') !== null ||
           el.classList.contains('cursor-not-allowed') ||
           el.getAttribute('aria-disabled') === 'true';
@@ -753,20 +763,13 @@ export class SPXAutomationService {
           continue; // Locked! Cannot be accessed yet.
         }
 
-        // Must be a learning activity (book or clipboard or general activity)
-        const isBook =
-          el.querySelector('.lucide-book-open, .lucide-book') !== null;
-        const isClipboard =
-          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') !== null;
+        const isClickable = el.className.includes('cursor-pointer') || el.tagName === 'A' || el.tagName === 'BUTTON';
+        if (!isClickable) continue;
 
         const cleanTitle = text.split('\n')[0].trim();
         if (cleanTitle.length < 2) continue;
 
-        const type = isBook
-          ? 'الدرس التفاعلي 📖'
-          : isClipboard
-          ? 'مراجعة واختبار النقاط المهمة 📋'
-          : 'نشاط تدريبي ⚡';
+        const type = 'الدرس والنشاط التفاعلي 📖';
 
         // Scroll into view and click
         (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1015,7 +1018,39 @@ export class SPXAutomationService {
       const activeCount = await activeRadios.count();
 
       if (activeCount === 0) {
-        this.emitLog(sessionId, 'info', 'لا توجد أسئلة نشطة متبقية في الشاشة الحالية.');
+        // 1. Check for keyword review cards ("النقاط المهمة")
+        const keywordCards = page.locator('button:has-text("النقاط المهمة")');
+        const cardsCount = await keywordCards.count();
+        if (cardsCount > 0) {
+          this.emitLog(sessionId, 'info', `تم اكتشاف بطاقات مراجعة النقاط المهمة (${cardsCount} بطاقات). جاري تأكيد المراجعة...`);
+          for (let i = 0; i < cardsCount; i++) {
+            try {
+              const card = keywordCards.nth(i);
+              await card.scrollIntoViewIfNeeded().catch(() => {});
+              await card.click().catch(() => {});
+              await page.waitForTimeout(400);
+            } catch (_) {}
+          }
+          await page.waitForTimeout(1000);
+          const finishReviewBtn = page.locator('button:has-text("راجعت كل حاجة")').first();
+          if (await finishReviewBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await finishReviewBtn.scrollIntoViewIfNeeded().catch(() => {});
+            await finishReviewBtn.click().catch(() => {});
+            await page.waitForTimeout(2500);
+            this.emitLog(sessionId, 'success', 'تم إنهاء مراجعة النقاط المهمة بنجاح.');
+          }
+        }
+
+        // 2. Check for next button
+        const nextBtn = page.locator('button:has-text("التالي"), button:has-text("إنهاء")').last();
+        if (await nextBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
+          this.emitLog(sessionId, 'info', 'الضغط على زر "التالي" لحفظ التقدم والانتقال للعنصر التالي...');
+          await nextBtn.scrollIntoViewIfNeeded().catch(() => {});
+          await nextBtn.click().catch(() => {});
+          await page.waitForTimeout(3000);
+        }
+
+        this.emitLog(sessionId, 'info', 'تم إنجاز كافة عناصر النشاط الحالي.');
         break;
       }
 
@@ -1049,20 +1084,24 @@ export class SPXAutomationService {
         session.studentIdMasked
       );
 
-      if (answerResult.fromKnowledgeBase && answerResult.isVerified) {
+      if (answerResult.fromKnowledgeBase && answerResult.isVerified && answerResult.answerText !== 'NOT_FOUND') {
         session.stats.retrievedFromMemory++;
         wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
         this.emitLog(
           sessionId,
           'success',
-          `[ذاكرة المعرفة] تم العثور على إجابة موثقة محفوظة مسبقاً! استرجاع فوري (0 AI calls): "${answerResult.answerText.substring(0, 30)}..."`
+          `[قاعدة المعرفة المركزية] تم العثور على إجابة موثقة محفوظة مسبقاً! استرجاع فوري (0ms): "${answerResult.answerText.substring(0, 30)}..."`
         );
       } else {
+        session.stats.missingQuestions = (session.stats.missingQuestions || 0) + 1;
+        wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
         this.emitLog(
           sessionId,
-          'info',
-          `[تحليل AI] سؤال جديد غير موثق. تم استدعاء الذكاء الاصطناعي واقتراح: "${answerResult.answerText.substring(0, 30)}..."`
+          'warn',
+          `[قاعدة المعرفة] السؤال غير موجود في قاعدة الأسئلة الموثقة. تم حفظ السؤال للإدارة لمراجعته وإضافته (لن يتم التخمين).`
         );
+        questionIndex++;
+        continue;
       }
 
       // Map answer to option index

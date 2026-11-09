@@ -144,6 +144,20 @@ export class KnowledgeRepository {
   }
 
   /**
+   * Delete a question from memory cache and disk storage
+   */
+  public async deleteRecord(idOrHash: string): Promise<boolean> {
+    for (const [hash, item] of this.memoryCache.entries()) {
+      if (item.id === idOrHash || hash === idOrHash) {
+        this.memoryCache.delete(hash);
+        this.saveToDisk();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Save new or update existing question knowledge record
    */
   public async upsertRecord(record: QuestionKnowledgeRecord): Promise<QuestionKnowledgeRecord> {

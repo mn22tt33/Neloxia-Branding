@@ -14,6 +14,8 @@ import aiRoutes from './routes/ai.routes';
 import logRoutes from './routes/log.routes';
 import learningRoutes from './routes/learning.routes';
 import spxAutomationRoutes from './routes/spx-automation.routes';
+import orderRoutes, { packageRouter } from './routes/order.routes';
+import adminRoutes from './routes/admin.routes';
 import { logger } from './utils/logger';
 
 export function createApp(): Application {
@@ -93,6 +95,9 @@ export function createApp(): Application {
   app.use('/api/v1/learning', learningRoutes);
   app.use('/api/spx', spxAutomationRoutes);
   app.use('/api/v1/spx', spxAutomationRoutes);
+  app.use('/api/orders', orderRoutes);
+  app.use('/api/packages', packageRouter);
+  app.use('/api/admin', adminRoutes);
 
   // 404 Handler
   app.use((req: Request, res: Response) => {

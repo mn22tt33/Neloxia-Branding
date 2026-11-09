@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { QuestionNormalizer } from './normalizer';
 import { knowledgeRepository, KnowledgeRepository } from './knowledge.repository';
-import { aiService, AIService } from './index';
+import { missingQuestionService } from './missing-question.service';
 import { logger } from '../utils/logger';
 import { 
   QuestionQuery, 
@@ -14,24 +14,23 @@ import {
 
 export class SmartAnswerService {
   private repository: KnowledgeRepository;
-  private ai: AIService;
 
-  constructor(repository?: KnowledgeRepository, ai?: AIService) {
+  constructor(repository?: KnowledgeRepository) {
     this.repository = repository || knowledgeRepository;
-    this.ai = ai || aiService;
   }
 
   /**
-   * Main entrypoint: Retrieves answer smartly.
+   * Main entrypoint: Retrieves answer strictly from verified knowledge base.
+   * ABSOLUTE ZERO-AI POLICY:
    * 1. Searches knowledge base (exact hash or permutation-safe match).
-   * 2. If verified answer found -> returns immediately (0 AI calls).
-   * 3. If not found or only pending -> queries AI, stores proposal as PENDING.
+   * 2. If verified answer found -> returns immediately (0 AI calls, 0ms latency).
+   * 3. If NOT found -> NEVER guesses or uses AI. Logs to MissingQuestions store and returns NOT_FOUND.
    */
-  public async getAnswer(query: QuestionQuery, userId: string = 'system-user'): Promise<SmartAnswerResult> {
+  public async getAnswer(query: QuestionQuery, userId: string = 'system-user', orderId?: string): Promise<SmartAnswerResult> {
     const startTime = Date.now();
     const hash = QuestionNormalizer.computeQuestionHash(query.questionText, query.options);
 
-    // 1. Exact Hash Lookup
+    // 1. Exact Hash Lookup in Persistent Knowledge Base
     const exactRecord = await this.repository.findByHash(hash);
     if (exactRecord) {
       exactRecord.occurrenceCount++;
@@ -56,7 +55,7 @@ export class SmartAnswerService {
           answerText: mappedAnswer.answerText,
           matchedOptionIndex: mappedAnswer.matchedOptionIndex,
           confidenceScore: 1.0,
-          explanation: exactRecord.explanation || 'تم استرجاع الإجابة الموثقة مباشرة من قاعدة المعرفة الدائمة.',
+          explanation: exactRecord.explanation || 'تم استرجاع الإجابة الموثقة مباشرة من قاعدة المعرفة المركزية.',
           isVerified: true,
           source: exactRecord.source,
           fromKnowledgeBase: true,
@@ -83,8 +82,8 @@ export class SmartAnswerService {
       return {
         answerText: fuzzyMatch.mappedAnswer.answerText,
         matchedOptionIndex: fuzzyMatch.mappedAnswer.matchedOptionIndex,
-        confidenceScore: 0.99,
-        explanation: record.explanation || 'تمت المطابقة الذكية واسترجاع الإجابة الموثقة مع ضبط ترتيب الاختيارات.',
+        confidenceScore: 1.0,
+        explanation: record.explanation || 'تمت المطابقة واسترجاع الإجابة الموثقة مع ضبط ترتيب الاختيارات.',
         isVerified: true,
         source: record.source,
         fromKnowledgeBase: true,
@@ -94,55 +93,25 @@ export class SmartAnswerService {
       };
     }
 
-    // 3. Fallback: Query AI Analysis (only when no verified answer is available)
-    logger.info(`[SmartAnswerService] No verified answer found. Requesting AI analysis for question...`);
-    const aiResponse = await this.ai.solveQuestion(userId, {
-      questionText: query.questionText,
-      options: query.options,
-    });
-
+    // 3. ZERO-AI FALLBACK: Do NOT guess, do NOT use AI. Record as missing question for admin review.
     const latency = Date.now() - startTime;
-    this.repository.recordQueryMetrics(false, latency);
+    logger.warn(`[SmartAnswerService] Zero-AI Guard: Question not found in verified database. Capturing for admin review...`);
 
-    // Save as PENDING (never automatically verified by AI confidence alone!)
-    const recordToSave: QuestionKnowledgeRecord = exactRecord || {
-      id: crypto.randomUUID(),
-      questionHash: hash,
-      normalizedText: QuestionNormalizer.normalizeArabicText(query.questionText),
-      rawQuestionText: query.questionText,
-      questionType: query.questionType || 'MULTIPLE_CHOICE',
+    await missingQuestionService.recordMissingQuestion({
+      questionText: query.questionText,
       options: query.options || [],
-      normalizedOptions: QuestionNormalizer.normalizeOptions(query.options || []),
-      proposedAnswer: aiResponse.answerText,
-      verifiedAnswer: null,
-      explanation: aiResponse.explanation,
       platformName: query.platformName,
       subjectName: query.subjectName,
       lessonName: query.lessonName,
-      source: 'AI_PROPOSED',
-      confidenceScore: aiResponse.confidenceScore,
-      verificationStatus: 'PENDING',
-      occurrenceCount: 1,
-      retrievalCount: 0,
-      lastSeenAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    if (exactRecord) {
-      recordToSave.proposedAnswer = aiResponse.answerText;
-      recordToSave.confidenceScore = aiResponse.confidenceScore;
-      recordToSave.explanation = aiResponse.explanation;
-    }
-
-    await this.repository.upsertRecord(recordToSave);
+      orderId,
+    });
 
     return {
-      answerText: aiResponse.answerText,
-      confidenceScore: aiResponse.confidenceScore,
-      explanation: aiResponse.explanation,
+      answerText: 'NOT_FOUND',
+      confidenceScore: 0.0,
+      explanation: 'السؤال غير مسجل في قاعدة الأسئلة الموثقة. تم حفظ السؤال في قائمة المراجعة للإدارة.',
       isVerified: false,
-      source: 'AI_PROPOSED',
+      source: 'NOT_FOUND' as any,
       fromKnowledgeBase: false,
       questionHash: hash,
       verificationStatus: 'PENDING',
