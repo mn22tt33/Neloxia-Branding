@@ -215,6 +215,74 @@ export class BrowserController {
       return res.status(500).json({ success: false, message: err.message });
     }
   }
+  /**
+   * Interact with page elements (click, select option, navigate)
+   */
+  public async interact(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { id } = req.params;
+      const { action, target } = req.body;
+
+      const session = await prisma.browserSession.findUnique({ where: { id } });
+      if (!session) {
+        return res.status(404).json({ success: false, message: 'Session not found' });
+      }
+
+      if (session.userId !== userId && req.user!.role !== 'ADMIN') {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+
+      const result = await browserService.interact(id, action, target);
+
+      // Record event
+      await prisma.browserEvent.create({
+        data: {
+          sessionId: id,
+          eventType: `USER_${action.toUpperCase()}`,
+          eventDescription: result.message,
+          eventStatus: 'SUCCESS',
+          metadata: { action, target, currentUrl: result.currentUrl },
+        },
+      });
+
+      return res.json({
+        success: true,
+        message: result.message,
+        data: result,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
+   * Get sections and navigation overview of current page
+   */
+  public async getOverview(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { id } = req.params;
+
+      const session = await prisma.browserSession.findUnique({ where: { id } });
+      if (!session) {
+        return res.status(404).json({ success: false, message: 'Session not found' });
+      }
+
+      if (session.userId !== userId && req.user!.role !== 'ADMIN') {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+
+      const overview = await browserService.getPageOverview(id);
+
+      return res.json({
+        success: true,
+        data: overview,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
 }
 
 export const browserController = new BrowserController();

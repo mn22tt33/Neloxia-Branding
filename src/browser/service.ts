@@ -1,5 +1,6 @@
 import { chromium, Browser, BrowserContext, Page, Request as PlaywrightRequest, Response as PlaywrightResponse } from 'playwright';
 import { prisma } from '../database/prisma';
+import { config } from '../config';
 import { wsManager } from '../websocket';
 import { logger } from '../utils/logger';
 import { vncManager } from './vnc';
@@ -61,20 +62,35 @@ export class BrowserService {
     });
 
     try {
-      // 2. Launch Chromium with isolated DISPLAY environment
+      // 2. Launch Chromium according to BROWSER_MODE ('local' = headed, 'production' = headless)
+      const isLocalMode = config.browser.mode === 'local' && process.env.NODE_ENV !== 'test';
+      const isHeadless = !isLocalMode;
+
+      logger.info(
+        `[BrowserService] Launching session ${sessionId} in ${
+          isLocalMode ? 'LOCAL (Headed - visible window)' : 'PRODUCTION (Headless)'
+        } mode`
+      );
+
+      const browserArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--window-size=1280,800',
+      ];
+
+      // If running on Linux/Railway with virtual display
+      if (!isLocalMode && process.platform === 'linux') {
+        browserArgs.push(`--display=:${displayInfo.displayNumber}`);
+      }
+
       const browser = await chromium.launch({
-        headless: process.env.NODE_ENV === 'test' ? true : false,
-        args: [
-          `--display=:${displayInfo.displayNumber}`,
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--window-size=1280,800',
-        ],
+        headless: isHeadless,
+        args: browserArgs,
         env: {
           ...process.env,
-          DISPLAY: `:${displayInfo.displayNumber}`,
+          ...(process.platform === 'linux' ? { DISPLAY: `:${displayInfo.displayNumber}` } : {}),
         },
       });
 
@@ -82,7 +98,8 @@ export class BrowserService {
       const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
         userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+        locale: 'en-US',
       });
 
       const page = await context.newPage();
@@ -303,6 +320,101 @@ export class BrowserService {
 
     wsManager.emitBrowserStopped(sessionId);
     logger.info(`Session ${sessionId} terminated successfully (Status: ${reason})`);
+  }
+
+  /**
+   * Safe interactive action (click button, choose option, navigate next)
+   */
+  public async interact(
+    sessionId: string,
+    action: 'click' | 'select' | 'navigate' | 'type',
+    target: { selector?: string; text?: string; value?: string; url?: string }
+  ): Promise<{ success: boolean; currentUrl: string; message: string }> {
+    const session = this.activeSessions.get(sessionId);
+    if (!session || !session.page) {
+      throw new Error('Active session not found');
+    }
+
+    session.lastActivity = new Date();
+    const page = session.page;
+
+    logger.info(`[BrowserService] Session ${sessionId} executing action '${action}'`);
+
+    if (action === 'navigate' && target.url) {
+      const urlCheck = isAllowedEducationalUrl(target.url);
+      if (!urlCheck.allowed) {
+        throw new Error(`Target navigation forbidden: ${urlCheck.reason}`);
+      }
+      await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      return { success: true, currentUrl: page.url(), message: `Navigated to ${target.url}` };
+    }
+
+    if (action === 'click') {
+      let locator = target.selector ? page.locator(target.selector).first() : null;
+      if (!locator && target.text) {
+        locator = page.locator(`button:has-text("${target.text}"), a:has-text("${target.text}"), [role="button"]:has-text("${target.text}")`).first();
+      }
+
+      if (!locator || !(await locator.isVisible({ timeout: 5000 }).catch(() => false))) {
+        throw new Error(`Click target not found or not visible: ${target.selector || target.text}`);
+      }
+
+      await locator.click();
+      await page.waitForTimeout(1500);
+      return { success: true, currentUrl: page.url(), message: `Clicked element successfully` };
+    }
+
+    if (action === 'select' && target.value) {
+      const optionLocator = page.locator(`label:has-text("${target.value}"), input[value="${target.value}"]`).first();
+      if (await optionLocator.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await optionLocator.click();
+        return { success: true, currentUrl: page.url(), message: `Selected option: ${target.value}` };
+      }
+      throw new Error(`Option element not found: ${target.value}`);
+    }
+
+    if (action === 'type' && target.selector && target.value) {
+      const inputLocator = page.locator(target.selector).first();
+      await inputLocator.fill(target.value);
+      return { success: true, currentUrl: page.url(), message: `Typed value into input` };
+    }
+
+    return { success: false, currentUrl: page.url(), message: 'Unsupported interaction' };
+  }
+
+  /**
+   * Inspect current page and discover sections, available links, and interactive buttons
+   */
+  public async getPageOverview(sessionId: string): Promise<{
+    url: string;
+    title: string;
+    navigationItems: string[];
+    availableButtons: string[];
+  }> {
+    const session = this.activeSessions.get(sessionId);
+    if (!session || !session.page) {
+      throw new Error('Active session not found');
+    }
+
+    session.lastActivity = new Date();
+    const page = session.page;
+
+    const title = await page.title();
+    const navigationItems = await page.$$eval('nav a, aside a, header a, .menu-item', (els) =>
+      els.map((e) => e.textContent?.trim()).filter((t): t is string => !!t && t.length > 1).slice(0, 15)
+    );
+
+    const availableButtons = await page.$$eval(
+      'button:not([disabled]), [role="button"]:not([disabled])',
+      (els) => els.map((e) => e.textContent?.trim()).filter((t): t is string => !!t && t.length > 1).slice(0, 15)
+    );
+
+    return {
+      url: page.url(),
+      title,
+      navigationItems,
+      availableButtons,
+    };
   }
 
   public getSession(sessionId: string): ActiveSessionContext | undefined {

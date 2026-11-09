@@ -16,7 +16,7 @@ export class AIService {
       case 'gemini':
         return new GeminiAIProvider(config.ai.apiKey, config.ai.modelName);
       case 'openai':
-        return new OpenAIAIProvider(config.ai.apiKey, config.ai.modelName);
+        return new OpenAIAIProvider(config.ai.apiKey, config.ai.modelName, config.ai.baseUrl);
       case 'mock':
       default:
         return new MockAIProvider();
@@ -42,27 +42,37 @@ export class AIService {
     try {
       const response = await this.provider.generateAnswer(request);
 
-      // Record AI usage statistics
-      await (prisma as any).aiUsage.create({
-        data: {
-          userId,
-          modelName: response.modelName,
-          inputTokens: response.tokensUsed.input,
-          outputTokens: response.tokensUsed.output,
-          requestStatus: 'SUCCESS',
-        },
-      });
+      // Record AI usage statistics if database is accessible
+      try {
+        if ((prisma as any).aIUsage?.create) {
+          await (prisma as any).aIUsage.create({
+            data: {
+              userId,
+              modelName: response.modelName,
+              inputTokens: response.tokensUsed.input,
+              outputTokens: response.tokensUsed.output,
+              requestStatus: 'SUCCESS',
+            },
+          });
+        }
+      } catch (dbErr: any) {
+        logger.warn(`Could not log AI usage to database: ${dbErr.message}`);
+      }
 
       // If questionId provided, store suggested answer in suggested_answers table
       if (questionId) {
-        await prisma.suggestedAnswer.create({
-          data: {
-            questionId,
-            answerText: response.answerText,
-            confidenceScore: response.confidenceScore,
-            aiModel: response.modelName,
-          },
-        });
+        try {
+          await prisma.suggestedAnswer.create({
+            data: {
+              questionId,
+              answerText: response.answerText,
+              confidenceScore: response.confidenceScore,
+              aiModel: response.modelName,
+            },
+          });
+        } catch (dbErr: any) {
+          logger.warn(`Could not save suggested answer: ${dbErr.message}`);
+        }
       }
 
       logger.info(
@@ -73,16 +83,20 @@ export class AIService {
     } catch (error: any) {
       logger.error(`AI Service failed: ${error.message}`);
 
-      // Record failed attempt
-      await (prisma as any).aiUsage.create({
-        data: {
-          userId,
-          modelName: config.ai.modelName,
-          inputTokens: 0,
-          outputTokens: 0,
-          requestStatus: 'FAILED',
-        },
-      });
+      // Record failed attempt if DB available
+      try {
+        if ((prisma as any).aIUsage?.create) {
+          await (prisma as any).aIUsage.create({
+            data: {
+              userId,
+              modelName: config.ai.modelName,
+              inputTokens: 0,
+              outputTokens: 0,
+              requestStatus: 'FAILED',
+            },
+          });
+        }
+      } catch {}
 
       throw error;
     }

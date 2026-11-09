@@ -23,17 +23,20 @@ export const config = {
   },
 
   ai: {
-    provider: (process.env.AI_PROVIDER || 'mock') as 'gemini' | 'openai' | 'anthropic' | 'mock',
+    provider: (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai' | 'anthropic' | 'mock',
     apiKey: process.env.AI_API_KEY || '',
-    modelName: process.env.AI_MODEL_NAME || 'gemini-1.5-pro',
+    modelName: process.env.AI_MODEL_NAME || 'gemini-1.5-flash',
+    baseUrl: process.env.AI_BASE_URL || '',
   },
 
   browser: {
+    mode: (process.env.BROWSER_MODE || 'local').toLowerCase() as 'local' | 'production',
+    spxBaseUrl: process.env.SPX_BASE_URL || 'https://egy.app.spx-learning-square.com/',
     displayBase: parseInt(process.env.DISPLAY_BASE || '100', 10),
     vncPortBase: parseInt(process.env.VNC_PORT_BASE || '5900', 10),
     novncPortBase: parseInt(process.env.NOVNC_PORT_BASE || '6080', 10),
     novncPublicBaseUrl: process.env.NOVNC_PUBLIC_BASE_URL || 'http://localhost',
-    allowedDomains: (process.env.ALLOWED_DOMAINS || 'example.com,education.gov,khanacademy.org,coursera.org,quizlet.com,wikipedia.org')
+    allowedDomains: (process.env.ALLOWED_DOMAINS || 'example.com,education.gov,khanacademy.org,coursera.org,quizlet.com,wikipedia.org,egy.app.spx-learning-square.com,spx-learning-square.com')
       .split(',')
       .map((d) => d.trim().toLowerCase()),
   },

@@ -3,7 +3,7 @@ import { browserController } from '../controllers/browser.controller';
 import { authenticate } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { auditLog } from '../middleware/audit';
-import { startBrowserSessionSchema } from '../validators';
+import { startBrowserSessionSchema, browserInteractSchema } from '../validators';
 
 const router = Router();
 
@@ -18,6 +18,16 @@ router.post(
 router.get('/sessions', authenticate, browserController.getSessions);
 
 router.get('/sessions/:id', authenticate, browserController.getSessionById);
+
+router.get('/sessions/:id/overview', authenticate, browserController.getOverview);
+
+router.post(
+  '/sessions/:id/interact',
+  authenticate,
+  validateBody(browserInteractSchema),
+  auditLog('INTERACT_BROWSER_SESSION'),
+  browserController.interact
+);
 
 router.post(
   '/sessions/:id/stop',

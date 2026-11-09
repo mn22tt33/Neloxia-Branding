@@ -55,6 +55,16 @@ export const savePlatformAccountSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const browserInteractSchema = z.object({
+  action: z.enum(['click', 'select', 'navigate', 'type']),
+  target: z.object({
+    selector: z.string().optional(),
+    text: z.string().optional(),
+    value: z.string().optional(),
+    url: z.string().url().optional(),
+  }),
+});
+
 export const analyzeQuestionSchema = z.object({
   questionText: z.string().min(2, 'Question text is required'),
   questionType: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'FILL_IN_BLANK', 'SHORT_ANSWER', 'ESSAY']).optional().default('MULTIPLE_CHOICE'),
