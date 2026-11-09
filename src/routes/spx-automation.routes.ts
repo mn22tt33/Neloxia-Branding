@@ -6,6 +6,9 @@ const router = Router();
 // Health check endpoint
 router.get('/health', spxAutomationController.getHealth.bind(spxAutomationController));
 
+// Server logs & errors endpoint
+router.get('/logs', spxAutomationController.getServerLogs.bind(spxAutomationController));
+
 // Start session
 router.post('/start', spxAutomationController.startSession.bind(spxAutomationController));
 

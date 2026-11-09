@@ -22,6 +22,12 @@ export interface StudentSessionStats {
   totalChapters: number;
 }
 
+export interface LogEntry {
+  level: 'info' | 'success' | 'warn' | 'error';
+  message: string;
+  timestamp: string;
+}
+
 export interface StudentSessionState {
   sessionId: string;
   studentIdMasked: string;
@@ -29,6 +35,8 @@ export interface StudentSessionState {
   progressPercent: number;
   chapters: ChapterItem[];
   stats: StudentSessionStats;
+  logs: LogEntry[];
+  errorMessage?: string;
   browser?: Browser;
   context?: BrowserContext;
   page?: Page;
@@ -65,6 +73,13 @@ export class SPXAutomationService {
     const now = new Date();
     const timeStr = now.toTimeString().split(' ')[0]; // HH:mm:ss
     const formattedLog = `[${timeStr}] ${message}`;
+
+    // Buffer log in session history
+    session?.logs.push({
+      level,
+      message: formattedLog,
+      timestamp: now.toISOString(),
+    });
 
     // 1. WebSocket broadcast
     wsManager.emitTerminalLog(sessionId, {
@@ -115,6 +130,8 @@ export class SPXAutomationService {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
@@ -122,6 +139,20 @@ export class SPXAutomationService {
 
     // Initial handshake ping
     res.write(`data: ${JSON.stringify({ type: 'CONNECTED', sessionId })}\n\n`);
+
+    // Immediately replay all previous logs so client NEVER misses any event
+    if (session.logs && session.logs.length > 0) {
+      session.logs.forEach((log) => {
+        res.write(`data: ${JSON.stringify({
+          sessionId,
+          level: log.level,
+          message: log.message,
+          percent: session.progressPercent,
+          stats: session.stats,
+          timestamp: log.timestamp,
+        })}\n\n`);
+      });
+    }
 
     res.on('close', () => {
       session.sseClients.delete(res);
@@ -167,6 +198,7 @@ export class SPXAutomationService {
         currentChapterIndex: 0,
         totalChapters: 0,
       },
+      logs: [],
       isStopping: false,
       sseClients: new Set(),
       createdAt: new Date(),
@@ -214,7 +246,7 @@ export class SPXAutomationService {
   }
 
   /**
-   * Get current session public status
+   * Get current session public status including buffered logs
    */
   public getSessionState(sessionId: string) {
     const session = this.activeSessions.get(sessionId);
@@ -227,9 +259,24 @@ export class SPXAutomationService {
       progressPercent: session.progressPercent,
       chapters: session.chapters,
       stats: session.stats,
+      logs: session.logs,
+      errorMessage: session.errorMessage,
       createdAt: session.createdAt,
       lastActivityAt: session.lastActivityAt,
     };
+  }
+
+  /**
+   * Return recent logs from all active or recent sessions
+   */
+  public getAllRecentLogs(): Array<{ sessionId: string; studentId: string; logs: LogEntry[]; status: string; error?: string }> {
+    return Array.from(this.activeSessions.values()).map((s) => ({
+      sessionId: s.sessionId,
+      studentId: s.studentIdMasked,
+      status: s.status,
+      error: s.errorMessage,
+      logs: s.logs.slice(-30),
+    }));
   }
 
   /**
@@ -396,6 +443,7 @@ export class SPXAutomationService {
     } catch (err: any) {
       if (!session.isStopping) {
         session.status = 'ERROR';
+        session.errorMessage = err.message;
         this.emitLog(sessionId, 'error', `حدث خطأ أثناء تنفيذ الجلسة: ${err.message}`);
       }
     } finally {

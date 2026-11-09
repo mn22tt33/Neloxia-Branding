@@ -117,6 +117,19 @@ export class SPXAutomationController {
     const { sessionId } = req.params;
     spxAutomationService.subscribeSSE(sessionId, res);
   }
+
+  /**
+   * Get server logs and error history
+   */
+  public getServerLogs(req: Request, res: Response) {
+    const logs = spxAutomationService.getAllRecentLogs();
+    return res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      activeSessionsCount: logs.length,
+      data: { sessions: logs },
+    });
+  }
 }
 
 export const spxAutomationController = new SPXAutomationController();
