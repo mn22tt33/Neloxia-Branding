@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <!-- Background Glow -->
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+    
+    <!-- Top Facet (Cyan to Blue) -->
+    <linearGradient id="topFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <!-- Left Facet (Indigo to Deep Purple) -->
+    <linearGradient id="leftFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+
+    <!-- Right Facet (Emerald to Teal) -->
+    <linearGradient id="rightFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <!-- Inner Crystal Core (Diamond Gold/Cyan) -->
+    <linearGradient id="coreDiamond" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#a7f3d0"/>
+      <stop offset="100%" stop-color="#6ee7b7"/>
+    </linearGradient>
+
+    <filter id="dropGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Ambient Glow -->
+  <circle cx="50" cy="50" r="46" fill="url(#glow)" />
+
+  <!-- Outer Isometric Cube (QUREO / SPRIX inspired) -->
+  <g filter="url(#dropGlow)" transform="translate(0, 2)">
+    <!-- Top Face -->
+    <polygon points="50,14 82,32 50,50 18,32" fill="url(#topFacet)" stroke="#60a5fa" stroke-width="1.5" stroke-linejoin="round"/>
+    
+    <!-- Left Face -->
+    <polygon points="18,32 50,50 50,86 18,68" fill="url(#leftFacet)" stroke="#4f46e5" stroke-width="1.5" stroke-linejoin="round"/>
+    
+    <!-- Right Face -->
+    <polygon points="50,50 82,32 82,68 50,86" fill="url(#rightFacet)" stroke="#10b981" stroke-width="1.5" stroke-linejoin="round"/>
+    
+    <!-- Inner Glowing Diamond / Crystal Emblem (210 Diamonds symbol) -->
+    <polygon points="50,28 64,42 50,60 36,42" fill="url(#coreDiamond)" opacity="0.95" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+
+    <!-- Subtle Accent Highlights -->
+    <line x1="50" y1="28" x2="50" y2="60" stroke="#059669" stroke-width="1" stroke-opacity="0.4"/>
+    <line x1="36" y1="42" x2="64" y2="42" stroke="#059669" stroke-width="1" stroke-opacity="0.4"/>
+
+    <!-- Sparkle particles -->
+    <circle cx="26" cy="22" r="1.5" fill="#ffffff" opacity="0.8"/>
+    <circle cx="76" cy="20" r="2" fill="#38bdf8" opacity="0.9"/>
+    <circle cx="86" cy="54" r="1.5" fill="#34d399" opacity="0.85"/>
+  </g>
+</svg>

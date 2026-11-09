@@ -1,14 +1,15 @@
 /**
- * QUERO Solver - Standalone Frontend Controller
- * Self-contained without ES module dependencies (Compatible with file://, localhost, and static hosting)
+ * QureoSolver Frontend Controller
+ * Fully unified client compatible with Localhost & Railway Cloud Backend.
+ * Features: Turbo Mode, Pre-stored 418 Knowledge Bank, Human Emulation, SSE Stream, Audio Chime.
  */
 
-// Terminal UI Component
+// Terminal UI Widget
 class TerminalWidget {
   constructor(containerId, options = {}) {
     this.container = document.getElementById(containerId);
     this.autoScroll = true;
-    this.maxLines = options.maxLines || 500;
+    this.maxLines = options.maxLines || 600;
     this.lines = [];
   }
 
@@ -30,7 +31,6 @@ class TerminalWidget {
 
     const msgEl = document.createElement('span');
     msgEl.className = 'log-msg';
-    // Strip redundant bracketed timestamp if server sent one
     msgEl.textContent = message.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, '');
 
     lineEl.appendChild(timeEl);
@@ -67,21 +67,14 @@ class TerminalWidget {
     const text = this.lines.join('\n');
     navigator.clipboard.writeText(text);
   }
-
-  toggleAutoScroll() {
-    this.autoScroll = !this.autoScroll;
-    return this.autoScroll;
-  }
 }
 
-// Main Application Controller
+// Main QureoApp Controller
 class QureoApp {
   constructor() {
-    // Hosted Railway Backend URL is strictly primary and permanent
     const HOSTED_BACKEND_URL = 'https://neloxia-branding-production.up.railway.app';
-    this.defaultBackends = [HOSTED_BACKEND_URL];
-    this.backendUrl = HOSTED_BACKEND_URL;
-    localStorage.setItem('qureo_backend_url', HOSTED_BACKEND_URL);
+    const savedUrl = localStorage.getItem('qureo_backend_url');
+    this.backendUrl = savedUrl || HOSTED_BACKEND_URL;
 
     this.currentSessionId = null;
     this.eventSource = null;
@@ -89,22 +82,28 @@ class QureoApp {
     this.isSolving = false;
     this.renderedLogs = new Set();
 
-    // Initialize UI
     this.terminal = new TerminalWidget('terminal-body');
     this.initDOMElements();
     this.bindEvents();
-    
-    // Initial health check and backend discovery
-    this.discoverActiveBackend();
-    setInterval(() => this.checkBackendHealth(), 10000);
+    this.initGradeSelector();
+
+    this.checkBackendHealth();
+    setInterval(() => this.checkBackendHealth(), 12000);
   }
 
   initDOMElements() {
     this.studentIdInput = document.getElementById('student-id');
     this.passwordInput = document.getElementById('student-pass');
     this.togglePassBtn = document.getElementById('toggle-pass');
+    this.solverForm = document.getElementById('solver-form');
     this.startBtn = document.getElementById('start-btn');
+    this.btnFreeTrial = document.getElementById('btn-free-trial');
+    this.btnFullSolve = document.getElementById('btn-full-solve');
     this.stopBtn = document.getElementById('stop-btn');
+    this.stopContainer = document.getElementById('stop-container');
+
+    this.gradeSelect = document.getElementById('portalGrade');
+    this.courseSelect = document.getElementById('portalCourse');
 
     this.statusPill = document.getElementById('server-status-pill');
     this.statusText = document.getElementById('server-status-text');
@@ -116,20 +115,54 @@ class QureoApp {
     this.statRetrieved = document.getElementById('stat-retrieved');
 
     this.chaptersGrid = document.getElementById('chapters-grid');
+    this.chaptersCountBadge = document.getElementById('chapters-count-badge');
 
     this.settingsBtn = document.getElementById('settings-btn');
     this.settingsModal = document.getElementById('settings-modal');
     this.backendUrlInput = document.getElementById('backend-url-input');
     this.saveSettingsBtn = document.getElementById('save-settings-btn');
     this.closeSettingsBtn = document.getElementById('close-settings-btn');
+    this.presetRailwayBtn = document.getElementById('preset-railway');
+    this.presetLocalBtn = document.getElementById('preset-local');
 
     this.clearTermBtn = document.getElementById('clear-term-btn');
     this.copyTermBtn = document.getElementById('copy-term-btn');
-    this.scrollTermBtn = document.getElementById('scroll-term-btn');
+
+    this.celebrationModal = document.getElementById('celebration-modal');
+    this.closeCelebrationBtn = document.getElementById('close-celebration-btn');
 
     if (this.backendUrlInput) {
       this.backendUrlInput.value = this.backendUrl;
     }
+  }
+
+  initGradeSelector() {
+    if (!this.gradeSelect || !this.courseSelect) return;
+
+    const coursesByGrade = {
+      g10: [
+        { id: 'javascript_ar', name: '🔷 كيريو - البرمجة جافاسكريبت (42 فصلاً - 210 💎)' }
+      ],
+      g11: [
+        { id: 'financial_literacy', name: '🔶 سبريكس - التثقيف المالي (6 وحدات كاملة)' },
+        { id: 'python_short_en', name: '🟢 كيريو - البرمجة بايثون (10 فصول)' }
+      ]
+    };
+
+    const updateCourses = () => {
+      const selectedGrade = this.gradeSelect.value;
+      const courses = coursesByGrade[selectedGrade] || coursesByGrade.g10;
+      this.courseSelect.innerHTML = '';
+      courses.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        this.courseSelect.appendChild(opt);
+      });
+    };
+
+    this.gradeSelect.addEventListener('change', updateCourses);
+    updateCourses();
   }
 
   bindEvents() {
@@ -138,34 +171,37 @@ class QureoApp {
       e.preventDefault();
       const type = this.passwordInput.type === 'password' ? 'text' : 'password';
       this.passwordInput.type = type;
-      this.togglePassBtn.innerHTML = type === 'password'
-        ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`
-        : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>`;
+      this.togglePassBtn.textContent = type === 'password' ? '👁️' : '🙈';
     });
 
-    // Start Session
-    this.startBtn?.addEventListener('click', (e) => {
+    // Form submit
+    this.solverForm?.addEventListener('submit', (e) => {
       e.preventDefault();
-      this.handleStartSession();
+      this.handleStartSession(10);
     });
 
-    // Stop Session
-    this.stopBtn?.addEventListener('click', (e) => {
-      e.preventDefault();
+    // Free trial CTA
+    this.btnFreeTrial?.addEventListener('click', () => {
+      this.handleStartSession(10);
+    });
+
+    // Full solve CTA
+    this.btnFullSolve?.addEventListener('click', () => {
+      this.handleStartSession(42);
+    });
+
+    // Stop button
+    this.stopBtn?.addEventListener('click', () => {
       this.handleStopSession();
     });
 
-    // Terminal Actions
+    // Clear and Copy Terminal
     this.clearTermBtn?.addEventListener('click', () => this.terminal.clear());
     this.copyTermBtn?.addEventListener('click', () => {
       this.terminal.copyAll();
-      const original = this.copyTermBtn.textContent;
-      this.copyTermBtn.textContent = 'تم النسخ!';
-      setTimeout(() => { this.copyTermBtn.textContent = original; }, 2000);
-    });
-    this.scrollTermBtn?.addEventListener('click', () => {
-      const active = this.terminal.toggleAutoScroll();
-      this.scrollTermBtn.style.color = active ? 'var(--primary)' : 'var(--text-dim)';
+      const orig = this.copyTermBtn.textContent;
+      this.copyTermBtn.textContent = 'تم النسخ ✓';
+      setTimeout(() => (this.copyTermBtn.textContent = orig), 1500);
     });
 
     // Settings Modal
@@ -173,15 +209,19 @@ class QureoApp {
       this.backendUrlInput.value = this.backendUrl;
       this.settingsModal.classList.add('active');
     });
-    document.getElementById('set-railway-preset')?.addEventListener('click', () => {
-      this.backendUrlInput.value = 'https://neloxia-branding-production.up.railway.app';
-    });
-    document.getElementById('set-local-preset')?.addEventListener('click', () => {
-      this.backendUrlInput.value = 'http://localhost:4000';
-    });
+
     this.closeSettingsBtn?.addEventListener('click', () => {
       this.settingsModal.classList.remove('active');
     });
+
+    this.presetRailwayBtn?.addEventListener('click', () => {
+      this.backendUrlInput.value = 'https://neloxia-branding-production.up.railway.app';
+    });
+
+    this.presetLocalBtn?.addEventListener('click', () => {
+      this.backendUrlInput.value = 'http://localhost:4000';
+    });
+
     this.saveSettingsBtn?.addEventListener('click', () => {
       const url = this.backendUrlInput.value.trim().replace(/\/$/, '');
       if (url) {
@@ -193,63 +233,16 @@ class QureoApp {
       }
     });
 
-    // Enter key trigger on inputs
-    [this.studentIdInput, this.passwordInput].forEach(el => {
-      el?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          this.handleStartSession();
-        }
-      });
+    // Close Celebration Modal
+    this.closeCelebrationBtn?.addEventListener('click', () => {
+      this.celebrationModal.classList.remove('active');
     });
-  }
-
-  async discoverActiveBackend() {
-    this.statusPill.className = 'status-pill connecting';
-    this.statusText.textContent = 'جاري البحث عن الخادم...';
-
-    // Prioritize candidates based on environment
-    const candidates = [
-      this.backendUrl,
-      ...this.defaultBackends,
-    ];
-
-    const uniqueCandidates = Array.from(new Set(candidates));
-
-    for (const url of uniqueCandidates) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-        const res = await fetch(`${url}/api/v1/spx/health`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          this.backendUrl = url;
-          localStorage.setItem('qureo_backend_url', url);
-          this.setOnlineStatus(url);
-          this.terminal.log(`تم الاتصال بنجاح بخادم Backend: ${url}`, 'success');
-          return;
-        }
-      } catch (e) {
-        // Continue searching
-      }
-    }
-
-    this.statusPill.className = 'status-pill offline';
-    this.statusText.textContent = 'غير متصل بالسيرفر';
-    this.terminal.log('تنبيه: تعذر الاتصال التلقائي بالخادم. يرجى التأكد من تشغيل السيرفر أو فحص رابط الإعدادات ⚙️.', 'warn');
   }
 
   async checkBackendHealth() {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
 
       const res = await fetch(`${this.backendUrl}/api/v1/spx/health`, {
         method: 'GET',
@@ -260,71 +253,85 @@ class QureoApp {
       clearTimeout(timeoutId);
 
       if (res.ok) {
-        this.setOnlineStatus(this.backendUrl);
-      } else {
-        throw new Error('Not OK');
+        this.statusPill.className = 'status-pill online';
+        this.statusPill.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>الخادم متصل وجاهز</span>';
+        return true;
       }
-    } catch {
-      this.statusPill.className = 'status-pill offline';
-      this.statusText.textContent = 'غير متصل بالسيرفر';
+    } catch (_) {}
+
+    this.statusPill.className = 'status-pill offline';
+    this.statusPill.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> <span>تعذر الاتصال بالخادم</span>';
+    return false;
+  }
+
+  sanitizeCredential(str, isId = false) {
+    if (!str) return '';
+    const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    let clean = String(str)
+      .replace(/[٠-٩]/g, d => arabicNumerals.indexOf(d))
+      .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF\u00A0\u3000\u0000-\u001F]/g, '')
+      .trim();
+    if (isId) {
+      clean = clean.replace(/\s+/g, '');
     }
+    return clean;
   }
 
-  setOnlineStatus(url) {
-    this.statusPill.className = 'status-pill online';
-    const isRailway = url.includes('railway');
-    this.statusText.textContent = isRailway ? 'متصل بالسيرفر (Railway ⚡)' : 'متصل بالسيرفر (محلي ⚡)';
-  }
+  async handleStartSession(maxLessons = 10) {
+    if (this.isSolving) return;
 
-  async handleStartSession() {
-    const studentId = this.studentIdInput.value.trim();
-    const password = this.passwordInput.value.trim();
+    const rawId = this.studentIdInput.value;
+    const rawPass = this.passwordInput.value;
+    const studentId = this.sanitizeCredential(rawId, true);
+    const password = this.sanitizeCredential(rawPass, false);
 
-    if (!studentId) {
-      this.studentIdInput.focus();
-      this.terminal.log('يرجى كتابة كود الطالب أولاً.', 'warn');
+    if (!studentId || !password) {
+      this.terminal.log('تنبيه: يرجى إدخال كود الطالب وكلمة المرور.', 'warn');
       return;
     }
 
-    if (!password) {
-      this.passwordInput.focus();
-      this.terminal.log('يرجى كتابة كلمة المرور للمتابعة.', 'warn');
-      return;
-    }
+    const selectedMode = document.querySelector('input[name="solveMode"]:checked')?.value || 'turbo';
+    const grade = this.gradeSelect?.value || 'g10';
+    const course = this.courseSelect?.value || 'javascript_ar';
 
-    this.setSolvingState(true);
-    this.renderedLogs.clear();
-    this.terminal.clear();
-    this.terminal.log(`جاري إرسال طلب إنشاء جلسة معزولة للطالب (${studentId.substring(0, 3)}***)...`, 'info');
+    this.isSolving = true;
+    this.startBtn.disabled = true;
+    this.btnFreeTrial.disabled = true;
+    this.btnFullSolve.disabled = true;
+    this.stopContainer.classList.remove('hidden');
+
+    this.terminal.log(`جاري إرسال طلب بدء الحل للطالب (${studentId.substring(0, 3)}***) [النمط: ${selectedMode === 'turbo' ? '⚡ Turbo Mode' : '👤 Stealth Browser'}]...`, 'info');
 
     try {
       const res = await fetch(`${this.backendUrl}/api/v1/spx/start`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ studentId, password }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId,
+          password,
+          maxLessons,
+          grade,
+          course,
+          mode: selectedMode,
+        }),
       });
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.message || 'فشل بدء الجلسة في السيرفر');
+        throw new Error(data.message || 'فشل إنشاء جلسة الطالب');
       }
 
       this.currentSessionId = data.data.sessionId;
       this.terminal.log(`تم إنشاء جلسة الطالب بنجاح! Session ID: ${this.currentSessionId.substring(0, 8)}...`, 'success');
 
-      // Erase password from UI for student privacy
-      this.passwordInput.value = '';
-
-      // Connect to Live SSE stream
+      // Start SSE Live Stream & Polling fallback
       this.connectSSEStream(this.currentSessionId);
+      this.startPolling(this.currentSessionId);
 
     } catch (err) {
-      this.terminal.log(`خطأ في تشغيل الجلسة: ${err.message}`, 'error');
-      this.setSolvingState(false);
+      this.terminal.log(`فشل بدء الجلسة: ${err.message}`, 'error');
+      this.resetSolvingState();
     }
   }
 
@@ -333,218 +340,194 @@ class QureoApp {
       this.eventSource.close();
     }
 
-    const sseUrl = `${this.backendUrl}/api/v1/spx/stream/${sessionId}`;
-    this.eventSource = new EventSource(sseUrl);
+    try {
+      this.eventSource = new EventSource(`${this.backendUrl}/api/v1/spx/stream/${sessionId}`);
 
-    this.eventSource.onopen = () => {
-      this.terminal.log('تم تأسيس قناة البث المباشر (SSE Live Stream) بنجاح.', 'info');
-    };
+      this.eventSource.onopen = () => {
+        this.terminal.log('تم تأسيس قناة البث المباشر (SSE Live Stream) بنجاح.', 'info');
+      };
 
-    this.eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === 'CONNECTED') return;
+      this.eventSource.onmessage = (event) => {
+        try {
+          const packet = JSON.parse(event.data);
+          this.handleLivePacket(packet);
+        } catch (_) {}
+      };
 
-        // Terminal Log
-        if (payload.message && !this.renderedLogs.has(payload.message)) {
-          this.renderedLogs.add(payload.message);
-          this.terminal.log(payload.message, payload.level || 'info');
-        }
-
-        // Progress Update
-        if (payload.percent !== undefined) {
-          this.updateProgress(payload.percent);
-        }
-
-        // Stats Update
-        if (payload.stats) {
-          this.updateStats(payload.stats);
-        }
-
-        // Session Finished
-        if (payload.level === 'success' && payload.message.includes('تهانينا')) {
-          this.setSolvingState(false);
-          this.updateProgress(100);
-        }
-      } catch (e) {
-        console.error('SSE Error', e);
-      }
-    };
-
-    this.eventSource.onerror = () => {
-      // Fallback: Immediate Status Polling
-      this.pollSessionStatus(sessionId);
-    };
-
-    // Periodic polling to update chapters grid and retrieve buffered server logs
-    clearInterval(this.pollInterval);
-    this.pollInterval = setInterval(() => {
-      if (this.isSolving) {
-        this.pollSessionStatus(sessionId);
-      }
-    }, 1500); // Fast 1.5s polling
+      this.eventSource.onerror = () => {
+        this.eventSource.close();
+      };
+    } catch (_) {}
   }
 
-  async pollSessionStatus(sessionId) {
-    try {
-      const res = await fetch(`${this.backendUrl}/api/v1/spx/status/${sessionId}`);
-      if (!res.ok) return;
+  startPolling(sessionId) {
+    if (this.pollInterval) clearInterval(this.pollInterval);
 
-      const data = await res.json();
-      const session = data.data?.session;
+    this.pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`${this.backendUrl}/api/v1/spx/status/${sessionId}`);
+        if (!res.ok) return;
 
-      if (session) {
-        // Replay any server logs that were buffered
-        if (Array.isArray(session.logs)) {
-          session.logs.forEach((log) => {
-            if (!this.renderedLogs.has(log.message)) {
-              this.renderedLogs.add(log.message);
-              this.terminal.log(log.message, log.level || 'info');
-            }
-          });
-        }
+        const data = await res.json();
+        if (data.success && data.data) {
+          this.handleLivePacket(data.data);
 
-        this.updateProgress(session.progressPercent);
-        this.updateStats(session.stats);
-        this.renderChapters(session.chapters);
-
-        if (session.status === 'ERROR') {
-          if (session.errorMessage) {
-            this.terminal.log(`[خطأ السيرفر]: ${session.errorMessage}`, 'error');
+          if (data.data.status === 'COMPLETED' || data.data.status === 'STOPPED' || data.data.status === 'ERROR') {
+            this.handleSessionEnded(data.data.status);
           }
-          this.setSolvingState(false);
-          if (this.eventSource) this.eventSource.close();
-          clearInterval(this.pollInterval);
-        } else if (session.status === 'COMPLETED' || session.status === 'STOPPED') {
-          this.setSolvingState(false);
-          if (this.eventSource) this.eventSource.close();
-          clearInterval(this.pollInterval);
+        }
+      } catch (_) {}
+    }, 2500);
+  }
+
+  handleLivePacket(packet) {
+    // Process logs
+    if (packet.logs && Array.isArray(packet.logs)) {
+      packet.logs.forEach((log) => {
+        const key = `${log.timestamp}_${log.message}`;
+        if (!this.renderedLogs.has(key)) {
+          this.renderedLogs.add(key);
+          this.terminal.log(log.message, log.level, log.timestamp);
+
+          // Update instant retrieval stat if mentioned
+          if (log.message.includes('استرجاع الإجابة الموثقة') || log.message.includes('0ms') || log.message.includes('Instant verified')) {
+            const current = parseInt(this.statRetrieved.textContent, 10) || 0;
+            this.statRetrieved.textContent = current + 1;
+          }
+        }
+      });
+    }
+
+    // Process progress
+    if (typeof packet.progressPercent === 'number') {
+      const pct = Math.min(100, Math.max(0, packet.progressPercent));
+      this.progressFill.style.width = `${pct}%`;
+      this.progressText.textContent = `${pct}%`;
+    }
+
+    // Process stats
+    if (packet.stats) {
+      if (packet.stats.totalChapters) {
+        this.statDetected.textContent = packet.stats.totalChapters;
+        if (this.chaptersCountBadge) {
+          this.chaptersCountBadge.textContent = `${packet.stats.totalChapters} عنصر`;
         }
       }
-    } catch {}
+    }
+
+    // Process chapter tree
+    if (packet.chapters && Array.isArray(packet.chapters) && packet.chapters.length > 0) {
+      this.renderChaptersGrid(packet.chapters);
+    }
+  }
+
+  renderChaptersGrid(chapters) {
+    if (!this.chaptersGrid) return;
+    this.chaptersGrid.innerHTML = '';
+
+    chapters.forEach((item, index) => {
+      const el = document.createElement('div');
+      const isDone = item.isCompleted || item.status === 'COMPLETED';
+      const isActive = item.status === 'ACTIVE' || item.status === 'SOLVING';
+
+      el.className = `p-3 rounded-2xl border flex items-center justify-between transition-all ${
+        isDone
+          ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+          : isActive
+          ? 'bg-blue-950/30 border-blue-500/50 text-blue-200 animate-pulse'
+          : 'bg-slate-900/60 border-slate-800 text-slate-300'
+      }`;
+
+      el.innerHTML = `
+        <div class="flex items-center gap-2.5">
+          <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+            isDone ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+          }">
+            ${isDone ? '✓' : index + 1}
+          </span>
+          <div>
+            <div class="text-xs font-bold">${item.title || `نشاط #${index + 1}`}</div>
+            <div class="text-[10px] text-slate-400">${item.type || 'نشاط تعليمي'}</div>
+          </div>
+        </div>
+        <div class="text-xs font-mono font-bold">
+          <span class="text-amber-400">💎 ${isDone ? '5/5' : '0/5'}</span>
+        </div>
+      `;
+
+      this.chaptersGrid.appendChild(el);
+    });
+  }
+
+  handleSessionEnded(status) {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.eventSource) this.eventSource.close();
+
+    if (status === 'COMPLETED') {
+      this.progressFill.style.width = '100%';
+      this.progressText.textContent = '100%';
+      this.playCelebrationChime();
+      if (this.celebrationModal) {
+        this.celebrationModal.classList.add('active');
+      }
+    }
+
+    this.resetSolvingState();
   }
 
   async handleStopSession() {
     if (!this.currentSessionId) return;
 
-    this.terminal.log('جاري إرسال أمر إيقاف الجلسة وعزل المتصفح...', 'warn');
-    this.stopBtn.disabled = true;
+    this.terminal.log('جاري إرسال طلب إيقاف الجلسة وعزل الموارد...', 'warn');
 
     try {
-      const res = await fetch(`${this.backendUrl}/api/v1/spx/stop`, {
+      await fetch(`${this.backendUrl}/api/v1/spx/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: this.currentSessionId }),
       });
+      this.terminal.log('تم إيقاف الجلسة بنجاح.', 'info');
+    } catch (_) {}
 
-      const data = await res.json();
-      if (data.success) {
-        this.terminal.log('تم إيقاف الجلسة بنجاح وعزل الموارد.', 'info');
-      }
-    } catch (err) {
-      this.terminal.log(`خطأ أثناء إيقاف الجلسة: ${err.message}`, 'error');
-    } finally {
-      this.setSolvingState(false);
-      if (this.eventSource) this.eventSource.close();
-      clearInterval(this.pollInterval);
-    }
+    this.handleSessionEnded('STOPPED');
   }
 
-  setSolvingState(isSolving) {
-    this.isSolving = isSolving;
-    if (this.startBtn) this.startBtn.disabled = isSolving;
-    if (this.stopBtn) this.stopBtn.disabled = !isSolving;
-    if (this.studentIdInput) this.studentIdInput.disabled = isSolving;
-    if (this.passwordInput) this.passwordInput.disabled = isSolving;
-
-    if (isSolving) {
-      this.startBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;">
-          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
-          <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
-        </svg>
-        <span>جارٍ الحل التلقائي...</span>
-      `;
-    } else {
-      this.startBtn.innerHTML = `
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
-        <span>بدء الحل الذكي ⚡</span>
-      `;
-    }
+  resetSolvingState() {
+    this.isSolving = false;
+    this.startBtn.disabled = false;
+    this.btnFreeTrial.disabled = false;
+    this.btnFullSolve.disabled = false;
+    this.stopContainer.classList.add('hidden');
+    this.currentSessionId = null;
   }
 
-  updateProgress(percent) {
-    const val = Math.min(100, Math.max(0, Math.round(percent)));
-    if (this.progressFill) this.progressFill.style.width = `${val}%`;
-    if (this.progressText) this.progressText.textContent = `${val}%`;
-  }
+  // Synthesizes a glorious celebration fanfare using native Web Audio API (Zero external MP3 dependencies)
+  playCelebrationChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
 
-  updateStats(stats) {
-    if (!stats) return;
-    if (this.statDetected) this.statDetected.textContent = stats.detectedQuestions ?? 0;
-    if (this.statSaved) this.statSaved.textContent = stats.savedToKnowledge ?? 0;
-    if (this.statRetrieved) this.statRetrieved.textContent = stats.retrievedFromMemory ?? 0;
-  }
-
-  renderChapters(chapters) {
-    if (!this.chaptersGrid || !Array.isArray(chapters)) return;
-    if (chapters.length === 0) return;
-
-    this.chaptersGrid.innerHTML = '';
-
-    chapters.forEach((ch) => {
-      const card = document.createElement('div');
-      card.className = 'chapter-card';
-
-      let badgeClass = 'badge-pending';
-      let badgeLabel = 'في الانتظار';
-
-      switch (ch.status) {
-        case 'EXPLORING':
-          badgeClass = 'badge-exploring';
-          badgeLabel = 'جارٍ الاستكشاف';
-          break;
-        case 'SOLVING':
-          badgeClass = 'badge-solving';
-          badgeLabel = 'جارٍ معالجة الأسئلة';
-          break;
-        case 'REVIEW':
-          badgeClass = 'badge-review';
-          badgeLabel = 'يحتاج مراجعة';
-          break;
-        case 'COMPLETED':
-          badgeClass = 'badge-completed';
-          badgeLabel = 'مكتمل ✓';
-          break;
-        case 'ERROR':
-          badgeClass = 'badge-error';
-          badgeLabel = 'حدث خطأ';
-          break;
-      }
-
-      card.innerHTML = `
-        <div class="chapter-info">
-          <span class="chapter-title">${ch.title}</span>
-          <span class="chapter-unit">${ch.unitName || 'الوحدة الدراسية'}</span>
-        </div>
-        <span class="badge ${badgeClass}">${badgeLabel}</span>
-      `;
-
-      this.chaptersGrid.appendChild(card);
-    });
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
+        gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + idx * 0.12 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.38);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.12);
+        osc.stop(ctx.currentTime + idx * 0.12 + 0.42);
+      });
+    } catch (_) {}
   }
 }
 
-// Add CSS keyframes for loading spinner
-const styleEl = document.createElement('style');
-styleEl.textContent = `@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
-document.head.appendChild(styleEl);
-
-// Launch on load
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => { window.qureoApp = new QureoApp(); });
-} else {
+// Initialize on DOM Ready
+document.addEventListener('DOMContentLoaded', () => {
   window.qureoApp = new QureoApp();
-}
+});
