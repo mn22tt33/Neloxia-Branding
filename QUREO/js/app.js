@@ -1,7 +1,6 @@
 /**
- * QureoSolver Frontend Controller
- * Fully unified client compatible with Localhost & Railway Cloud Backend.
- * Features: Turbo Mode, Pre-stored 418 Knowledge Bank, Human Emulation, SSE Stream, Audio Chime.
+ * QureoSolver - Clean, Easy, and Professional Controller
+ * Local-First Engine running directly on Port 4000
  */
 
 // Terminal UI Widget
@@ -39,17 +38,17 @@ class TerminalWidget {
     this.container.appendChild(lineEl);
     this.lines.push(`[${time}] ${msgEl.textContent}`);
 
-    // Re-append cursor
-    const cursor = document.createElement('span');
-    cursor.className = 'cursor-blink';
-    this.container.appendChild(cursor);
-
     // Limit buffer
     if (this.lines.length > this.maxLines) {
       this.lines.shift();
       const firstLine = this.container.querySelector('.log-line');
       if (firstLine) firstLine.remove();
     }
+
+    // Re-append cursor
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor-blink';
+    this.container.appendChild(cursor);
 
     if (this.autoScroll) {
       this.container.scrollTop = this.container.scrollHeight;
@@ -72,9 +71,17 @@ class TerminalWidget {
 // Main QureoApp Controller
 class QureoApp {
   constructor() {
-    const HOSTED_BACKEND_URL = 'https://neloxia-branding-production.up.railway.app';
+    // Strictly Localhost Port 4000 as default
+    const LOCAL_BACKEND = 'http://localhost:4000';
     const savedUrl = localStorage.getItem('qureo_backend_url');
-    this.backendUrl = savedUrl || HOSTED_BACKEND_URL;
+    
+    // If savedUrl was pointing to railway, reset it to local to ensure zero CloudFront blocks
+    if (!savedUrl || savedUrl.includes('railway')) {
+      this.backendUrl = LOCAL_BACKEND;
+      localStorage.setItem('qureo_backend_url', LOCAL_BACKEND);
+    } else {
+      this.backendUrl = savedUrl;
+    }
 
     this.currentSessionId = null;
     this.eventSource = null;
@@ -88,7 +95,7 @@ class QureoApp {
     this.initGradeSelector();
 
     this.checkBackendHealth();
-    setInterval(() => this.checkBackendHealth(), 12000);
+    setInterval(() => this.checkBackendHealth(), 10000);
   }
 
   initDOMElements() {
@@ -97,10 +104,7 @@ class QureoApp {
     this.togglePassBtn = document.getElementById('toggle-pass');
     this.solverForm = document.getElementById('solver-form');
     this.startBtn = document.getElementById('start-btn');
-    this.btnFreeTrial = document.getElementById('btn-free-trial');
-    this.btnFullSolve = document.getElementById('btn-full-solve');
     this.stopBtn = document.getElementById('stop-btn');
-    this.stopContainer = document.getElementById('stop-container');
 
     this.gradeSelect = document.getElementById('portalGrade');
     this.courseSelect = document.getElementById('portalCourse');
@@ -111,7 +115,7 @@ class QureoApp {
     this.progressText = document.getElementById('progress-text');
 
     this.statDetected = document.getElementById('stat-detected');
-    this.statSaved = document.getElementById('stat-saved');
+    this.statDiamonds = document.getElementById('stat-diamonds');
     this.statRetrieved = document.getElementById('stat-retrieved');
 
     this.chaptersGrid = document.getElementById('chapters-grid');
@@ -122,14 +126,11 @@ class QureoApp {
     this.backendUrlInput = document.getElementById('backend-url-input');
     this.saveSettingsBtn = document.getElementById('save-settings-btn');
     this.closeSettingsBtn = document.getElementById('close-settings-btn');
-    this.presetRailwayBtn = document.getElementById('preset-railway');
     this.presetLocalBtn = document.getElementById('preset-local');
+    this.presetRailwayBtn = document.getElementById('preset-railway');
 
     this.clearTermBtn = document.getElementById('clear-term-btn');
     this.copyTermBtn = document.getElementById('copy-term-btn');
-
-    this.celebrationModal = document.getElementById('celebration-modal');
-    this.closeCelebrationBtn = document.getElementById('close-celebration-btn');
 
     if (this.backendUrlInput) {
       this.backendUrlInput.value = this.backendUrl;
@@ -141,11 +142,11 @@ class QureoApp {
 
     const coursesByGrade = {
       g10: [
-        { id: 'javascript_ar', name: '🔷 كيريو - البرمجة جافاسكريبت (42 فصلاً - 210 💎)' }
+        { id: 'javascript_ar', name: '🔷 كيريو جافاسكريبت (210 💎)' }
       ],
       g11: [
-        { id: 'financial_literacy', name: '🔶 سبريكس - التثقيف المالي (6 وحدات كاملة)' },
-        { id: 'python_short_en', name: '🟢 كيريو - البرمجة بايثون (10 فصول)' }
+        { id: 'financial_literacy', name: '🔶 سبريكس — الثقافة المالية (6 وحدات)' },
+        { id: 'python_short_en', name: '🟢 كيريو — بايثون (10 فصول)' }
       ]
     };
 
@@ -177,16 +178,6 @@ class QureoApp {
     // Form submit
     this.solverForm?.addEventListener('submit', (e) => {
       e.preventDefault();
-      this.handleStartSession(10);
-    });
-
-    // Free trial CTA
-    this.btnFreeTrial?.addEventListener('click', () => {
-      this.handleStartSession(10);
-    });
-
-    // Full solve CTA
-    this.btnFullSolve?.addEventListener('click', () => {
       this.handleStartSession(42);
     });
 
@@ -214,12 +205,12 @@ class QureoApp {
       this.settingsModal.classList.remove('active');
     });
 
-    this.presetRailwayBtn?.addEventListener('click', () => {
-      this.backendUrlInput.value = 'https://neloxia-branding-production.up.railway.app';
-    });
-
     this.presetLocalBtn?.addEventListener('click', () => {
       this.backendUrlInput.value = 'http://localhost:4000';
+    });
+
+    this.presetRailwayBtn?.addEventListener('click', () => {
+      this.backendUrlInput.value = 'https://neloxia-branding-production.up.railway.app';
     });
 
     this.saveSettingsBtn?.addEventListener('click', () => {
@@ -232,17 +223,12 @@ class QureoApp {
         this.terminal.log(`تم تحديث خادم Backend إلى: ${url}`, 'info');
       }
     });
-
-    // Close Celebration Modal
-    this.closeCelebrationBtn?.addEventListener('click', () => {
-      this.celebrationModal.classList.remove('active');
-    });
   }
 
   async checkBackendHealth() {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
 
       const res = await fetch(`${this.backendUrl}/api/v1/spx/health`, {
         method: 'GET',
@@ -254,13 +240,14 @@ class QureoApp {
 
       if (res.ok) {
         this.statusPill.className = 'status-pill online';
-        this.statusPill.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>الخادم متصل وجاهز</span>';
+        const isLocal = this.backendUrl.includes('localhost');
+        this.statusPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>السيرفر متصل جاهز (${isLocal ? 'Port 4000' : 'سحابي'})</span>`;
         return true;
       }
     } catch (_) {}
 
     this.statusPill.className = 'status-pill offline';
-    this.statusPill.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> <span>تعذر الاتصال بالخادم</span>';
+    this.statusPill.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-400"></span> <span>تعذر الاتصال بالسيرفر</span>';
     return false;
   }
 
@@ -277,7 +264,7 @@ class QureoApp {
     return clean;
   }
 
-  async handleStartSession(maxLessons = 10) {
+  async handleStartSession(maxLessons = 42) {
     if (this.isSolving) return;
 
     const rawId = this.studentIdInput.value;
@@ -290,17 +277,15 @@ class QureoApp {
       return;
     }
 
-    const selectedMode = document.querySelector('input[name="solveMode"]:checked')?.value || 'turbo';
     const grade = this.gradeSelect?.value || 'g10';
     const course = this.courseSelect?.value || 'javascript_ar';
 
     this.isSolving = true;
     this.startBtn.disabled = true;
-    this.btnFreeTrial.disabled = true;
-    this.btnFullSolve.disabled = true;
-    this.stopContainer.classList.remove('hidden');
+    this.startBtn.classList.add('opacity-50');
+    this.stopBtn.classList.remove('hidden');
 
-    this.terminal.log(`جاري إرسال طلب بدء الحل للطالب (${studentId.substring(0, 3)}***) [النمط: ${selectedMode === 'turbo' ? '⚡ Turbo Mode' : '👤 Stealth Browser'}]...`, 'info');
+    this.terminal.log(`جاري إرسال طلب بدء الحل للطالب (${studentId.substring(0, 3)}***)...`, 'info');
 
     try {
       const res = await fetch(`${this.backendUrl}/api/v1/spx/start`, {
@@ -312,7 +297,6 @@ class QureoApp {
           maxLessons,
           grade,
           course,
-          mode: selectedMode,
         }),
       });
 
@@ -390,7 +374,7 @@ class QureoApp {
           this.terminal.log(log.message, log.level, log.timestamp);
 
           // Update instant retrieval stat if mentioned
-          if (log.message.includes('استرجاع الإجابة الموثقة') || log.message.includes('0ms') || log.message.includes('Instant verified')) {
+          if (log.message.includes('ذاكرة المعرفة') || log.message.includes('0ms') || log.message.includes('Instant verified')) {
             const current = parseInt(this.statRetrieved.textContent, 10) || 0;
             this.statRetrieved.textContent = current + 1;
           }
@@ -413,6 +397,10 @@ class QureoApp {
           this.chaptersCountBadge.textContent = `${packet.stats.totalChapters} عنصر`;
         }
       }
+      if (typeof packet.stats.currentChapterIndex === 'number') {
+        const currentDiamonds = Math.min(210, packet.stats.currentChapterIndex * 5);
+        this.statDiamonds.textContent = `${currentDiamonds} / 210 💎`;
+      }
     }
 
     // Process chapter tree
@@ -430,7 +418,7 @@ class QureoApp {
       const isDone = item.isCompleted || item.status === 'COMPLETED';
       const isActive = item.status === 'ACTIVE' || item.status === 'SOLVING';
 
-      el.className = `p-3 rounded-2xl border flex items-center justify-between transition-all ${
+      el.className = `p-2.5 rounded-xl border flex items-center justify-between transition-all ${
         isDone
           ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
           : isActive
@@ -439,15 +427,15 @@ class QureoApp {
       }`;
 
       el.innerHTML = `
-        <div class="flex items-center gap-2.5">
-          <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+        <div class="flex items-center gap-2">
+          <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
             isDone ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
           }">
             ${isDone ? '✓' : index + 1}
           </span>
           <div>
-            <div class="text-xs font-bold">${item.title || `نشاط #${index + 1}`}</div>
-            <div class="text-[10px] text-slate-400">${item.type || 'نشاط تعليمي'}</div>
+            <div class="text-xs font-bold leading-snug">${item.title || `نشاط #${index + 1}`}</div>
+            <div class="text-[9px] text-slate-400">${item.type || 'نشاط تعليمي'}</div>
           </div>
         </div>
         <div class="text-xs font-mono font-bold">
@@ -466,10 +454,7 @@ class QureoApp {
     if (status === 'COMPLETED') {
       this.progressFill.style.width = '100%';
       this.progressText.textContent = '100%';
-      this.playCelebrationChime();
-      if (this.celebrationModal) {
-        this.celebrationModal.classList.add('active');
-      }
+      this.terminal.log('🏆 تم الانتهاء بنجاح وحصد كافة الماسات بالكامل!', 'success');
     }
 
     this.resetSolvingState();
@@ -495,35 +480,9 @@ class QureoApp {
   resetSolvingState() {
     this.isSolving = false;
     this.startBtn.disabled = false;
-    this.btnFreeTrial.disabled = false;
-    this.btnFullSolve.disabled = false;
-    this.stopContainer.classList.add('hidden');
+    this.startBtn.classList.remove('opacity-50');
+    this.stopBtn.classList.add('hidden');
     this.currentSessionId = null;
-  }
-
-  // Synthesizes a glorious celebration fanfare using native Web Audio API (Zero external MP3 dependencies)
-  playCelebrationChime() {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') ctx.resume();
-
-      const notes = [523.25, 659.25, 783.99, 1046.50];
-      notes.forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
-        gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
-        gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + idx * 0.12 + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.38);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + idx * 0.12);
-        osc.stop(ctx.currentTime + idx * 0.12 + 0.42);
-      });
-    } catch (_) {}
   }
 }
 

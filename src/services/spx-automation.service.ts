@@ -296,7 +296,8 @@ export class SPXAutomationService {
     this.emitLog(sessionId, 'info', `تم إنشاء جلسة مستقلة للطالب (${session.studentIdMasked}).`);
 
     const isLinux = process.platform === 'linux';
-    const isHeadless = isLinux || config.browser.mode !== 'local' || process.env.NODE_ENV === 'production';
+    // On Windows local development, run headed to guarantee 100% CloudFront bypass
+    const isHeadless = isLinux ? true : (process.env.HEADLESS === 'true');
 
     // Launch Chromium with realistic browser flags & optional proxy support
     const browser = await chromium.launch({
@@ -442,9 +443,19 @@ export class SPXAutomationService {
       this.emitLog(sessionId, 'success', 'تم تسجيل الدخول بنجاح! جاري الانتقال إلى المنهج الدراسي...');
 
       // 2. Navigate to Curriculum
-      this.emitLog(sessionId, 'info', 'جاري الانتقال إلى المنهج الدراسي...');
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(3000);
+      const currentUrlAfterLogin = page.url();
+      if (currentUrlAfterLogin.includes('/curriculum')) {
+        this.emitLog(sessionId, 'info', 'تم الوصول للمنهج الدراسي مباشرة.');
+      } else {
+        this.emitLog(sessionId, 'info', 'جاري الانتقال إلى صفحة المنهج الدراسي...');
+        const target = currentUrlAfterLogin.includes('/subjects/') 
+          ? (currentUrlAfterLogin.endsWith('/curriculum') ? currentUrlAfterLogin : `${currentUrlAfterLogin.split('?')[0]}/curriculum`)
+          : targetUrl;
+        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(async () => {
+          await page.goto(target, { waitUntil: 'load', timeout: 20000 });
+        });
+      }
+      await page.waitForTimeout(2500);
 
       session.status = 'EXPLORING';
       session.progressPercent = 25;
