@@ -144,25 +144,49 @@ async function startCliSolver() {
   });
 
   const context = await browser.newContext({
-    viewport: isHeadless ? { width: 1280, height: 800 } : null,
+    viewport: { width: 1280, height: 800 },
     locale: 'ar-EG',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    timezoneId: 'Africa/Cairo',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    extraHTTPHeaders: {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
+      'upgrade-insecure-requests': '1',
+    }
   });
 
   const page = await context.newPage();
 
+  // Stealth script: prevent bot detection from CloudFront/WAF
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+
   try {
     // 1. LOGIN
     log('info', 'جاري الاتصال بصفحة الدخول: https://egy.app.spx-learning-square.com/login...');
-    await page.goto('https://egy.app.spx-learning-square.com/login', { waitUntil: 'load', timeout: 30000 });
+    let res = await page.goto('https://egy.app.spx-learning-square.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
     
-    // Wait for React hydration
-    await page.waitForSelector('#login-id', { timeout: 20000 });
+    // Check if CloudFront / WAF returned an error
+    const pageTitle = await page.title();
+    if (pageTitle.includes('ERROR') || (res && res.status() === 403)) {
+      log('warn', `تنبيه: استجابة CloudFront (${res ? res.status() : 403}). جاري إعادة المحاولة مع تجاوز الحماية...`);
+      await page.waitForTimeout(2000);
+      res = await page.goto('https://egy.app.spx-learning-square.com/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
+    }
+
+    log('info', `تم فتح الصفحة بنجاح (العنوان: ${await page.title()}). جاري فحص حقول الدخول...`);
+    
+    // Multi-selector fallback for login input (resilient across platforms)
+    const loginInput = page.locator('#login-id, input[name="loginId"], input[placeholder*="كود"], input[type="text"]').first();
+    await loginInput.waitFor({ state: 'visible', timeout: 25000 });
     log('info', 'تم تحميل نموذج الدخول. جاري كتابة كود الطالب وكلمة المرور...');
 
-    await page.fill('#login-id', studentId);
+    await loginInput.fill(studentId);
     await page.waitForTimeout(300);
-    await page.fill('#password', password);
+
+    const passInput = page.locator('#password, input[name="password"], input[type="password"]').first();
+    await passInput.fill(password);
     await page.waitForTimeout(500);
 
     const submitBtn = page.locator('button:has-text("Let\'s Go!"), button:has-text("يلا بينا!")').first();
@@ -351,6 +375,15 @@ async function startCliSolver() {
 
   } catch (error) {
     log('error', `حدث خطأ أثناء التنفيذ: ${error.message}`);
+    try {
+      if (page) {
+        const currentUrl = page.url();
+        const currentTitle = await page.title();
+        log('warn', `تفاصيل الصفحة الحالية: [${currentTitle}] - رابط: ${currentUrl}`);
+        const bodySnippet = await page.evaluate(() => document.body ? document.body.innerText.substring(0, 200).replace(/\n+/g, ' ') : '');
+        if (bodySnippet) log('warn', `مقتطف من الصفحة: ${bodySnippet}`);
+      }
+    } catch (_) {}
     console.error(error);
   } finally {
     log('info', 'جاري إغلاق المتصفح...');
