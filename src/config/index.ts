@@ -29,6 +29,12 @@ export const config = {
     baseUrl: process.env.AI_BASE_URL || '',
   },
 
+  proxy: {
+    server: process.env.PROXY_URL || process.env.HTTP_PROXY || '',
+    username: process.env.PROXY_USERNAME || '',
+    password: process.env.PROXY_PASSWORD || '',
+  },
+
   browser: {
     mode: (process.env.BROWSER_MODE || 'local').toLowerCase() as 'local' | 'production',
     spxBaseUrl: process.env.SPX_BASE_URL || 'https://egy.app.spx-learning-square.com/',

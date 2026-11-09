@@ -298,35 +298,64 @@ export class SPXAutomationService {
     const isLinux = process.platform === 'linux';
     const isHeadless = isLinux || config.browser.mode !== 'local' || process.env.NODE_ENV === 'production';
 
-    // Launch Chromium with stealth flags to prevent bot detection
+    // Launch Chromium with realistic browser flags & optional proxy support
     const browser = await chromium.launch({
       headless: isHeadless,
+      proxy: config.proxy?.server
+        ? {
+            server: config.proxy.server,
+            username: config.proxy.username || undefined,
+            password: config.proxy.password || undefined,
+          }
+        : undefined,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
         '--no-first-run',
         '--no-default-browser-check',
+        '--window-size=1366,768',
       ],
     });
 
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 850 },
+      viewport: { width: 1366, height: 768 },
       userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
       locale: 'ar-EG',
+      timezoneId: 'Africa/Cairo',
+      geolocation: { longitude: 31.2357, latitude: 30.0444 },
+      permissions: ['geolocation'],
       extraHTTPHeaders: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Upgrade-Insecure-Requests': '1',
+        'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'sec-fetch-user': '?1',
       },
     });
 
-    // Remove navigator.webdriver automation flag
+    // Deep stealth injections to emulate authentic human Chrome session
     await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => undefined,
-      });
+      // Overwrite navigator.webdriver
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      // Chrome runtime mock
+      (window as any).chrome = { runtime: {}, loadTimes: () => ({}), csi: () => ({}), app: {} };
+      // Real languages array
+      Object.defineProperty(navigator, 'languages', { get: () => ['ar-EG', 'ar', 'en-US', 'en'] });
+      // Hardware concurrency
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+      // Real plugins mock
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
     });
 
     const page = await context.newPage();
@@ -336,7 +365,7 @@ export class SPXAutomationService {
 
     try {
       // 1. Direct navigation to login page
-      this.emitLog(sessionId, 'info', 'جاري فتح منصة SPX Learning Square...');
+      this.emitLog(sessionId, 'info', 'جاري فتح منصة SPX Learning Square بمحاكاة متصفح بشري...');
       const loginUrl = 'https://egy.app.spx-learning-square.com/login';
       
       await page.goto(loginUrl, {
@@ -347,10 +376,20 @@ export class SPXAutomationService {
         await page.goto(loginUrl, { waitUntil: 'load', timeout: 20000 });
       });
 
-      await page.waitForTimeout(2000);
+      await this.naturalWait(1500, 2500);
 
       const currentUrl = page.url();
       const pageTitle = await page.title().catch(() => '');
+      const bodySnippet = await page.evaluate(() => document.body.innerText.substring(0, 300)).catch(() => '');
+
+      // Check for AWS CloudFront 403 block
+      if (pageTitle.includes('ERROR: The request could not be satisfied') || bodySnippet.includes('403 ERROR')) {
+        this.emitLog(
+          sessionId,
+          'warn',
+          'تنبيه: جدار حماية CloudFront للمنصة حظر عنوان السيرفر السحابي. يُنصح بالتشغيل المحلي أو إضافة بروكسي سكني.'
+        );
+      }
 
       // Check if already authenticated (e.g. redirected to dashboard/curriculum)
       if (currentUrl.includes('/dashboard') || currentUrl.includes('/curriculum') || currentUrl.includes('/subjects')) {
@@ -361,27 +400,28 @@ export class SPXAutomationService {
         const hasLoginInput = await idField.isVisible({ timeout: 10000 }).catch(() => false);
 
         if (!hasLoginInput) {
-          const bodySnippet = await page.evaluate(() => document.body.innerText.substring(0, 200)).catch(() => '');
           this.emitLog(
             sessionId,
             'warn',
-            `تنبيه في صفحة الدخول: [العنوان: "${pageTitle}" | الرابط: ${currentUrl} | المحتوى: "${bodySnippet}"]`
+            `تنبيه في صفحة الدخول: [العنوان: "${pageTitle}" | الرابط: ${currentUrl} | المحتوى: "${bodySnippet.substring(0, 100)}"]`
           );
         }
 
-        this.emitLog(sessionId, 'info', 'تم الوصول إلى صفحة الدخول. جاري إدخال بيانات الطالب...');
-        await idField.fill(studentId);
+        this.emitLog(sessionId, 'info', 'تم الوصول إلى صفحة الدخول. جاري إدخال بيانات الطالب بحركة بشرية طبيعية...');
+        await this.humanType(page, idField, studentId);
 
         const passField = page.locator('#password, input[placeholder*="مرور"], input[type="password"]').first();
-        await passField.fill(password);
+        await this.humanType(page, passField, password);
 
         // Secure cleanup: erase password immediately from memory
         password = '';
 
+        await this.naturalWait(600, 1200);
+
         const submitBtn = page
           .locator('button:has-text("يلا بينا!"), button[type="submit"]:has-text("Let\'s Go!"), button[type="submit"]')
           .first();
-        await submitBtn.click();
+        await this.humanClick(page, submitBtn);
 
         // Wait for login redirection
         await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 20000 }).catch(async () => {
@@ -1017,21 +1057,18 @@ export class SPXAutomationService {
         }
       }
 
-      // Click selected option
+      // Human natural selection
       const selectedRadio = activeRadios.nth(targetOptionIndex);
-      const box = await selectedRadio.boundingBox();
-      if (box) {
-        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      } else {
-        await selectedRadio.click({ force: true });
-      }
-      await page.waitForTimeout(600);
+      await this.humanClick(page, selectedRadio);
+
+      // Natural student thinking pause before submitting
+      await this.naturalWait(1200, 2200);
 
       // Click "راجع إجابتي"
       const submitBtn = page.locator('button:has-text("راجع إجابتي")').last();
       if (await submitBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await submitBtn.click();
-        await page.waitForTimeout(1500);
+        await this.humanClick(page, submitBtn);
+        await this.naturalWait(1200, 1800);
       }
 
       // Verify platform response feedback
@@ -1112,9 +1149,66 @@ export class SPXAutomationService {
     // Complete module
     const completeBtn = page.locator('button:has-text("إكمال"), button:has-text("تمام")').first();
     if (await completeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await completeBtn.click();
-      await page.waitForTimeout(2000);
+      await this.humanClick(page, completeBtn);
+      await this.naturalWait(1500, 2500);
     }
+  }
+
+  /**
+   * Human Emulation: Natural keystroke typing with human speed variance
+   */
+  private async humanType(page: Page, locator: any, text: string) {
+    try {
+      await locator.click();
+      await this.naturalWait(150, 300);
+      await locator.fill('');
+      await page.waitForTimeout(80);
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        await page.keyboard.type(char);
+        // Human typing cadence: 40ms - 110ms with occasional micro-pauses
+        const delay = Math.floor(40 + Math.random() * 70);
+        await page.waitForTimeout(delay);
+        if (Math.random() < 0.12) {
+          await this.naturalWait(120, 260);
+        }
+      }
+      await this.naturalWait(180, 350);
+    } catch {
+      await locator.fill(text).catch(() => {});
+    }
+  }
+
+  /**
+   * Human Emulation: Smooth mouse movement, realistic hover, and natural click
+   */
+  private async humanClick(page: Page, locator: any) {
+    try {
+      const box = await locator.boundingBox().catch(() => null);
+      if (box && box.width > 0 && box.height > 0) {
+        const targetX = box.x + box.width * (0.3 + Math.random() * 0.4);
+        const targetY = box.y + box.height * (0.3 + Math.random() * 0.4);
+        await page.mouse.move(targetX, targetY, { steps: 5 + Math.floor(Math.random() * 5) });
+        await this.naturalWait(100, 220);
+        await page.mouse.down();
+        await this.naturalWait(50, 95);
+        await page.mouse.up();
+      } else {
+        await locator.click({ force: true });
+      }
+    } catch {
+      await locator.click({ force: true }).catch(() => {});
+    }
+    await this.naturalWait(200, 400);
+  }
+
+  /**
+   * Human Emulation: Natural randomized pause between actions
+   */
+  private async naturalWait(minMs: number = 800, maxMs: number = 2000): Promise<void> {
+    const duration = Math.floor(minMs + Math.random() * (maxMs - minMs));
+    await new Promise((resolve) => setTimeout(resolve, duration));
   }
 }
 

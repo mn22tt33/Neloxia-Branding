@@ -247,7 +247,12 @@
         يمكنك تغيير رابط الـ API للسيرفر (مثلاً عند استضافة الموقع على استضافة خارجية مثل Vercel / Netlify والاتصال بـ Railway):
       </p>
 
-      <div class="form-group">
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <button type="button" id="set-railway-preset" class="btn-icon" style="flex: 1; font-size: 0.8rem; padding: 7px 10px; width: auto; border: 1px solid var(--border-cyan); border-radius: var(--radius-sm); color: var(--primary);">🌐 الاستضافة السحابية</button>
+        <button type="button" id="set-local-preset" class="btn-icon" style="flex: 1; font-size: 0.8rem; padding: 7px 10px; width: auto; border: 1px solid var(--border-dim); border-radius: var(--radius-sm); color: var(--text-dim);">💻 السيرفر المحلي</button>
+      </div>
+
+<div class="form-group">
         <label class="form-label" for="backend-url-input">رابط Backend API:</label>
         <input type="text" id="backend-url-input" class="form-input" placeholder="https://neloxia-branding-production.up.railway.app">
       </div>

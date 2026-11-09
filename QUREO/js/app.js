@@ -173,6 +173,12 @@ class QureoApp {
       this.backendUrlInput.value = this.backendUrl;
       this.settingsModal.classList.add('active');
     });
+    document.getElementById('set-railway-preset')?.addEventListener('click', () => {
+      this.backendUrlInput.value = 'https://neloxia-branding-production.up.railway.app';
+    });
+    document.getElementById('set-local-preset')?.addEventListener('click', () => {
+      this.backendUrlInput.value = 'http://localhost:4000';
+    });
     this.closeSettingsBtn?.addEventListener('click', () => {
       this.settingsModal.classList.remove('active');
     });
