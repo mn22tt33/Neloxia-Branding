@@ -545,13 +545,6 @@ class QureoApp {
       alert(`خطأ أثناء فحص الطلب: ${err.message}`);
     }
   }
-        this.connectSSEStream(this.currentSessionId);
-        this.startPolling(this.currentSessionId);
-      }
-    } catch (err) {
-      alert(`خطأ أثناء فحص الطلب: ${err.message}`);
-    }
-  }
 
   async handleStartSolver() {
     if (!this.currentOrder) {

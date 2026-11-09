@@ -384,14 +384,16 @@ export class SPXAutomationService {
       const loginUrl = 'https://egy.app.spx-learning-square.com/login';
       
       await page.goto(loginUrl, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'load',
         timeout: 30000,
       }).catch(async () => {
         // Fallback navigation if first attempt timed out
         await page.goto(loginUrl, { waitUntil: 'load', timeout: 20000 });
       });
 
-      await this.naturalWait(1500, 2500);
+      // Wait for React hydration to mount the login form
+      await page.waitForSelector('#login-id, input[type="text"]', { timeout: 15000 }).catch(() => {});
+      await this.naturalWait(800, 1500);
 
       const currentUrl = page.url();
       const pageTitle = await page.title().catch(() => '');
@@ -418,25 +420,29 @@ export class SPXAutomationService {
           this.emitLog(
             sessionId,
             'warn',
-            `تنبيه في صفحة الدخول: [العنوان: "${pageTitle}" | الرابط: ${currentUrl} | المحتوى: "${bodySnippet.substring(0, 100)}"]`
+            `تنبيه في صفحة الدخول: [العنوان: "${pageTitle}" | الرابط: ${currentUrl}]`
           );
         }
 
-        this.emitLog(sessionId, 'info', 'تم الوصول إلى صفحة الدخول. جاري إدخال بيانات الطالب بحركة بشرية طبيعية...');
-        await this.humanType(page, idField, studentId);
+        this.emitLog(sessionId, 'info', 'تم الوصول إلى صفحة الدخول. جاري إدخال بيانات الطالب...');
+        await page.fill('#login-id', studentId).catch(async () => {
+          await this.humanType(page, idField, studentId);
+        });
 
         const passField = page.locator('#password, input[placeholder*="مرور"], input[type="password"]').first();
-        await this.humanType(page, passField, password);
+        await page.fill('#password', password).catch(async () => {
+          await this.humanType(page, passField, password);
+        });
 
         // Secure cleanup: erase password immediately from memory
         password = '';
 
-        await this.naturalWait(600, 1200);
+        await this.naturalWait(500, 900);
 
         const submitBtn = page
-          .locator('button:has-text("يلا بينا!"), button[type="submit"]:has-text("Let\'s Go!"), button[type="submit"]')
+          .locator('button:has-text("Let\'s Go!"), button:has-text("يلا بينا!")')
           .first();
-        await this.humanClick(page, submitBtn);
+        await submitBtn.click();
 
         // Wait for login redirection
         await page.waitForURL((url) => !url.href.includes('/login'), { timeout: 20000 }).catch(async () => {
