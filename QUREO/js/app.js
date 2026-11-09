@@ -77,14 +77,14 @@ class TerminalWidget {
 // Main Application Controller
 class QureoApp {
   constructor() {
-    // Default candidate backends
-    this.defaultBackends = [
-      'https://neloxia-branding-production.up.railway.app',
-      'http://localhost:4000',
-    ];
+    // Default candidate backends - prioritize local server when running locally
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+    this.defaultBackends = isLocalhost 
+      ? ['http://localhost:4000', 'https://neloxia-branding-production.up.railway.app']
+      : ['https://neloxia-branding-production.up.railway.app', 'http://localhost:4000'];
 
     const savedUrl = localStorage.getItem('qureo_backend_url');
-    this.backendUrl = savedUrl || this.defaultBackends[0];
+    this.backendUrl = (isLocalhost && (!savedUrl || savedUrl.includes('railway'))) ? 'http://localhost:4000' : (savedUrl || this.defaultBackends[0]);
 
     this.currentSessionId = null;
     this.eventSource = null;
@@ -205,11 +205,10 @@ class QureoApp {
     this.statusPill.className = 'status-pill connecting';
     this.statusText.textContent = 'جاري البحث عن الخادم...';
 
-    // Prioritize saved url or Railway verified backend
+    // Prioritize candidates based on environment
     const candidates = [
       this.backendUrl,
-      'https://neloxia-branding-production.up.railway.app',
-      'http://localhost:4000',
+      ...this.defaultBackends,
     ];
 
     const uniqueCandidates = Array.from(new Set(candidates));

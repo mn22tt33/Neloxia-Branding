@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libnss3 \
     libatk-bridge2.0-0 \
+    libatk1.0-0 \
     libx11-xcb1 \
     libdrm2 \
     libxcomposite1 \
@@ -21,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpango-1.0-0 \
     libcups2 \
+    libxkbcommon0 \
+    libxkbcommon-x11-0 \
     fonts-liberation \
     procps \
     && rm -rf /var/lib/apt/lists/*
@@ -35,7 +38,7 @@ COPY prisma ./prisma/
 RUN npm ci
 
 # Install Playwright browser dependencies and chromium
-RUN npx playwright install chromium
+RUN npx playwright install --with-deps chromium
 
 # Copy application source code
 COPY . .
