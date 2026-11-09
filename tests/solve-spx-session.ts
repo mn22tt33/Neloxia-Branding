@@ -8,8 +8,8 @@ async function solveStudentSession() {
   console.log('====================================================');
 
   const spxUrl = 'https://egy.app.spx-learning-square.com/';
-  const loginId = '470777476';
-  const password = 'cR_fR_2C';
+  const loginId = process.env.SPX_STUDENT_ID || '';
+  const password = process.env.SPX_STUDENT_PASSWORD || '';
 
   console.log(`[1] Launching Chromium in Visible Mode (Headless: false) ...`);
   const browser = await chromium.launch({

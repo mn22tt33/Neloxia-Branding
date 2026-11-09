@@ -208,3 +208,70 @@ model AuditLog {
   @@index([action])
   @@map("audit_logs")
 }
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum AnswerSource {
+  AI_PROPOSED
+  PLATFORM_CONFIRMED
+  TEACHER_VERIFIED
+  STUDENT_FEEDBACK
+  HUMAN_REVIEW
+}
+
+model QuestionKnowledge {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  questionHash       String                  @unique @map("question_hash") @db.VarChar(64)
+  normalizedText     String                  @map("normalized_text") @db.Text
+  rawQuestionText    String                  @map("raw_question_text") @db.Text
+  questionType       QuestionType            @default(MULTIPLE_CHOICE) @map("question_type")
+  options            Json                    @db.JsonB
+  normalizedOptions  Json                    @map("normalized_options") @db.JsonB
+  
+  proposedAnswer     String?                 @map("proposed_answer") @db.Text
+  verifiedAnswer     String?                 @map("verified_answer") @db.Text
+  explanation        String?                 @db.Text
+  
+  platformName       String?                 @map("platform_name") @db.VarChar(150)
+  subjectName        String?                 @map("subject_name") @db.VarChar(150)
+  lessonName         String?                 @map("lesson_name") @db.VarChar(150)
+  
+  source             AnswerSource            @default(AI_PROPOSED)
+  confidenceScore    Float                   @default(0.0) @map("confidence_score")
+  verificationStatus VerificationStatus      @default(PENDING) @map("verification_status")
+  
+  occurrenceCount    Int                     @default(1) @map("occurrence_count")
+  retrievalCount     Int                     @default(0) @map("retrieval_count")
+  lastSeenAt         DateTime                @default(now()) @map("last_seen_at")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  history            QuestionCorrectionLog[]
+
+  @@index([questionHash])
+  @@index([verificationStatus])
+  @@index([platformName])
+  @@index([subjectName, lessonName])
+  @@map("question_knowledge")
+}
+
+model QuestionCorrectionLog {
+  id                  String             @id @default(uuid()) @db.Uuid
+  questionKnowledgeId String             @map("question_knowledge_id") @db.Uuid
+  oldAnswer           String?            @map("old_answer") @db.Text
+  newAnswer           String             @map("new_answer") @db.Text
+  oldStatus           VerificationStatus @map("old_status")
+  newStatus           VerificationStatus @map("new_status")
+  source              AnswerSource       @map("source")
+  reason              String?            @db.Text
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  questionKnowledge   QuestionKnowledge  @relation(fields: [questionKnowledgeId], references: [id], onDelete: Cascade)
+
+  @@index([questionKnowledgeId])
+  @@map("question_correction_logs")
+}

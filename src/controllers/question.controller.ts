@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../database/prisma';
 import { aiService } from '../ai';
+import { smartAnswerService } from '../ai/smart-answer.service';
 import { browserService } from '../browser/service';
 import { wsManager } from '../websocket';
 import { logger } from '../utils/logger';
@@ -112,33 +113,53 @@ export class QuestionController {
         ? (question.extractedOptions as string[])
         : undefined;
 
-      const aiResult = await aiService.solveQuestion(
-        userId,
+      // Smart Retrieval: query knowledge memory first to avoid unnecessary AI calls
+      const answerResult = await smartAnswerService.getAnswer(
         {
           questionText: question.questionText,
           options,
-          imageData: question.questionImage || undefined,
+          platformName: (question.session as any)?.platform?.name,
         },
-        question.id
+        userId
       );
+
+      // Record suggested answer in database if not already recorded
+      try {
+        await prisma.suggestedAnswer.create({
+          data: {
+            questionId: question.id,
+            answerText: answerResult.answerText,
+            confidenceScore: answerResult.confidenceScore,
+            aiModel: answerResult.isVerified ? 'SmartAnswerMemory' : 'gemini-1.5-flash',
+          },
+        });
+      } catch (err: any) {
+        // Suggested answer creation might fail if DB disconnected or duplicate, non-fatal
+      }
 
       // Broadcast to WebSocket subscribers
       wsManager.emitAIAnswer(question.sessionId, {
         questionId: question.id,
-        answer: aiResult.answerText,
-        confidence: aiResult.confidenceScore,
-        model: aiResult.modelName,
+        answer: answerResult.answerText,
+        confidence: answerResult.confidenceScore,
+        model: answerResult.isVerified ? 'SmartAnswerMemory' : 'gemini-1.5-flash',
       });
 
       return res.json({
         success: true,
-        message: 'Question analyzed successfully',
+        message: answerResult.isVerified
+          ? 'Verified answer retrieved from knowledge memory'
+          : 'Question analyzed successfully by AI',
         data: {
           questionId: question.id,
-          answer: aiResult.answerText,
-          confidenceScore: aiResult.confidenceScore,
-          explanation: aiResult.explanation,
-          aiModel: aiResult.modelName,
+          answer: answerResult.answerText,
+          confidenceScore: answerResult.confidenceScore,
+          explanation: answerResult.explanation,
+          aiModel: answerResult.isVerified ? 'SmartAnswerMemory' : 'gemini-1.5-flash',
+          isVerified: answerResult.isVerified,
+          fromKnowledgeBase: answerResult.fromKnowledgeBase,
+          verificationStatus: answerResult.verificationStatus,
+          latencyMs: answerResult.latencyMs,
         },
       });
     } catch (err: any) {

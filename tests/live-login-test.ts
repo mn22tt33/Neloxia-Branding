@@ -7,7 +7,7 @@ async function testLiveLogin() {
 
   const spxUrl = 'https://egy.app.spx-learning-square.com/';
   const loginId = '463992881';
-  const password = 'H7?6mKhy';
+  const password = process.env.SPX_STUDENT_PASSWORD || '';
 
   console.log(`[1] Launching Chromium in Headed Mode (visible window) ...`);
   const browser = await chromium.launch({

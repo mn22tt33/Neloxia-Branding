@@ -16,8 +16,8 @@ async function listCurriculum() {
 
   try {
     await page.goto('https://egy.app.spx-learning-square.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.locator('#login-id').fill('470777476');
-    await page.locator('#password').fill('cR_fR_2C');
+    await page.locator('#login-id').fill(process.env.SPX_STUDENT_ID || '');
+    await page.locator('#password').fill(process.env.SPX_STUDENT_PASSWORD || '');
     await page.locator('button[type="submit"]:has-text("Let\'s Go!")').click();
 
     await page.waitForURL('**/dashboard', { timeout: 15000 });
@@ -33,7 +33,7 @@ async function listCurriculum() {
 
     // List all topics/lessons in the sidebar
     const items = await page.$$eval('button, a', els =>
-      els.filter(e => (e as HTMLElement).offsetParent !== null).map(e => e.textContent?.trim() || '').filter(t => t.length > 2 && !t.includes('470777476'))
+      els.filter(e => (e as HTMLElement).offsetParent !== null).map(e => e.textContent?.trim() || '').filter(t => t.length > 2 && !t.includes(process.env.SPX_STUDENT_ID || ''))
     );
 
     console.log('[+] Visible curriculum items in SPX:');

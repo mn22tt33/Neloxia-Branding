@@ -18,8 +18,8 @@ async function selectOptionDAndComplete() {
 
   try {
     await page.goto('https://egy.app.spx-learning-square.com/', { waitUntil: 'domcontentloaded' });
-    await page.locator('#login-id').fill('470777476');
-    await page.locator('#password').fill('cR_fR_2C');
+    await page.locator('#login-id').fill(process.env.SPX_STUDENT_ID || '');
+    await page.locator('#password').fill(process.env.SPX_STUDENT_PASSWORD || '');
     await page.locator('button[type="submit"]:has-text("Let\'s Go!")').click();
 
     await page.waitForURL('**/dashboard', { timeout: 15000 });

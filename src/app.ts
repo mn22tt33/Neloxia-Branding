@@ -12,6 +12,8 @@ import browserRoutes from './routes/browser.routes';
 import questionRoutes from './routes/question.routes';
 import aiRoutes from './routes/ai.routes';
 import logRoutes from './routes/log.routes';
+import learningRoutes from './routes/learning.routes';
+import spxAutomationRoutes from './routes/spx-automation.routes';
 import { logger } from './utils/logger';
 
 export function createApp(): Application {
@@ -25,13 +27,16 @@ export function createApp(): Application {
     })
   );
 
-  // CORS Configuration
+  // CORS Configuration - Permissive for dedicated static QUREO frontends & credentials
   app.use(
     cors({
-      origin: [config.frontendUrl, 'http://localhost:3000', 'https://*.pages.dev'],
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, curl, server-to-server) or any static host
+        callback(null, true);
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     })
   );
 
@@ -80,6 +85,10 @@ export function createApp(): Application {
   app.use('/api/questions', questionRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/logs', logRoutes);
+  app.use('/api/learning', learningRoutes);
+  app.use('/api/v1/learning', learningRoutes);
+  app.use('/api/spx', spxAutomationRoutes);
+  app.use('/api/v1/spx', spxAutomationRoutes);
 
   // 404 Handler
   app.use((req: Request, res: Response) => {

@@ -8,7 +8,7 @@ async function exploreSPXDashboard() {
 
   const spxUrl = 'https://egy.app.spx-learning-square.com/';
   const loginId = '463992881';
-  const password = 'H7?6mKhy';
+  const password = process.env.SPX_STUDENT_PASSWORD || '';
 
   const browser = await chromium.launch({
     headless: false,

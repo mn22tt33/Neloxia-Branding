@@ -16,8 +16,8 @@ async function inspectCurriculum() {
 
   try {
     await page.goto('https://egy.app.spx-learning-square.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.locator('#login-id').fill('470777476');
-    await page.locator('#password').fill('cR_fR_2C');
+    await page.locator('#login-id').fill(process.env.SPX_STUDENT_ID || '');
+    await page.locator('#password').fill(process.env.SPX_STUDENT_PASSWORD || '');
     await page.locator('button[type="submit"]:has-text("Let\'s Go!")').click();
 
     await page.waitForURL('**/dashboard', { timeout: 15000 });
@@ -47,7 +47,7 @@ async function inspectCurriculum() {
         text: b.textContent?.trim() || '',
         className: b.className,
         visible: (b as HTMLElement).offsetParent !== null
-      })).filter(b => b.visible && b.text.length > 2 && !b.text.includes('470777476'));
+      })).filter(b => b.visible && b.text.length > 2 && !b.text.includes(process.env.SPX_STUDENT_ID || ''));
     });
 
     console.log('[+] Visible elements in curriculum:');

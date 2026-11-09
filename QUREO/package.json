@@ -1,0 +1,13 @@
+{
+  "name": "qureo-frontend",
+  "version": "1.0.0",
+  "description": "QUERO Solver - Multi-Student SPX Automation & Smart Learning Frontend Interface",
+  "main": "serve.js",
+  "scripts": {
+    "start": "node serve.js",
+    "dev": "npx serve -l 3000 ."
+  },
+  "keywords": ["qureo", "spx", "automation", "frontend"],
+  "author": "Neloxia",
+  "license": "ISC"
+}

@@ -30,11 +30,18 @@ export class MasterSPXRunner {
     this.page = await this.context.newPage();
 
     try {
-      // 1. Login
-      console.log('[+] Authenticating student account (470777476)...');
+      // 1. Login (Credentials securely read from environment variables or CLI arguments)
+      const loginId = process.env.SPX_STUDENT_ID || process.argv[2];
+      const password = process.env.SPX_STUDENT_PASSWORD || process.argv[3];
+
+      if (!loginId || !password) {
+        throw new Error('SPX_STUDENT_ID and SPX_STUDENT_PASSWORD must be provided via environment variables or CLI arguments.');
+      }
+
+      console.log(`[+] Authenticating student account (${loginId.substring(0, 3)}***)...`);
       await this.page.goto('https://egy.app.spx-learning-square.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await this.page.locator('#login-id').fill('470777476');
-      await this.page.locator('#password').fill('cR_fR_2C');
+      await this.page.locator('#login-id').fill(loginId);
+      await this.page.locator('#password').fill(password);
       await this.page.locator('button[type="submit"]:has-text("Let\'s Go!")').click();
       await this.page.waitForURL('**/dashboard', { timeout: 15000 });
 
