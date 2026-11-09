@@ -374,65 +374,83 @@ export class SPXAutomationService {
       wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
       this.emitLog(sessionId, 'info', `تم اكتشاف ${discoveredChapters.length} فصول ونشاطات دراسية.`);
 
-      // 3. Process Chapters iteratively
+      // 3. Process Curriculum items sequentially
       let completedLessons = 0;
       session.status = 'SOLVING';
 
       while (completedLessons < maxLessons && !session.isStopping) {
-        // Check if session stop requested
         if (session.isStopping) break;
 
-        // Locate next active unlocked chapter
-        const nextChapter = session.chapters.find((c) => c.status === 'PENDING' || c.status === 'EXPLORING');
-        if (nextChapter) {
-          nextChapter.status = 'SOLVING';
-          session.stats.currentChapterIndex = completedLessons + 1;
-          wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
-          this.emitLog(sessionId, 'info', `بدء معالجة الفصل: "${nextChapter.title}"...`, {
-            chapterName: nextChapter.title,
-          });
-        }
+        // Ensure we are on the curriculum sidebar view
+        await this.returnToCurriculumSidebar(page, sessionId);
 
-        // Open topic if on curriculum screen
-        const isInsideActivity = await page.evaluate(() => {
-          const t = document.body.innerText;
-          return (
-            t.includes('رجوع') &&
-            (t.includes('راجع إجابتي') || t.includes('النقاط المهمة') || t.includes('أجب لعرض البقية'))
-          );
+        // Read real-time progress text (e.g. "3/28 عنصر")
+        const progressInfo = await page.evaluate(() => {
+          const text = document.body.innerText;
+          const match = text.match(/(\d+)\s*\/\s*(\d+)\s*عنصر/);
+          if (match) {
+            return {
+              current: parseInt(match[1], 10),
+              total: parseInt(match[2], 10),
+            };
+          }
+          return null;
         });
 
-        if (!isInsideActivity) {
-          await this.openNextUnlockedChapter(page, sessionId);
+        if (progressInfo) {
+          session.stats.totalChapters = progressInfo.total;
+          session.stats.currentChapterIndex = progressInfo.current;
+          session.progressPercent = Math.min(
+            100,
+            Math.round((progressInfo.current / progressInfo.total) * 100)
+          );
         }
 
-        // Check activity type: Key Points Review vs Interactive Dialogue Lesson
+        // Discover and update chapters in UI
+        const discovered = await this.discoverCurriculumChapters(page);
+        session.chapters = discovered;
+        wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
+
+        // Methodically find and click the exact next unlocked uncompleted item
+        const nextItem = await this.clickNextUnlockedCurriculumItem(page, sessionId);
+
+        if (!nextItem) {
+          this.emitLog(sessionId, 'info', 'لم يتم العثور على مزيد من الدروس المفتوحة أو تم إنجاز جميع عناصر المنهج المتاحة.');
+          break;
+        }
+
+        session.stats.currentChapterIndex = completedLessons + 1;
+        wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
+
+        // Wait for activity to fully render
+        await page.waitForTimeout(3000);
+
+        // Detect whether current screen is Key Points Review OR Interactive Dialogue Lesson
         const isKeyPoints = await page.evaluate(() => {
-          return document.body.innerText.includes('النقاط المهمة') && document.body.innerText.includes('متعلّم');
+          const text = document.body.innerText;
+          return text.includes('النقاط المهمة') || text.includes('متعلّم');
         });
 
         if (isKeyPoints) {
-          this.emitLog(sessionId, 'info', 'تم اكتشاف وحدة مراجعة "النقاط المهمة"، جاري فحص وتأكيد البطاقات...');
+          this.emitLog(sessionId, 'info', `[📋] بدء فحص ومراجعة بطاقات "${nextItem.title}"...`);
           await this.solveKeyPointsReview(page, sessionId);
         } else {
-          this.emitLog(sessionId, 'info', 'تم اكتشاف "درس تفاعلي"، جاري قراءة الأسئلة والمطابقة الذكية...');
+          this.emitLog(sessionId, 'info', `[📖] بدء قراءة وحل أسئلة "${nextItem.title}"...`);
           await this.solveInteractiveDialogue(page, sessionId);
         }
 
-        if (nextChapter) {
-          nextChapter.status = 'COMPLETED';
-          nextChapter.progressPercent = 100;
-        }
-
         completedLessons++;
-        session.progressPercent = Math.min(
-          95,
-          Math.round(25 + (completedLessons / Math.max(1, session.chapters.length)) * 70)
-        );
-        wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
-        this.emitLog(sessionId, 'success', `تم إكمال الفصل بنجاح (${completedLessons}/${maxLessons}).`);
 
-        await page.waitForTimeout(3000);
+        // Safely return to curriculum sidebar
+        await this.returnToCurriculumSidebar(page, sessionId);
+
+        this.emitLog(
+          sessionId,
+          'success',
+          `تم الانتهاء بنجاح من العنصر (${completedLessons}/${maxLessons}): "${nextItem.title}". جاري فحص الدرس التالي...`
+        );
+
+        await page.waitForTimeout(2500);
       }
 
       if (!session.isStopping) {
@@ -455,76 +473,234 @@ export class SPXAutomationService {
   }
 
   /**
-   * Discovers and extracts curriculum chapters from DOM
+   * Ensures all unit and chapter accordions in the sidebar are properly expanded
    */
-  private async discoverCurriculumChapters(page: Page): Promise<ChapterItem[]> {
-    return page.evaluate(() => {
-      const items: any[] = [];
-      const topicButtons = Array.from(
-        document.querySelectorAll('button, div[role="button"], a, .cursor-pointer')
-      );
-
-      topicButtons.forEach((btn, index) => {
-        const text = btn.textContent?.trim() || '';
-        const hasLock = btn.querySelector('.lucide-lock') || btn.innerHTML.includes('lock');
-        const hasCheck = btn.querySelector('.lucide-check') || btn.innerHTML.includes('check');
-
-        if (
-          text.length > 3 &&
-          !text.includes('الشريط') &&
-          !text.includes('الرئيسية') &&
-          !text.includes('تسجيل خروج') &&
-          !text.includes('أساسيات المال والتمويل')
-        ) {
-          // Determine status
-          let status: ChapterItem['status'] = 'PENDING';
-          if (hasCheck) status = 'COMPLETED';
-          else if (!hasLock) status = 'PENDING';
-
-          items.push({
-            id: `chapter-${index + 1}`,
-            title: text.split('\n')[0].trim(),
-            unitName: 'أساسيات المال والتمويل',
-            status,
-            progressPercent: hasCheck ? 100 : 0,
-          });
+  private async ensureCurriculumAccordionsExpanded(page: Page) {
+    await page.evaluate(() => {
+      // 1. Ensure Unit 01 accordion is expanded
+      const buttons = Array.from(document.querySelectorAll('button, [role="button"], .cursor-pointer'));
+      for (const btn of buttons) {
+        const text = btn.textContent || '';
+        if (text.includes('أساسيات المال والتمويل') || text.includes('دور المال') || text.includes('دور التمويل')) {
+          const isCollapsed = btn.querySelector('.lucide-chevron-down') || btn.innerHTML.includes('chevron-down');
+          if (isCollapsed) {
+            (btn as HTMLElement).click();
+          }
         }
-      });
-
-      return items.slice(0, 8); // Top relevant chapters
+      }
     });
+    await page.waitForTimeout(1000);
   }
 
   /**
-   * Opens the next unlocked topic in the curriculum
+   * Methodically scans the curriculum tree and clicks the exact next unlocked, uncompleted item.
+   * Understands multi-level hierarchy, distinguishes book lessons from clipboard reviews,
+   * and strictly skips already checkmarked items.
    */
-  private async openNextUnlockedChapter(page: Page, sessionId: string) {
-    const candidates = ['الوظائف الثلاث للمال', 'أشكال المال الحديث', 'دور المال'];
+  private async clickNextUnlockedCurriculumItem(
+    page: Page,
+    sessionId: string
+  ): Promise<{ title: string; type: string } | null> {
+    await this.ensureCurriculumAccordionsExpanded(page);
 
-    for (const name of candidates) {
-      const topic = page.locator(`button:has-text("${name}"), div[role="button"]:has-text("${name}")`).first();
-      if (await topic.isVisible({ timeout: 1500 }).catch(() => false)) {
-        this.emitLog(sessionId, 'info', `جاري فتح الدرس: "${name}"...`);
-        await topic.click();
-        await page.waitForTimeout(3000);
-        return;
+    const target = await page.evaluate(() => {
+      // Find all clickable item rows in the curriculum sidebar
+      const allRows = Array.from(
+        document.querySelectorAll('div.cursor-pointer, button.cursor-pointer, a.cursor-pointer, [role="button"], a')
+      );
+
+      for (const el of allRows) {
+        const text = el.textContent?.trim() || '';
+
+        // Skip non-lesson UI elements
+        if (
+          text.includes('رجوع') ||
+          text.includes('عنصر') ||
+          text.includes('الرئيسية') ||
+          text.includes('تسجيل خروج') ||
+          text.length < 3
+        ) {
+          continue;
+        }
+
+        // Skip unit & chapter accordion headers (which have chevrons)
+        const isHeader =
+          el.querySelector('.lucide-chevron-down, .lucide-chevron-up') ||
+          el.innerHTML.includes('chevron-down') ||
+          el.innerHTML.includes('chevron-up');
+        if (
+          isHeader &&
+          (text.includes('أساسيات') ||
+            text.includes('دور التمويل') ||
+            text.includes('البنية الأساسية') ||
+            text.includes('فهم الزكاة'))
+        ) {
+          continue;
+        }
+
+        // Check if item has checkmark (ALREADY COMPLETED)
+        const hasCheck =
+          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') ||
+          el.innerHTML.includes('check') ||
+          el.classList.contains('text-emerald-500') ||
+          el.classList.contains('text-green-500');
+
+        if (hasCheck) {
+          continue; // Already solved! Skip to next row.
+        }
+
+        // Check if item has lock icon (LOCKED)
+        const hasLock =
+          el.querySelector('.lucide-lock') ||
+          el.innerHTML.includes('lock') ||
+          el.classList.contains('opacity-50') ||
+          el.classList.contains('cursor-not-allowed');
+
+        if (hasLock) {
+          continue; // Locked! Cannot be accessed yet.
+        }
+
+        // THIS IS THE EXACT ACTIVE UNLOCKED ROW!
+        const isBook =
+          el.querySelector('.lucide-book-open, .lucide-book') || el.innerHTML.includes('book');
+        const isClipboard =
+          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') ||
+          el.innerHTML.includes('clipboard');
+
+        const type = isBook
+          ? 'الدرس التفاعلي 📖'
+          : isClipboard
+          ? 'مراجعة واختبار النقاط المهمة 📋'
+          : 'نشاط تدريبي ⚡';
+
+        const cleanTitle = text.split('\n')[0].trim();
+
+        // Scroll into view and click
+        (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        (el as HTMLElement).click();
+
+        return {
+          title: cleanTitle,
+          type,
+        };
       }
+
+      return null;
+    });
+
+    if (target) {
+      this.emitLog(
+        sessionId,
+        'info',
+        `تم تحديد العنصر النشط التالي بالترتيب: "${target.title}" (${target.type}) - جاري الفتح والحل...`
+      );
+      await page.waitForTimeout(4000);
     }
 
-    // Fallback: click any unlocked curriculum item
-    await page.evaluate(() => {
-      const all = Array.from(document.querySelectorAll('button, div[role="button"]'));
-      for (const el of all) {
-        const t = el.textContent || '';
-        const hasLock = el.querySelector('.lucide-lock') || el.innerHTML.includes('lock');
-        const hasCheck = el.querySelector('.lucide-check') || el.innerHTML.includes('check');
-        if (!hasLock && !hasCheck && t.length > 4 && !t.includes('رجوع')) {
-          (el as HTMLElement).click();
-          break;
-        }
-      }
+    return target;
+  }
+
+  /**
+   * Safely returns from any activity back to the curriculum sidebar
+   */
+  private async returnToCurriculumSidebar(page: Page, sessionId: string) {
+    const isCurriculum = await page.evaluate(() => {
+      return (
+        window.location.href.includes('/curriculum') &&
+        document.body.innerText.includes('عنصر') &&
+        document.body.innerText.includes('أساسيات المال')
+      );
+    });
+
+    if (isCurriculum) return;
+
+    this.emitLog(sessionId, 'info', 'تم إنهاء النشاط، جاري العودة إلى قائمة المنهج لتحديث علامات الإنجاز والانتقال للعنصر التالي...');
+
+    // 1. Try clicking "رجوع" button at top
+    const backBtn = page.locator('button:has-text("رجوع"), a:has-text("رجوع")').first();
+    if (await backBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await backBtn.click();
+      await page.waitForTimeout(3000);
+      return;
+    }
+
+    // 2. Direct navigation if needed
+    await page.goto('https://egy.app.spx-learning-square.com/subjects/7/curriculum', {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000,
     });
     await page.waitForTimeout(3000);
+  }
+
+  /**
+   * Discovers and extracts all curriculum chapters and items from the sidebar
+   */
+  private async discoverCurriculumChapters(page: Page): Promise<ChapterItem[]> {
+    await this.ensureCurriculumAccordionsExpanded(page);
+
+    return page.evaluate(() => {
+      const items: any[] = [];
+      const rows = Array.from(
+        document.querySelectorAll('div.cursor-pointer, button.cursor-pointer, a.cursor-pointer, [role="button"], a')
+      );
+
+      let itemIndex = 1;
+      for (const el of rows) {
+        const text = el.textContent?.trim() || '';
+
+        if (
+          text.includes('رجوع') ||
+          text.includes('عنصر') ||
+          text.includes('الرئيسية') ||
+          text.includes('تسجيل خروج') ||
+          text.length < 3
+        ) {
+          continue;
+        }
+
+        const isHeader =
+          el.querySelector('.lucide-chevron-down, .lucide-chevron-up') ||
+          el.innerHTML.includes('chevron-down') ||
+          el.innerHTML.includes('chevron-up');
+        if (
+          isHeader &&
+          (text.includes('أساسيات') ||
+            text.includes('دور التمويل') ||
+            text.includes('البنية الأساسية') ||
+            text.includes('فهم الزكاة'))
+        ) {
+          continue;
+        }
+
+        const hasCheck =
+          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') ||
+          el.innerHTML.includes('check') ||
+          el.classList.contains('text-emerald-500');
+
+        const hasLock =
+          el.querySelector('.lucide-lock') ||
+          el.innerHTML.includes('lock') ||
+          el.classList.contains('opacity-50') ||
+          el.classList.contains('cursor-not-allowed');
+
+        let status: ChapterItem['status'] = 'PENDING';
+        if (hasCheck) status = 'COMPLETED';
+        else if (!hasLock) status = 'EXPLORING';
+
+        const isBook = el.querySelector('.lucide-book-open, .lucide-book') || el.innerHTML.includes('book');
+        const typeSuffix = isBook ? '(درس)' : '(مراجعة)';
+
+        items.push({
+          id: `item-${itemIndex++}`,
+          title: `${text.split('\n')[0].trim()} ${typeSuffix}`,
+          unitName: 'أساسيات المال والتمويل',
+          status,
+          progressPercent: hasCheck ? 100 : 0,
+        });
+      }
+
+      return items;
+    });
   }
 
   /**
