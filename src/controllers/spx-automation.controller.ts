@@ -21,7 +21,7 @@ export class SPXAutomationController {
    */
   public async startSession(req: Request, res: Response) {
     try {
-      const { studentId, password, subjectUrl, maxLessons } = req.body;
+      const { studentId, password, subjectUrl, maxLessons, grade, course } = req.body;
 
       if (!studentId || typeof studentId !== 'string' || !studentId.trim()) {
         return res.status(400).json({
@@ -42,7 +42,9 @@ export class SPXAutomationController {
         password.trim(),
         {
           subjectUrl,
-          maxLessons: maxLessons ? parseInt(maxLessons, 10) : 10,
+          maxLessons: maxLessons ? parseInt(maxLessons, 10) : 42,
+          grade: grade || 'g10',
+          course: course || 'javascript_ar',
         }
       );
 
@@ -101,9 +103,21 @@ export class SPXAutomationController {
         });
       }
 
+      // Prevent 304 Not Modified caching on live status polling
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       return res.json({
         success: true,
-        data: { session: state },
+        data: {
+          session: state,
+          logs: state.logs,
+          status: state.status,
+          progressPercent: state.progressPercent,
+          chapters: state.chapters,
+          stats: state.stats,
+        },
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err.message });

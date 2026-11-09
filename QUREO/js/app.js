@@ -365,47 +365,85 @@ class QureoApp {
   }
 
   handleLivePacket(packet) {
-    // Process logs
-    if (packet.logs && Array.isArray(packet.logs)) {
-      packet.logs.forEach((log) => {
-        const key = `${log.timestamp}_${log.message}`;
-        if (!this.renderedLogs.has(key)) {
-          this.renderedLogs.add(key);
-          this.terminal.log(log.message, log.level, log.timestamp);
+    if (!packet) return;
 
-          // Update instant retrieval stat if mentioned
-          if (log.message.includes('ذاكرة المعرفة') || log.message.includes('0ms') || log.message.includes('Instant verified')) {
-            const current = parseInt(this.statRetrieved.textContent, 10) || 0;
-            this.statRetrieved.textContent = current + 1;
-          }
-        }
+    // Support both nested session envelope and flat packet
+    const data = packet.session || packet;
+
+    // Collect all incoming logs (array from status polling OR single log from SSE)
+    const logList = [];
+    if (Array.isArray(data.logs)) {
+      logList.push(...data.logs);
+    } else if (Array.isArray(packet.logs)) {
+      logList.push(...packet.logs);
+    }
+
+    if (data.message) {
+      logList.push({
+        message: data.message,
+        level: data.level || 'info',
+        timestamp: data.timestamp,
       });
     }
 
+    // Process logs without duplicates
+    logList.forEach((log) => {
+      const key = `${log.timestamp || ''}_${log.message}`;
+      if (!this.renderedLogs.has(key)) {
+        this.renderedLogs.add(key);
+        this.terminal.log(log.message, log.level, log.timestamp);
+
+        // Update instant retrieval stat if mentioned
+        if (
+          log.message.includes('ذاكرة المعرفة') ||
+          log.message.includes('0ms') ||
+          log.message.includes('Instant verified') ||
+          log.message.includes('موثقة محفوظة')
+        ) {
+          const current = parseInt(this.statRetrieved.textContent, 10) || 0;
+          this.statRetrieved.textContent = current + 1;
+        }
+      }
+    });
+
     // Process progress
-    if (typeof packet.progressPercent === 'number') {
-      const pct = Math.min(100, Math.max(0, packet.progressPercent));
-      this.progressFill.style.width = `${pct}%`;
-      this.progressText.textContent = `${pct}%`;
+    const pct = typeof data.progressPercent === 'number'
+      ? data.progressPercent
+      : typeof data.percent === 'number'
+      ? data.percent
+      : null;
+
+    if (pct !== null) {
+      const bounded = Math.min(100, Math.max(0, pct));
+      this.progressFill.style.width = `${bounded}%`;
+      this.progressText.textContent = `${bounded}%`;
     }
 
     // Process stats
-    if (packet.stats) {
-      if (packet.stats.totalChapters) {
-        this.statDetected.textContent = packet.stats.totalChapters;
+    const stats = data.stats || packet.stats;
+    if (stats) {
+      if (stats.totalChapters) {
+        this.statDetected.textContent = stats.totalChapters;
         if (this.chaptersCountBadge) {
-          this.chaptersCountBadge.textContent = `${packet.stats.totalChapters} عنصر`;
+          this.chaptersCountBadge.textContent = `${stats.totalChapters} عنصر`;
         }
       }
-      if (typeof packet.stats.currentChapterIndex === 'number') {
-        const currentDiamonds = Math.min(210, packet.stats.currentChapterIndex * 5);
+      if (typeof stats.currentChapterIndex === 'number') {
+        const currentDiamonds = Math.min(210, stats.currentChapterIndex * 5);
         this.statDiamonds.textContent = `${currentDiamonds} / 210 💎`;
       }
     }
 
     // Process chapter tree
-    if (packet.chapters && Array.isArray(packet.chapters) && packet.chapters.length > 0) {
-      this.renderChaptersGrid(packet.chapters);
+    const chapters = data.chapters || packet.chapters;
+    if (chapters && Array.isArray(chapters) && chapters.length > 0) {
+      this.renderChaptersGrid(chapters);
+    }
+
+    // Detect session completion or termination
+    const status = data.status || packet.status;
+    if (status === 'COMPLETED' || status === 'STOPPED' || status === 'ERROR') {
+      this.handleSessionEnded(status);
     }
   }
 

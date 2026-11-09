@@ -40,10 +40,14 @@ export function createApp(): Application {
     })
   );
 
-  // Rate Limiter
+  // Rate Limiter - Development resilient & skips live polling/streaming
   const limiter = rateLimit({
     windowMs: config.rateLimit.windowMs,
-    max: config.rateLimit.maxRequests,
+    max: config.env === 'development' ? 50000 : config.rateLimit.maxRequests,
+    skip: (req) =>
+      req.path.includes('/stream') ||
+      req.path.includes('/status') ||
+      req.path.includes('/health'),
     standardHeaders: true,
     legacyHeaders: false,
     message: {

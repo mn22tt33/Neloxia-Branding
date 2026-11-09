@@ -168,6 +168,8 @@ export class SPXAutomationService {
     options: {
       subjectUrl?: string;
       maxLessons?: number;
+      grade?: string;
+      course?: string;
     } = {}
   ): Promise<{ sessionId: string }> {
     // 1. Capacity Check
@@ -286,11 +288,13 @@ export class SPXAutomationService {
     sessionId: string,
     studentId: string,
     password: string,
-    options: { subjectUrl?: string; maxLessons?: number }
+    options: { subjectUrl?: string; maxLessons?: number; grade?: string; course?: string }
   ) {
     const session = this.activeSessions.get(sessionId)!;
     const targetUrl = options.subjectUrl || 'https://egy.app.spx-learning-square.com/subjects/7/curriculum';
-    const maxLessons = options.maxLessons || 10;
+    const maxLessons = options.maxLessons || 42;
+    const selectedCourse = options.course || 'javascript_ar';
+    const selectedGrade = options.grade || 'g10';
 
     this.emitLog(sessionId, 'info', 'جاري الاتصال بالسيرفر وإنشاء جلسة متصفح معزولة...');
     this.emitLog(sessionId, 'info', `تم إنشاء جلسة مستقلة للطالب (${session.studentIdMasked}).`);
@@ -442,35 +446,84 @@ export class SPXAutomationService {
       session.progressPercent = 15;
       this.emitLog(sessionId, 'success', 'تم تسجيل الدخول بنجاح! جاري الانتقال إلى المنهج الدراسي...');
 
-      // 2. Navigate to Curriculum
-      const currentUrlAfterLogin = page.url();
-      if (currentUrlAfterLogin.includes('/curriculum')) {
+      // 2. Navigate to Curriculum with dynamic course detection
+      await page.waitForTimeout(2000);
+      const postLoginUrl = page.url();
+      const postLoginTitle = await page.title().catch(() => '');
+      this.emitLog(sessionId, 'info', `الصفحة الحالية بعد تسجيل الدخول: [${postLoginTitle}] (${postLoginUrl})`);
+
+      if (postLoginUrl.includes('/curriculum')) {
         this.emitLog(sessionId, 'info', 'تم الوصول للمنهج الدراسي مباشرة.');
       } else {
-        this.emitLog(sessionId, 'info', 'جاري الانتقال إلى صفحة المنهج الدراسي...');
-        const target = currentUrlAfterLogin.includes('/subjects/') 
-          ? (currentUrlAfterLogin.endsWith('/curriculum') ? currentUrlAfterLogin : `${currentUrlAfterLogin.split('?')[0]}/curriculum`)
-          : targetUrl;
-        await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(async () => {
-          await page.goto(target, { waitUntil: 'load', timeout: 20000 });
+        // Inspect available subject links & cards on dashboard
+        let targetNavigationUrl = targetUrl;
+        let matchedByDashboard = false;
+
+        try {
+          const availableLinks = await page.$$eval('a[href*="/subjects/"]', (anchors) =>
+            anchors.map((a) => ({
+              href: (a as HTMLAnchorElement).href,
+              text: (a.textContent || '').trim(),
+            }))
+          ).catch(() => []);
+
+          if (availableLinks.length > 0) {
+            // Match with user's selected course
+            const isJs = selectedCourse === 'javascript_ar' || selectedGrade === 'g10';
+            const isFin = selectedCourse === 'financial_literacy';
+            const isPy = selectedCourse === 'python_short_en';
+
+            const matchedLink = availableLinks.find((l) => {
+              const t = l.text.toLowerCase();
+              if (isJs && (t.includes('جافا') || t.includes('javascript') || t.includes('كيريو') || t.includes('qureo') || t.includes('برمج'))) return true;
+              if (isFin && (t.includes('مالي') || t.includes('financial') || t.includes('ثقاف'))) return true;
+              if (isPy && (t.includes('بايثون') || t.includes('python'))) return true;
+              return false;
+            }) || availableLinks[0];
+
+            if (matchedLink) {
+              const baseHref = matchedLink.href.split('?')[0].replace(/\/$/, '');
+              targetNavigationUrl = baseHref.endsWith('/curriculum') ? baseHref : `${baseHref}/curriculum`;
+              matchedByDashboard = true;
+              this.emitLog(sessionId, 'info', `تم العثور على مادة الطالب من لوحة التحكم: "${matchedLink.text}" -> ${targetNavigationUrl}`);
+            }
+          }
+        } catch (_) {}
+
+        if (!matchedByDashboard && postLoginUrl.includes('/subjects/')) {
+          targetNavigationUrl = postLoginUrl.endsWith('/curriculum') ? postLoginUrl : `${postLoginUrl.split('?')[0]}/curriculum`;
+        }
+
+        this.emitLog(sessionId, 'info', `جاري فتح المنهج الدراسي: ${targetNavigationUrl}...`);
+        await page.goto(targetNavigationUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(async () => {
+          await page.goto(targetNavigationUrl, { waitUntil: 'load', timeout: 20000 });
         });
       }
-      await page.waitForTimeout(2500);
 
       session.status = 'EXPLORING';
       session.progressPercent = 25;
       this.emitLog(sessionId, 'info', 'جاري استكشاف المواد والفصول المتاحة للحساب وتوسيع القوائم...');
 
-      // Dynamic Unit & Chapter expansion (100% DOM-driven, zero hardcoded names)
-      await this.ensureCurriculumAccordionsExpanded(page);
+      // Dynamic Unit & Chapter expansion with resilience loop (checks up to 4 times)
+      let discoveredChapters: ChapterItem[] = [];
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        await page.waitForTimeout(2000);
+        await this.ensureCurriculumAccordionsExpanded(page);
+        discoveredChapters = await this.discoverCurriculumChapters(page);
+        if (discoveredChapters.length > 0) break;
+      }
 
-      // Discover chapters
-      const discoveredChapters = await this.discoverCurriculumChapters(page);
       session.chapters = discoveredChapters;
       session.stats.totalChapters = discoveredChapters.length;
 
       wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
       this.emitLog(sessionId, 'info', `تم اكتشاف ${discoveredChapters.length} فصول ونشاطات دراسية.`);
+
+      // If 0 chapters discovered, inspect page state for diagnosis
+      if (discoveredChapters.length === 0) {
+        const pageSnippet = await page.evaluate(() => document.body.innerText.substring(0, 250).replace(/\s+/g, ' ')).catch(() => '');
+        this.emitLog(sessionId, 'warn', `معاينة محتوى الصفحة: "${pageSnippet}"`);
+      }
 
       // 3. Process Curriculum items sequentially
       let completedLessons = 0;
@@ -590,17 +643,17 @@ export class SPXAutomationService {
         const text = btn.textContent || '';
         if (text.includes('رجوع') || text.includes('تسجيل خروج') || text.length < 2) continue;
 
+        // Accurate lock detection - NEVER use innerHTML.includes('lock') because it matches CSS 'block'/'inline-block'!
         const isLocked =
-          btn.querySelector('.lucide-lock') !== null ||
-          btn.innerHTML.includes('lock') ||
-          btn.classList.contains('opacity-50') ||
-          btn.classList.contains('cursor-not-allowed');
+          btn.querySelector('.lucide-lock, svg.lock-icon') !== null ||
+          btn.classList.contains('cursor-not-allowed') ||
+          btn.getAttribute('aria-disabled') === 'true';
         if (isLocked) continue;
 
         // Check if collapsed
         const isCollapsed =
           btn.querySelector('.lucide-chevron-down') !== null ||
-          btn.innerHTML.includes('chevron-down');
+          btn.getAttribute('aria-expanded') === 'false';
 
         if (isCollapsed) {
           (btn as HTMLElement).click();
@@ -623,7 +676,7 @@ export class SPXAutomationService {
             !t.includes('رجوع') &&
             !t.includes('تسجيل خروج') &&
             t.length > 3 &&
-            (b.querySelector('svg') !== null || b.innerHTML.includes('chevron'))
+            (b.querySelector('svg') !== null || b.getAttribute('aria-expanded') !== null)
           );
         });
         if (firstHeader) {
@@ -671,8 +724,7 @@ export class SPXAutomationService {
         // Check if element is an Accordion Header (chevron down or up)
         const isAccordionHeader =
           el.querySelector('.lucide-chevron-down, .lucide-chevron-up') !== null ||
-          el.innerHTML.includes('chevron-down') ||
-          el.innerHTML.includes('chevron-up');
+          el.getAttribute('aria-expanded') !== null;
 
         if (isAccordionHeader) {
           currentChapter = text.split('\n')[0].trim();
@@ -680,9 +732,10 @@ export class SPXAutomationService {
         }
 
         // Check if item is already completed (green checkmark badge)
+        // Accurate detection: NEVER use innerHTML.includes('check') which matches 'aria-checked="false"' or 'unchecked'!
         const hasCheck =
-          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') !== null ||
-          el.innerHTML.includes('check') ||
+          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check, svg.check-icon') !== null ||
+          el.querySelector('.text-emerald-500, .text-green-500, .bg-emerald-500, .bg-green-500') !== null ||
           el.classList.contains('text-emerald-500') ||
           el.classList.contains('text-green-500');
 
@@ -690,12 +743,11 @@ export class SPXAutomationService {
           continue; // Already solved! Skip to next row.
         }
 
-        // Check if item has lock icon (locked)
+        // Check if item has lock icon (locked) - NEVER use innerHTML.includes('lock') which matches 'block'!
         const hasLock =
-          el.querySelector('.lucide-lock') !== null ||
-          el.innerHTML.includes('lock') ||
-          el.classList.contains('opacity-50') ||
-          el.classList.contains('cursor-not-allowed');
+          el.querySelector('.lucide-lock, svg.lock-icon') !== null ||
+          el.classList.contains('cursor-not-allowed') ||
+          el.getAttribute('aria-disabled') === 'true';
 
         if (hasLock) {
           continue; // Locked! Cannot be accessed yet.
@@ -703,10 +755,9 @@ export class SPXAutomationService {
 
         // Must be a learning activity (book or clipboard or general activity)
         const isBook =
-          el.querySelector('.lucide-book-open, .lucide-book') !== null || el.innerHTML.includes('book');
+          el.querySelector('.lucide-book-open, .lucide-book') !== null;
         const isClipboard =
-          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') !== null ||
-          el.innerHTML.includes('clipboard');
+          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') !== null;
 
         const cleanTitle = text.split('\n')[0].trim();
         if (cleanTitle.length < 2) continue;
@@ -875,32 +926,32 @@ export class SPXAutomationService {
 
         const isHeader =
           el.querySelector('.lucide-chevron-down, .lucide-chevron-up') !== null ||
-          el.innerHTML.includes('chevron-down') ||
-          el.innerHTML.includes('chevron-up');
+          el.getAttribute('aria-expanded') !== null;
 
         if (isHeader) {
           continue; // Skip accordion headers from item list
         }
 
         const hasCheck =
-          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') !== null ||
-          el.innerHTML.includes('check') ||
+          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check, svg.check-icon') !== null ||
+          el.querySelector('.text-emerald-500, .text-green-500, .bg-emerald-500, .bg-green-500') !== null ||
           el.classList.contains('text-emerald-500') ||
           el.classList.contains('text-green-500');
 
         const hasLock =
-          el.querySelector('.lucide-lock') !== null ||
-          el.innerHTML.includes('lock') ||
-          el.classList.contains('opacity-50') ||
-          el.classList.contains('cursor-not-allowed');
+          el.querySelector('.lucide-lock, svg.lock-icon') !== null ||
+          el.classList.contains('cursor-not-allowed') ||
+          el.getAttribute('aria-disabled') === 'true';
 
         let status: ChapterItem['status'] = 'PENDING';
         if (hasCheck) status = 'COMPLETED';
         else if (!hasLock) status = 'EXPLORING';
 
         const isBook =
-          el.querySelector('.lucide-book-open, .lucide-book') !== null || el.innerHTML.includes('book');
-        const typeSuffix = isBook ? '(درس)' : '(مراجعة)';
+          el.querySelector('.lucide-book-open, .lucide-book') !== null;
+        const isClipboard =
+          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') !== null;
+        const typeSuffix = isBook ? '(درس)' : isClipboard ? '(مراجعة)' : '(نشاط)';
 
         items.push({
           id: `item-${itemIndex++}`,
