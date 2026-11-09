@@ -442,15 +442,16 @@ export class SPXAutomationService {
       this.emitLog(sessionId, 'success', 'تم تسجيل الدخول بنجاح! جاري الانتقال إلى المنهج الدراسي...');
 
       // 2. Navigate to Curriculum
+      this.emitLog(sessionId, 'info', 'جاري الانتقال إلى المنهج الدراسي...');
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForTimeout(3000);
 
       session.status = 'EXPLORING';
       session.progressPercent = 25;
-      this.emitLog(sessionId, 'info', 'جاري استكشاف المواد والفصول المتاحة للحساب...');
+      this.emitLog(sessionId, 'info', 'جاري استكشاف المواد والفصول المتاحة للحساب وتوسيع القوائم...');
 
-      // Dynamic Unit Entry (100% DOM-driven, zero hardcoded names)
-      const currentUnitTitle = await this.ensureInActiveUnit(page, sessionId);
+      // Dynamic Unit & Chapter expansion (100% DOM-driven, zero hardcoded names)
+      await this.ensureCurriculumAccordionsExpanded(page);
 
       // Discover chapters
       const discoveredChapters = await this.discoverCurriculumChapters(page);
@@ -458,7 +459,7 @@ export class SPXAutomationService {
       session.stats.totalChapters = discoveredChapters.length;
 
       wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
-      this.emitLog(sessionId, 'info', `تم اكتشاف ${discoveredChapters.length} فصول ونشاطات دراسية في "${currentUnitTitle}".`);
+      this.emitLog(sessionId, 'info', `تم اكتشاف ${discoveredChapters.length} فصول ونشاطات دراسية.`);
 
       // 3. Process Curriculum items sequentially
       let completedLessons = 0;
@@ -470,8 +471,8 @@ export class SPXAutomationService {
         // Ensure we are on the curriculum sidebar view
         await this.returnToCurriculumSidebar(page, sessionId);
 
-        // Ensure we are inside the active unit
-        const activeUnit = await this.ensureInActiveUnit(page, sessionId);
+        // Ensure accordions are open so next unlocked item is visible
+        await this.ensureCurriculumAccordionsExpanded(page);
 
         // Read real-time progress text (e.g. "3/28 عنصر")
         const progressInfo = await page.evaluate(() => {
@@ -506,13 +507,8 @@ export class SPXAutomationService {
         const nextItem = await this.clickNextUnlockedCurriculumItem(page, sessionId);
 
         if (!nextItem) {
-          this.emitLog(sessionId, 'info', 'تم فحص جميع عناصر الفصل/الوحدة الحالية. جاري فحص الوحدات التالية...');
-          const nextUnit = await this.ensureInActiveUnit(page, sessionId);
-          if (!nextUnit || nextUnit === activeUnit) {
-            this.emitLog(sessionId, 'info', 'لم يتم العثور على مزيد من الدروس المفتوحة أو تم إنجاز جميع عناصر المنهج المتاحة.');
-            break;
-          }
-          continue;
+          this.emitLog(sessionId, 'info', 'لم يتم العثور على مزيد من الدروس المفتوحة أو تم إنجاز جميع عناصر المنهج المتاحة.');
+          break;
         }
 
         session.stats.currentChapterIndex = completedLessons + 1;
@@ -569,99 +565,62 @@ export class SPXAutomationService {
   }
 
   /**
-   * Dynamically ensures the browser is inside an active, incomplete unit.
-   * If on the curriculum units overview (multiple units with "عنصر"),
-   * finds the first unit where completed < total, and clicks it to open its chapters.
-   * If inside a unit sidebar where completed === total, clicks "رجوع" to return to units overview
-   * and opens the next unlocked unit.
-   * ZERO hardcoded unit names.
+   * Dynamically expands all unit and chapter accordions in the curriculum view.
+   * 100% DOM-driven, ZERO hardcoded names.
    */
-  private async ensureInActiveUnit(page: Page, sessionId: string): Promise<string> {
-    const result = await page.evaluate(() => {
-      // Check if we are inside a unit sidebar (has "رجوع" button)
-      const backBtn = Array.from(document.querySelectorAll('button, a')).find(
-        (b) => b.textContent?.trim().includes('رجوع')
+  private async ensureCurriculumAccordionsExpanded(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      // Find all collapsed accordion buttons (with chevron-down or downward SVG)
+      const buttons = Array.from(
+        document.querySelectorAll('button, div[role="button"], div.cursor-pointer, [role="button"]')
       );
 
-      // Extract current unit progress if present, e.g. "3/28 عنصر"
-      const textNodes = Array.from(document.querySelectorAll('*')).filter(
-        (el) => el.children.length === 0 && /\d+\s*\/\s*\d+\s*عنصر/.test(el.textContent || '')
-      );
+      for (const btn of buttons) {
+        const text = btn.textContent || '';
+        if (text.includes('رجوع') || text.includes('تسجيل خروج') || text.length < 2) continue;
 
-      let currentUnitTitle = '';
-      let isCurrentUnitComplete = false;
+        const isLocked =
+          btn.querySelector('.lucide-lock') !== null ||
+          btn.innerHTML.includes('lock') ||
+          btn.classList.contains('opacity-50') ||
+          btn.classList.contains('cursor-not-allowed');
+        if (isLocked) continue;
 
-      if (textNodes.length > 0) {
-        const match = textNodes[0].textContent!.match(/(\d+)\s*\/\s*(\d+)\s*عنصر/);
-        if (match) {
-          const cur = parseInt(match[1], 10);
-          const tot = parseInt(match[2], 10);
-          isCurrentUnitComplete = cur >= tot;
+        // Check if collapsed
+        const isCollapsed =
+          btn.querySelector('.lucide-chevron-down') !== null ||
+          btn.innerHTML.includes('chevron-down');
 
-          // Attempt to find unit title from preceding heading or sidebar header
-          let p = textNodes[0].parentElement;
-          while (p && !currentUnitTitle) {
-            const h = p.querySelector('h1, h2, h3, h4, .font-bold, .font-semibold');
-            if (h && !h.textContent?.includes('عنصر') && !h.textContent?.includes('رجوع')) {
-              currentUnitTitle = h.textContent?.trim().split('\n')[0] || '';
-            }
-            p = p.parentElement;
-          }
+        if (isCollapsed) {
+          (btn as HTMLElement).click();
         }
       }
-
-      // If we are inside sidebar and current unit is 100% complete, click "رجوع" to exit to units list
-      if (backBtn && isCurrentUnitComplete && textNodes.length === 1) {
-        (backBtn as HTMLElement).click();
-        return { action: 'RETURNED_TO_UNITS', title: currentUnitTitle };
-      }
-
-      // If already inside an active incomplete unit sidebar, we are ready!
-      if (backBtn && !isCurrentUnitComplete) {
-        return { action: 'ALREADY_INSIDE', title: currentUnitTitle || 'الوحدة الحالية' };
-      }
-
-      // If on the Units overview page (multiple units listed):
-      const unitCards = Array.from(document.querySelectorAll('div, button, a')).filter((el) => {
-        const txt = el.textContent || '';
-        return (
-          txt.includes('عنصر') &&
-          (el.querySelector('.lucide-chevron-down, .lucide-chevron-up') !== null ||
-            el.innerHTML.includes('chevron'))
-        );
-      });
-
-      for (const card of unitCards) {
-        const txt = card.textContent || '';
-        const match = txt.match(/(\d+)\s*\/\s*(\d+)\s*عنصر/);
-        if (match) {
-          const cur = parseInt(match[1], 10);
-          const tot = parseInt(match[2], 10);
-          const isComplete = cur >= tot || card.querySelector('.lucide-check-circle, .lucide-check') !== null;
-          const isLocked = card.querySelector('.lucide-lock') !== null || card.classList.contains('opacity-50');
-
-          if (!isComplete && !isLocked) {
-            const lines = txt.split('\n').map((l) => l.trim()).filter((l) => l.length > 2 && !l.includes('عنصر'));
-            const unitTitle = lines[0] || 'الوحدة التالية';
-            (card as HTMLElement).click();
-            return { action: 'ENTERED_UNIT', title: unitTitle };
-          }
-        }
-      }
-
-      return { action: 'NO_OP', title: currentUnitTitle || 'الوحدة الحالية' };
     });
 
-    if (result.action === 'ENTERED_UNIT') {
-      this.emitLog(sessionId, 'info', `[استكشاف المنهج] تم دخول وتفعيل الوحدة: "${result.title}"`);
-      await page.waitForTimeout(2000);
-    } else if (result.action === 'RETURNED_TO_UNITS') {
-      this.emitLog(sessionId, 'success', `[اكتمال الوحدة] تم الانتهاء بنجاح من كافة عناصر: "${result.title}". جاري الانتقال للوحدة التالية...`);
-      await page.waitForTimeout(2500);
-      return await this.ensureInActiveUnit(page, sessionId);
-    }
+    await page.waitForTimeout(1000);
 
-    return result.title;
+    // If still no lessons are visible, click the first available unit/chapter header
+    const rowsCount = await page.evaluate(() => {
+      return document.querySelectorAll('.lucide-book-open, .lucide-clipboard-list, .lucide-lock, [role="button"]').length;
+    });
+
+    if (rowsCount <= 3) {
+      await page.evaluate(() => {
+        const firstHeader = Array.from(document.querySelectorAll('button, div.cursor-pointer')).find((b) => {
+          const t = b.textContent || '';
+          return (
+            !t.includes('رجوع') &&
+            !t.includes('تسجيل خروج') &&
+            t.length > 3 &&
+            (b.querySelector('svg') !== null || b.innerHTML.includes('chevron'))
+          );
+        });
+        if (firstHeader) {
+          (firstHeader as HTMLElement).click();
+        }
+      });
+      await page.waitForTimeout(1200);
+    }
   }
 
   /**
@@ -731,20 +690,21 @@ export class SPXAutomationService {
           continue; // Locked! Cannot be accessed yet.
         }
 
-        // Item must have a learning activity icon (Book or Clipboard) or be a clickable lesson
+        // Must be a learning activity (book or clipboard or general activity)
         const isBook =
           el.querySelector('.lucide-book-open, .lucide-book') !== null || el.innerHTML.includes('book');
         const isClipboard =
           el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') !== null ||
           el.innerHTML.includes('clipboard');
 
+        const cleanTitle = text.split('\n')[0].trim();
+        if (cleanTitle.length < 2) continue;
+
         const type = isBook
           ? 'الدرس التفاعلي 📖'
           : isClipboard
           ? 'مراجعة واختبار النقاط المهمة 📋'
-          : 'نشاط تعليمي ⚡';
-
-        const cleanTitle = text.split('\n')[0].trim();
+          : 'نشاط تدريبي ⚡';
 
         // Scroll into view and click
         (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -835,12 +795,7 @@ export class SPXAutomationService {
    */
   private async returnToCurriculumSidebar(page: Page, sessionId: string) {
     const isCurriculum = await page.evaluate(() => {
-      const url = window.location.href;
-      const isCurriculumUrl = url.includes('/curriculum');
-      const hasCurriculumElements =
-        document.body.innerText.includes('عنصر') ||
-        document.querySelector('.lucide-chevron-down, .lucide-chevron-up, .lucide-book-open, .lucide-clipboard-list') !== null;
-      return isCurriculumUrl && hasCurriculumElements;
+      return window.location.href.includes('/curriculum');
     });
 
     if (isCurriculum) return;
@@ -878,6 +833,8 @@ export class SPXAutomationService {
    * ZERO hardcoded names.
    */
   private async discoverCurriculumChapters(page: Page): Promise<ChapterItem[]> {
+    await this.ensureCurriculumAccordionsExpanded(page);
+
     return page.evaluate(() => {
       const items: any[] = [];
       const rows = Array.from(
