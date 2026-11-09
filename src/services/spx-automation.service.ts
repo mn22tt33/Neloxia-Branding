@@ -295,8 +295,8 @@ export class SPXAutomationService {
     this.emitLog(sessionId, 'info', 'جاري الاتصال بالسيرفر وإنشاء جلسة متصفح معزولة...');
     this.emitLog(sessionId, 'info', `تم إنشاء جلسة مستقلة للطالب (${session.studentIdMasked}).`);
 
-    const isLocalMode = config.browser.mode === 'local' && process.env.NODE_ENV !== 'test';
-    const isHeadless = !isLocalMode;
+    const isLinux = process.platform === 'linux';
+    const isHeadless = isLinux || config.browser.mode !== 'local' || process.env.NODE_ENV === 'production';
 
     // Launch Chromium
     const browser = await chromium.launch({
@@ -359,12 +359,8 @@ export class SPXAutomationService {
       session.progressPercent = 25;
       this.emitLog(sessionId, 'info', 'جاري استكشاف المواد والفصول المتاحة للحساب...');
 
-      // Expand first unit
-      const unitBtn = page.locator('button:has-text("أساسيات المال والتمويل")').first();
-      if (await unitBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await unitBtn.click().catch(() => {});
-        await page.waitForTimeout(1000);
-      }
+      // Dynamic Unit Entry (100% DOM-driven, zero hardcoded names)
+      const currentUnitTitle = await this.ensureInActiveUnit(page, sessionId);
 
       // Discover chapters
       const discoveredChapters = await this.discoverCurriculumChapters(page);
@@ -372,7 +368,7 @@ export class SPXAutomationService {
       session.stats.totalChapters = discoveredChapters.length;
 
       wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
-      this.emitLog(sessionId, 'info', `تم اكتشاف ${discoveredChapters.length} فصول ونشاطات دراسية.`);
+      this.emitLog(sessionId, 'info', `تم اكتشاف ${discoveredChapters.length} فصول ونشاطات دراسية في "${currentUnitTitle}".`);
 
       // 3. Process Curriculum items sequentially
       let completedLessons = 0;
@@ -383,6 +379,9 @@ export class SPXAutomationService {
 
         // Ensure we are on the curriculum sidebar view
         await this.returnToCurriculumSidebar(page, sessionId);
+
+        // Ensure we are inside the active unit
+        const activeUnit = await this.ensureInActiveUnit(page, sessionId);
 
         // Read real-time progress text (e.g. "3/28 عنصر")
         const progressInfo = await page.evaluate(() => {
@@ -408,15 +407,22 @@ export class SPXAutomationService {
 
         // Discover and update chapters in UI
         const discovered = await this.discoverCurriculumChapters(page);
-        session.chapters = discovered;
-        wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
+        if (discovered.length > 0) {
+          session.chapters = discovered;
+          wsManager.emitChapterUpdate(sessionId, session.chapters, session.stats);
+        }
 
         // Methodically find and click the exact next unlocked uncompleted item
         const nextItem = await this.clickNextUnlockedCurriculumItem(page, sessionId);
 
         if (!nextItem) {
-          this.emitLog(sessionId, 'info', 'لم يتم العثور على مزيد من الدروس المفتوحة أو تم إنجاز جميع عناصر المنهج المتاحة.');
-          break;
+          this.emitLog(sessionId, 'info', 'تم فحص جميع عناصر الفصل/الوحدة الحالية. جاري فحص الوحدات التالية...');
+          const nextUnit = await this.ensureInActiveUnit(page, sessionId);
+          if (!nextUnit || nextUnit === activeUnit) {
+            this.emitLog(sessionId, 'info', 'لم يتم العثور على مزيد من الدروس المفتوحة أو تم إنجاز جميع عناصر المنهج المتاحة.');
+            break;
+          }
+          continue;
         }
 
         session.stats.currentChapterIndex = completedLessons + 1;
@@ -436,7 +442,7 @@ export class SPXAutomationService {
           await this.solveKeyPointsReview(page, sessionId);
         } else {
           this.emitLog(sessionId, 'info', `[📖] بدء قراءة وحل أسئلة "${nextItem.title}"...`);
-          await this.solveInteractiveDialogue(page, sessionId);
+          await this.solveInteractiveDialogue(page, sessionId, nextItem.unitTitle);
         }
 
         completedLessons++;
@@ -473,74 +479,149 @@ export class SPXAutomationService {
   }
 
   /**
-   * Ensures all unit and chapter accordions in the sidebar are properly expanded
+   * Dynamically ensures the browser is inside an active, incomplete unit.
+   * If on the curriculum units overview (multiple units with "عنصر"),
+   * finds the first unit where completed < total, and clicks it to open its chapters.
+   * If inside a unit sidebar where completed === total, clicks "رجوع" to return to units overview
+   * and opens the next unlocked unit.
+   * ZERO hardcoded unit names.
    */
-  private async ensureCurriculumAccordionsExpanded(page: Page) {
-    await page.evaluate(() => {
-      // 1. Ensure Unit 01 accordion is expanded
-      const buttons = Array.from(document.querySelectorAll('button, [role="button"], .cursor-pointer'));
-      for (const btn of buttons) {
-        const text = btn.textContent || '';
-        if (text.includes('أساسيات المال والتمويل') || text.includes('دور المال') || text.includes('دور التمويل')) {
-          const isCollapsed = btn.querySelector('.lucide-chevron-down') || btn.innerHTML.includes('chevron-down');
-          if (isCollapsed) {
-            (btn as HTMLElement).click();
+  private async ensureInActiveUnit(page: Page, sessionId: string): Promise<string> {
+    const result = await page.evaluate(() => {
+      // Check if we are inside a unit sidebar (has "رجوع" button)
+      const backBtn = Array.from(document.querySelectorAll('button, a')).find(
+        (b) => b.textContent?.trim().includes('رجوع')
+      );
+
+      // Extract current unit progress if present, e.g. "3/28 عنصر"
+      const textNodes = Array.from(document.querySelectorAll('*')).filter(
+        (el) => el.children.length === 0 && /\d+\s*\/\s*\d+\s*عنصر/.test(el.textContent || '')
+      );
+
+      let currentUnitTitle = '';
+      let isCurrentUnitComplete = false;
+
+      if (textNodes.length > 0) {
+        const match = textNodes[0].textContent!.match(/(\d+)\s*\/\s*(\d+)\s*عنصر/);
+        if (match) {
+          const cur = parseInt(match[1], 10);
+          const tot = parseInt(match[2], 10);
+          isCurrentUnitComplete = cur >= tot;
+
+          // Attempt to find unit title from preceding heading or sidebar header
+          let p = textNodes[0].parentElement;
+          while (p && !currentUnitTitle) {
+            const h = p.querySelector('h1, h2, h3, h4, .font-bold, .font-semibold');
+            if (h && !h.textContent?.includes('عنصر') && !h.textContent?.includes('رجوع')) {
+              currentUnitTitle = h.textContent?.trim().split('\n')[0] || '';
+            }
+            p = p.parentElement;
           }
         }
       }
+
+      // If we are inside sidebar and current unit is 100% complete, click "رجوع" to exit to units list
+      if (backBtn && isCurrentUnitComplete && textNodes.length === 1) {
+        (backBtn as HTMLElement).click();
+        return { action: 'RETURNED_TO_UNITS', title: currentUnitTitle };
+      }
+
+      // If already inside an active incomplete unit sidebar, we are ready!
+      if (backBtn && !isCurrentUnitComplete) {
+        return { action: 'ALREADY_INSIDE', title: currentUnitTitle || 'الوحدة الحالية' };
+      }
+
+      // If on the Units overview page (multiple units listed):
+      const unitCards = Array.from(document.querySelectorAll('div, button, a')).filter((el) => {
+        const txt = el.textContent || '';
+        return (
+          txt.includes('عنصر') &&
+          (el.querySelector('.lucide-chevron-down, .lucide-chevron-up') !== null ||
+            el.innerHTML.includes('chevron'))
+        );
+      });
+
+      for (const card of unitCards) {
+        const txt = card.textContent || '';
+        const match = txt.match(/(\d+)\s*\/\s*(\d+)\s*عنصر/);
+        if (match) {
+          const cur = parseInt(match[1], 10);
+          const tot = parseInt(match[2], 10);
+          const isComplete = cur >= tot || card.querySelector('.lucide-check-circle, .lucide-check') !== null;
+          const isLocked = card.querySelector('.lucide-lock') !== null || card.classList.contains('opacity-50');
+
+          if (!isComplete && !isLocked) {
+            const lines = txt.split('\n').map((l) => l.trim()).filter((l) => l.length > 2 && !l.includes('عنصر'));
+            const unitTitle = lines[0] || 'الوحدة التالية';
+            (card as HTMLElement).click();
+            return { action: 'ENTERED_UNIT', title: unitTitle };
+          }
+        }
+      }
+
+      return { action: 'NO_OP', title: currentUnitTitle || 'الوحدة الحالية' };
     });
-    await page.waitForTimeout(1000);
+
+    if (result.action === 'ENTERED_UNIT') {
+      this.emitLog(sessionId, 'info', `[استكشاف المنهج] تم دخول وتفعيل الوحدة: "${result.title}"`);
+      await page.waitForTimeout(2000);
+    } else if (result.action === 'RETURNED_TO_UNITS') {
+      this.emitLog(sessionId, 'success', `[اكتمال الوحدة] تم الانتهاء بنجاح من كافة عناصر: "${result.title}". جاري الانتقال للوحدة التالية...`);
+      await page.waitForTimeout(2500);
+      return await this.ensureInActiveUnit(page, sessionId);
+    }
+
+    return result.title;
   }
 
   /**
-   * Methodically scans the curriculum tree and clicks the exact next unlocked, uncompleted item.
-   * Understands multi-level hierarchy, distinguishes book lessons from clipboard reviews,
-   * and strictly skips already checkmarked items.
+   * Helper that finds and clicks the first visible unlocked incomplete lesson row
    */
-  private async clickNextUnlockedCurriculumItem(
-    page: Page,
-    sessionId: string
-  ): Promise<{ title: string; type: string } | null> {
-    await this.ensureCurriculumAccordionsExpanded(page);
-
-    const target = await page.evaluate(() => {
-      // Find all clickable item rows in the curriculum sidebar
+  private async findAndClickVisibleUnlockedItem(
+    page: Page
+  ): Promise<{ title: string; type: string; unitTitle: string; chapterTitle: string } | null> {
+    return await page.evaluate(() => {
       const allRows = Array.from(
         document.querySelectorAll('div.cursor-pointer, button.cursor-pointer, a.cursor-pointer, [role="button"], a')
       );
 
+      // Determine unit title
+      let unitTitle = 'الوحدة الدراسية';
+      const unitHeader = document.querySelector('h1, h2, h3, .font-bold');
+      if (unitHeader && !unitHeader.textContent?.includes('عنصر')) {
+        unitTitle = unitHeader.textContent?.trim().split('\n')[0] || unitTitle;
+      }
+
+      let currentChapter = '';
+
       for (const el of allRows) {
         const text = el.textContent?.trim() || '';
 
-        // Skip non-lesson UI elements
+        // Skip utility elements
         if (
           text.includes('رجوع') ||
           text.includes('عنصر') ||
           text.includes('الرئيسية') ||
           text.includes('تسجيل خروج') ||
-          text.length < 3
+          text.length < 2
         ) {
           continue;
         }
 
-        // Skip unit & chapter accordion headers (which have chevrons)
-        const isHeader =
-          el.querySelector('.lucide-chevron-down, .lucide-chevron-up') ||
+        // Check if element is an Accordion Header (chevron down or up)
+        const isAccordionHeader =
+          el.querySelector('.lucide-chevron-down, .lucide-chevron-up') !== null ||
           el.innerHTML.includes('chevron-down') ||
           el.innerHTML.includes('chevron-up');
-        if (
-          isHeader &&
-          (text.includes('أساسيات') ||
-            text.includes('دور التمويل') ||
-            text.includes('البنية الأساسية') ||
-            text.includes('فهم الزكاة'))
-        ) {
-          continue;
+
+        if (isAccordionHeader) {
+          currentChapter = text.split('\n')[0].trim();
+          continue; // Accordion header is NOT a lesson row!
         }
 
-        // Check if item has checkmark (ALREADY COMPLETED)
+        // Check if item is already completed (green checkmark badge)
         const hasCheck =
-          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') ||
+          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') !== null ||
           el.innerHTML.includes('check') ||
           el.classList.contains('text-emerald-500') ||
           el.classList.contains('text-green-500');
@@ -549,9 +630,9 @@ export class SPXAutomationService {
           continue; // Already solved! Skip to next row.
         }
 
-        // Check if item has lock icon (LOCKED)
+        // Check if item has lock icon (locked)
         const hasLock =
-          el.querySelector('.lucide-lock') ||
+          el.querySelector('.lucide-lock') !== null ||
           el.innerHTML.includes('lock') ||
           el.classList.contains('opacity-50') ||
           el.classList.contains('cursor-not-allowed');
@@ -560,18 +641,18 @@ export class SPXAutomationService {
           continue; // Locked! Cannot be accessed yet.
         }
 
-        // THIS IS THE EXACT ACTIVE UNLOCKED ROW!
+        // Item must have a learning activity icon (Book or Clipboard) or be a clickable lesson
         const isBook =
-          el.querySelector('.lucide-book-open, .lucide-book') || el.innerHTML.includes('book');
+          el.querySelector('.lucide-book-open, .lucide-book') !== null || el.innerHTML.includes('book');
         const isClipboard =
-          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') ||
+          el.querySelector('.lucide-clipboard-list, .lucide-clipboard, .lucide-file-text') !== null ||
           el.innerHTML.includes('clipboard');
 
         const type = isBook
           ? 'الدرس التفاعلي 📖'
           : isClipboard
           ? 'مراجعة واختبار النقاط المهمة 📋'
-          : 'نشاط تدريبي ⚡';
+          : 'نشاط تعليمي ⚡';
 
         const cleanTitle = text.split('\n')[0].trim();
 
@@ -582,11 +663,69 @@ export class SPXAutomationService {
         return {
           title: cleanTitle,
           type,
+          unitTitle,
+          chapterTitle: currentChapter || cleanTitle,
         };
       }
 
       return null;
     });
+  }
+
+  /**
+   * Methodically scans the curriculum tree and clicks the exact next unlocked, uncompleted item.
+   * Traverses chapters in order:
+   * 1. Finds the first visible unlocked incomplete lesson row (📖 or 📋).
+   * 2. If no unlocked row is visible (because the current chapter is completed),
+   *    finds and expands the NEXT collapsed chapter accordion (chevron-down).
+   * 3. Once expanded, clicks the first unlocked incomplete row in that chapter.
+   * ZERO hardcoded chapter or lesson names.
+   */
+  private async clickNextUnlockedCurriculumItem(
+    page: Page,
+    sessionId: string
+  ): Promise<{ title: string; type: string; unitTitle: string; chapterTitle: string } | null> {
+    // Attempt 1: Check if an unlocked incomplete item is already visible in an open chapter
+    let target = await this.findAndClickVisibleUnlockedItem(page);
+
+    // If not found, a chapter accordion might be collapsed: expand the next collapsed chapter accordion!
+    if (!target) {
+      const expandedChapter = await page.evaluate(() => {
+        // Find all accordion headers with chevron-down (collapsed)
+        const buttons = Array.from(
+          document.querySelectorAll('div.cursor-pointer, button.cursor-pointer, [role="button"], button')
+        );
+
+        for (const btn of buttons) {
+          const text = btn.textContent?.trim() || '';
+          if (text.includes('رجوع') || text.includes('تسجيل خروج') || text.includes('عنصر') || text.length < 2) {
+            continue;
+          }
+
+          const hasChevronDown =
+            btn.querySelector('.lucide-chevron-down') !== null ||
+            btn.innerHTML.includes('chevron-down');
+          const isLocked =
+            btn.querySelector('.lucide-lock') !== null ||
+            btn.classList.contains('opacity-50') ||
+            btn.classList.contains('cursor-not-allowed');
+
+          if (hasChevronDown && !isLocked) {
+            (btn as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+            (btn as HTMLElement).click();
+            return text.split('\n')[0].trim();
+          }
+        }
+        return null;
+      });
+
+      if (expandedChapter) {
+        this.emitLog(sessionId, 'info', `[توسيع المستوى] تم فتح وتوسيع قائمة: "${expandedChapter}" للوصول للدروس المفتوحة التالية...`);
+        await page.waitForTimeout(1500);
+        // Attempt 2: Now that chapter is expanded, find and click the unlocked item
+        target = await this.findAndClickVisibleUnlockedItem(page);
+      }
+    }
 
     if (target) {
       this.emitLog(
@@ -594,7 +733,7 @@ export class SPXAutomationService {
         'info',
         `تم تحديد العنصر النشط التالي بالترتيب: "${target.title}" (${target.type}) - جاري الفتح والحل...`
       );
-      await page.waitForTimeout(4000);
+      await page.waitForTimeout(3000);
     }
 
     return target;
@@ -602,47 +741,65 @@ export class SPXAutomationService {
 
   /**
    * Safely returns from any activity back to the curriculum sidebar
+   * ZERO hardcoded titles.
    */
   private async returnToCurriculumSidebar(page: Page, sessionId: string) {
     const isCurriculum = await page.evaluate(() => {
-      return (
-        window.location.href.includes('/curriculum') &&
-        document.body.innerText.includes('عنصر') &&
-        document.body.innerText.includes('أساسيات المال')
-      );
+      const url = window.location.href;
+      const isCurriculumUrl = url.includes('/curriculum');
+      const hasCurriculumElements =
+        document.body.innerText.includes('عنصر') ||
+        document.querySelector('.lucide-chevron-down, .lucide-chevron-up, .lucide-book-open, .lucide-clipboard-list') !== null;
+      return isCurriculumUrl && hasCurriculumElements;
     });
 
     if (isCurriculum) return;
 
-    this.emitLog(sessionId, 'info', 'تم إنهاء النشاط، جاري العودة إلى قائمة المنهج لتحديث علامات الإنجاز والانتقال للعنصر التالي...');
+    this.emitLog(
+      sessionId,
+      'info',
+      'تم إنهاء النشاط، جاري العودة إلى قائمة المنهج لتحديث علامات الإنجاز والانتقال للعنصر التالي...'
+    );
 
-    // 1. Try clicking "رجوع" button at top
+    // 1. Try clicking "رجوع" button
     const backBtn = page.locator('button:has-text("رجوع"), a:has-text("رجوع")').first();
-    if (await backBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await backBtn.isVisible({ timeout: 2500 }).catch(() => false)) {
       await backBtn.click();
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(2500);
       return;
     }
 
-    // 2. Direct navigation if needed
-    await page.goto('https://egy.app.spx-learning-square.com/subjects/7/curriculum', {
+    // 2. Direct fallback navigation if needed
+    const currentUrl = page.url();
+    const baseCurriculumUrl = currentUrl.split('/lessons/')[0].split('/quizzes/')[0];
+    const target = baseCurriculumUrl.includes('/curriculum')
+      ? baseCurriculumUrl
+      : 'https://egy.app.spx-learning-square.com/subjects/7/curriculum';
+
+    await page.goto(target, {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2500);
   }
 
   /**
-   * Discovers and extracts all curriculum chapters and items from the sidebar
+   * Discovers and extracts all curriculum chapters and items from the sidebar dynamically
+   * ZERO hardcoded names.
    */
   private async discoverCurriculumChapters(page: Page): Promise<ChapterItem[]> {
-    await this.ensureCurriculumAccordionsExpanded(page);
-
     return page.evaluate(() => {
       const items: any[] = [];
       const rows = Array.from(
         document.querySelectorAll('div.cursor-pointer, button.cursor-pointer, a.cursor-pointer, [role="button"], a')
       );
+
+      // Determine unit title dynamically
+      let currentUnit = 'الوحدة الدراسية';
+      const unitEl = document.querySelector('h1, h2, h3, .font-bold');
+      if (unitEl && !unitEl.textContent?.includes('عنصر') && !unitEl.textContent?.includes('رجوع')) {
+        currentUnit = unitEl.textContent?.trim().split('\n')[0] || currentUnit;
+      }
 
       let itemIndex = 1;
       for (const el of rows) {
@@ -653,32 +810,28 @@ export class SPXAutomationService {
           text.includes('عنصر') ||
           text.includes('الرئيسية') ||
           text.includes('تسجيل خروج') ||
-          text.length < 3
+          text.length < 2
         ) {
           continue;
         }
 
         const isHeader =
-          el.querySelector('.lucide-chevron-down, .lucide-chevron-up') ||
+          el.querySelector('.lucide-chevron-down, .lucide-chevron-up') !== null ||
           el.innerHTML.includes('chevron-down') ||
           el.innerHTML.includes('chevron-up');
-        if (
-          isHeader &&
-          (text.includes('أساسيات') ||
-            text.includes('دور التمويل') ||
-            text.includes('البنية الأساسية') ||
-            text.includes('فهم الزكاة'))
-        ) {
-          continue;
+
+        if (isHeader) {
+          continue; // Skip accordion headers from item list
         }
 
         const hasCheck =
-          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') ||
+          el.querySelector('.lucide-check, .lucide-check-circle, .lucide-badge-check') !== null ||
           el.innerHTML.includes('check') ||
-          el.classList.contains('text-emerald-500');
+          el.classList.contains('text-emerald-500') ||
+          el.classList.contains('text-green-500');
 
         const hasLock =
-          el.querySelector('.lucide-lock') ||
+          el.querySelector('.lucide-lock') !== null ||
           el.innerHTML.includes('lock') ||
           el.classList.contains('opacity-50') ||
           el.classList.contains('cursor-not-allowed');
@@ -687,13 +840,14 @@ export class SPXAutomationService {
         if (hasCheck) status = 'COMPLETED';
         else if (!hasLock) status = 'EXPLORING';
 
-        const isBook = el.querySelector('.lucide-book-open, .lucide-book') || el.innerHTML.includes('book');
+        const isBook =
+          el.querySelector('.lucide-book-open, .lucide-book') !== null || el.innerHTML.includes('book');
         const typeSuffix = isBook ? '(درس)' : '(مراجعة)';
 
         items.push({
           id: `item-${itemIndex++}`,
           title: `${text.split('\n')[0].trim()} ${typeSuffix}`,
-          unitName: 'أساسيات المال والتمويل',
+          unitName: currentUnit,
           status,
           progressPercent: hasCheck ? 100 : 0,
         });
@@ -706,7 +860,7 @@ export class SPXAutomationService {
   /**
    * Solves Interactive Dialogue Lesson with Smart Answer Retrieval & AI Learning
    */
-  private async solveInteractiveDialogue(page: Page, sessionId: string) {
+  private async solveInteractiveDialogue(page: Page, sessionId: string, unitTitle: string = 'SPX Curriculum') {
     const session = this.activeSessions.get(sessionId)!;
     let questionIndex = 1;
     let maxQuestions = 15;
@@ -781,7 +935,7 @@ export class SPXAutomationService {
           questionText: prompt,
           options,
           platformName: 'SPX Learning Square',
-          subjectName: 'أساسيات المال والتمويل',
+          subjectName: unitTitle || 'SPX Curriculum',
         },
         session.studentIdMasked
       );

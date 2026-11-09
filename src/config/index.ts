@@ -25,7 +25,7 @@ export const config = {
   ai: {
     provider: (process.env.AI_PROVIDER || 'gemini') as 'gemini' | 'openai' | 'anthropic' | 'mock',
     apiKey: process.env.AI_API_KEY || '',
-    modelName: process.env.AI_MODEL_NAME || 'gemini-1.5-flash',
+    modelName: process.env.AI_MODEL_NAME || 'gemini-3.1-flash-lite',
     baseUrl: process.env.AI_BASE_URL || '',
   },
 

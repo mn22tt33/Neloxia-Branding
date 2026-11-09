@@ -77,14 +77,11 @@ class TerminalWidget {
 // Main Application Controller
 class QureoApp {
   constructor() {
-    // Default candidate backends - prioritize local server when running locally
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
-    this.defaultBackends = isLocalhost 
-      ? ['http://localhost:4000', 'https://neloxia-branding-production.up.railway.app']
-      : ['https://neloxia-branding-production.up.railway.app', 'http://localhost:4000'];
-
-    const savedUrl = localStorage.getItem('qureo_backend_url');
-    this.backendUrl = (isLocalhost && (!savedUrl || savedUrl.includes('railway'))) ? 'http://localhost:4000' : (savedUrl || this.defaultBackends[0]);
+    // Hosted Railway Backend URL is strictly primary and permanent
+    const HOSTED_BACKEND_URL = 'https://neloxia-branding-production.up.railway.app';
+    this.defaultBackends = [HOSTED_BACKEND_URL];
+    this.backendUrl = HOSTED_BACKEND_URL;
+    localStorage.setItem('qureo_backend_url', HOSTED_BACKEND_URL);
 
     this.currentSessionId = null;
     this.eventSource = null;
