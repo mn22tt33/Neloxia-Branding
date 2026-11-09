@@ -65,15 +65,10 @@ class TerminalWidget {
 
 class QureoApp {
   constructor() {
-    const LOCAL_BACKEND = 'http://localhost:4000';
-    const savedUrl = localStorage.getItem('qureo_backend_url');
-
-    if (!savedUrl || savedUrl.includes('railway')) {
-      this.backendUrl = LOCAL_BACKEND;
-      localStorage.setItem('qureo_backend_url', LOCAL_BACKEND);
-    } else {
-      this.backendUrl = savedUrl;
-    }
+    // Production Railway Backend URL - Strictly Cloud (No Localhost)
+    const RAILWAY_BACKEND = 'https://neloxia-branding-production.up.railway.app';
+    this.backendUrl = RAILWAY_BACKEND;
+    localStorage.setItem('qureo_backend_url', RAILWAY_BACKEND);
 
     this.currentOrder = null;
     this.currentSessionId = null;
@@ -316,8 +311,8 @@ class QureoApp {
       });
       if (res.ok) {
         this.statusPill.className = 'status-pill online text-[11px]';
-        const isLocal = this.backendUrl.includes('localhost');
-        this.statusPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>السيرفر جاهز (${isLocal ? 'Port 4000' : 'سحابي'})</span>`;
+        const isRailway = this.backendUrl.includes('railway.app');
+        this.statusPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span>متصل سحابياً (${isRailway ? 'Railway Cloud' : 'خادم نشط'})</span>`;
         return true;
       }
     } catch (_) {}

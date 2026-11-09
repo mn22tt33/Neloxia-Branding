@@ -266,7 +266,10 @@ export class SmartAnswerService {
   private async findSmartFuzzyMatch(
     query: QuestionQuery
   ): Promise<{ record: QuestionKnowledgeRecord; similarity: number; mappedAnswer: { answerText: string; matchedOptionIndex?: number } } | null> {
-    const all = await this.repository.getAllRecords();
+    const all = await this.repository.getAllRecords({
+      platform: query.platformName,
+      subject: query.subjectName,
+    });
     const verifiedRecords = all.filter(r => r.verificationStatus === 'VERIFIED' && r.verifiedAnswer);
 
     const normIncomingText = QuestionNormalizer.normalizeArabicText(query.questionText);

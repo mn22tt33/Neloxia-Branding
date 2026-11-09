@@ -1,0 +1,742 @@
+[
+  {
+    "id": "seed_qureo_py_lvl1_01",
+    "questionHash": "f8348013c6c3b872",
+    "questionText": "ما هي الدالة المستخدمة لطباعة النصوص في بايثون؟",
+    "normalizedText": "ما هي الداله المستخدمه لطباعه النصوص في بايثون",
+    "options": [
+      "print()",
+      "console.log()",
+      "echo",
+      "printf"
+    ],
+    "normalizedOptions": [
+      "print()",
+      "consolelog()",
+      "echo",
+      "printf"
+    ],
+    "suggestedAnswer": "print()",
+    "verifiedAnswer": "print()",
+    "confidenceScore": 1,
+    "explanation": "دالة الطباعة الأساسية في بايثون هي print()",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.256Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_02",
+    "questionHash": "36f36ac4ae0c0228",
+    "questionText": "أي مما يلي يُستخدم لكتابة تعليق من سطر واحد في لغة بايثون؟",
+    "normalizedText": "اي مما يلي يستخدم لكتابه تعليق من سطر واحد في لغه بايثون",
+    "options": [
+      "#",
+      "//",
+      "/*",
+      "<!--"
+    ],
+    "normalizedOptions": [
+      "#",
+      "//",
+      "/*",
+      "<--"
+    ],
+    "suggestedAnswer": "#",
+    "verifiedAnswer": "#",
+    "confidenceScore": 1,
+    "explanation": "علامة التعليق في بايثون هي #",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_03",
+    "questionHash": "0c586477e694df5b",
+    "questionText": "أي من الكلمات التالية غير مسموح باستخدامها كاسم متغير في بايثون؟",
+    "normalizedText": "اي من الكلمات التاليه غير مسموح باستخدامها كاسم متغير في بايثون",
+    "options": [
+      "if",
+      "my_var",
+      "score_1",
+      "total"
+    ],
+    "normalizedOptions": [
+      "if",
+      "my_var",
+      "score_1",
+      "total"
+    ],
+    "suggestedAnswer": "if",
+    "verifiedAnswer": "if",
+    "confidenceScore": 1,
+    "explanation": "الكلمات المحجوزة مثل if لا يجوز تسمية المتغيرات بها",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_04",
+    "questionHash": "57ec2594b7a2a35d",
+    "questionText": "كيف يتم الإعلان عن متغير وتعيين قيمة رقمية له في بايثون؟",
+    "normalizedText": "كيف يتم الاعلان عن متغير وتعيين قيمه رقميه له في بايثون",
+    "options": [
+      "x = 5",
+      "int x = 5;",
+      "var x = 5;",
+      "let x = 5;"
+    ],
+    "normalizedOptions": [
+      "x = 5",
+      "int x = 5;",
+      "var x = 5;",
+      "let x = 5;"
+    ],
+    "suggestedAnswer": "x = 5",
+    "verifiedAnswer": "x = 5",
+    "confidenceScore": 1,
+    "explanation": "بايثون لغة ديناميكية تُنشئ المتغير بمجرد تعيين القيمة مثل x = 5",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_05",
+    "questionHash": "84dbd539b161611b",
+    "questionText": "ما هو نوع البيانات للناتج من التعبير 10 / 2 في بايثون؟",
+    "normalizedText": "ما هو نوع البيانات للناتج من التعبير 10 / 2 في بايثون",
+    "options": [
+      "float",
+      "int",
+      "double",
+      "str"
+    ],
+    "normalizedOptions": [
+      "float",
+      "int",
+      "double",
+      "str"
+    ],
+    "suggestedAnswer": "float",
+    "verifiedAnswer": "float",
+    "confidenceScore": 1,
+    "explanation": "عملية القسمة / في بايثون ينتج عنها دائماً قيمة عشرية float",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_06",
+    "questionHash": "1c5443cee94247c7",
+    "questionText": "أي من الرموز التالية يمثل معامل المقارنة يساوي في بايثون؟",
+    "normalizedText": "اي من الرموز التاليه يمثل معامل المقارنه يساوي في بايثون",
+    "options": [
+      "==",
+      "=",
+      "===",
+      "equal"
+    ],
+    "normalizedOptions": [
+      "==",
+      "=",
+      "===",
+      "equal"
+    ],
+    "suggestedAnswer": "==",
+    "verifiedAnswer": "==",
+    "confidenceScore": 1,
+    "explanation": "يستخدم == لمقارنة القيم بينما = للإسناد",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_07",
+    "questionHash": "89b5ca7587f74199",
+    "questionText": "كيف نتحقق من صحة شرطين معاً في جملة if بلغة بايثون؟",
+    "normalizedText": "كيف نتحقق من صحه شرطين معا في جمله if بلغه بايثون",
+    "options": [
+      "and",
+      "&&",
+      "&",
+      "also"
+    ],
+    "normalizedOptions": [
+      "and",
+      "&&",
+      "&",
+      "also"
+    ],
+    "suggestedAnswer": "and",
+    "verifiedAnswer": "and",
+    "confidenceScore": 1,
+    "explanation": "في بايثون نستخدم المعامل المنطقي and",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_08",
+    "questionHash": "4bf7d27951c528a6",
+    "questionText": "ما هي الطريقة الصحيحة لكتابة جملة شرطية if في بايثون؟",
+    "normalizedText": "ما هي الطريقه الصحيحه لكتابه جمله شرطيه if في بايثون",
+    "options": [
+      "if x > 5:",
+      "if (x > 5) {",
+      "if x > 5 then",
+      "if [x > 5]:"
+    ],
+    "normalizedOptions": [
+      "if x > 5:",
+      "if (x > 5) {",
+      "if x > 5 then",
+      "if [x > 5]:"
+    ],
+    "suggestedAnswer": "if x > 5:",
+    "verifiedAnswer": "if x > 5:",
+    "confidenceScore": 1,
+    "explanation": "تنتهي جمل الشرط في بايثون بنقطتين رأسيتين :",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_09",
+    "questionHash": "a64f76f79a6981a3",
+    "questionText": "ما هي الدالة المستخدمة لاستقبال مدخلات من المستخدم في بايثون؟",
+    "normalizedText": "ما هي الداله المستخدمه لاستقبال مدخلات من المستخدم في بايثون",
+    "options": [
+      "input()",
+      "get()",
+      "scan()",
+      "read()"
+    ],
+    "normalizedOptions": [
+      "input()",
+      "get()",
+      "scan()",
+      "read()"
+    ],
+    "suggestedAnswer": "input()",
+    "verifiedAnswer": "input()",
+    "confidenceScore": 1,
+    "explanation": "تستخدم input() لقراءة مدخلات المستخدم كنص",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_10",
+    "questionHash": "8ee4b32e218247a8",
+    "questionText": "كيف نقوم بتحويل نص يحتوي على أرقام إلى عدد صحيح؟",
+    "normalizedText": "كيف نقوم بتحويل نص يحتوي علي ارقام الي عدد صحيح",
+    "options": [
+      "int()",
+      "str()",
+      "float()",
+      "toInt()"
+    ],
+    "normalizedOptions": [
+      "int()",
+      "str()",
+      "float()",
+      "toint()"
+    ],
+    "suggestedAnswer": "int()",
+    "verifiedAnswer": "int()",
+    "confidenceScore": 1,
+    "explanation": "دالة int() تحول القيمة إلى عدد صحيح",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_11",
+    "questionHash": "31b323deaea563ff",
+    "questionText": "أي من الدوال التالية تُرجع عدد عناصر القائمة (List)؟",
+    "normalizedText": "اي من الدوال التاليه ترجع عدد عناصر القائمه (list)",
+    "options": [
+      "len()",
+      "size()",
+      "count()",
+      "length()"
+    ],
+    "normalizedOptions": [
+      "len()",
+      "size()",
+      "count()",
+      "length()"
+    ],
+    "suggestedAnswer": "len()",
+    "verifiedAnswer": "len()",
+    "confidenceScore": 1,
+    "explanation": "دالة len() تُرجع طول القائمة أو السلسلة النصية",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_12",
+    "questionHash": "935584e1a7cbc521",
+    "questionText": "كيف نحدد حلقة تكرارية تبدأ من 0 وتنتهي قبل 5 في بايثون؟",
+    "normalizedText": "كيف نحدد حلقه تكراريه تبدا من 0 وتنتهي قبل 5 في بايثون",
+    "options": [
+      "for i in range(5):",
+      "for (i=0; i<5; i++)",
+      "loop 5 times:",
+      "repeat 5:"
+    ],
+    "normalizedOptions": [
+      "for i in range(5):",
+      "for (i=0; i<5; i++)",
+      "loop 5 times:",
+      "repeat 5:"
+    ],
+    "suggestedAnswer": "for i in range(5):",
+    "verifiedAnswer": "for i in range(5):",
+    "confidenceScore": 1,
+    "explanation": "دالة range(5) تولد أرقاماً من 0 إلى 4",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_13",
+    "questionHash": "f9c3970bd0015645",
+    "questionText": "أي رمز يُستخدم لتعريف كتلة برمجية (Code Block) تابعة لدالة أو شرط في بايثون؟",
+    "normalizedText": "اي رمز يستخدم لتعريف كتله برمجيه (code block) تابعه لداله او شرط في بايثون",
+    "options": [
+      "المسافات البادئة (Indentation)",
+      "الأقواس المعقوفة {}",
+      "begin/end",
+      "العلامة <>"
+    ],
+    "normalizedOptions": [
+      "المسافات البادئه (indentation)",
+      "الاقواس المعقوفه {}",
+      "begin/end",
+      "العلامه <>"
+    ],
+    "suggestedAnswer": "المسافات البادئة (Indentation)",
+    "verifiedAnswer": "المسافات البادئة (Indentation)",
+    "confidenceScore": 1,
+    "explanation": "تعتمد لغة بايثون على المسافات البادئة لتحديد النطاق",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_14",
+    "questionHash": "ad6f93f705332c96",
+    "questionText": "كيف نعرّف دالة جديدة في لغة بايثون؟",
+    "normalizedText": "كيف نعرف داله جديده في لغه بايثون",
+    "options": [
+      "def my_function():",
+      "function my_function()",
+      "fn my_function()",
+      "define my_function():"
+    ],
+    "normalizedOptions": [
+      "def my_function():",
+      "function my_function()",
+      "fn my_function()",
+      "define my_function():"
+    ],
+    "suggestedAnswer": "def my_function():",
+    "verifiedAnswer": "def my_function():",
+    "confidenceScore": 1,
+    "explanation": "يتم تعريف الدوال باستخدام الكلمة المفتاحية def",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_15",
+    "questionHash": "5ea06cc711aac59c",
+    "questionText": "ما هو فهرس (Index) أول عنصر في قائمة بايثون؟",
+    "normalizedText": "ما هو فهرس (index) اول عنصر في قائمه بايثون",
+    "options": [
+      "0",
+      "1",
+      "-1",
+      "first"
+    ],
+    "normalizedOptions": [
+      "0",
+      "1",
+      "-1",
+      "first"
+    ],
+    "suggestedAnswer": "0",
+    "verifiedAnswer": "0",
+    "confidenceScore": 1,
+    "explanation": "يبدأ الفهرس دائماً من الصفر 0",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_16",
+    "questionHash": "6c80c0d91cb78677",
+    "questionText": "كيف نضيف عنصراً جديداً إلى نهاية القائمة في بايثون؟",
+    "normalizedText": "كيف نضيف عنصرا جديدا الي نهايه القائمه في بايثون",
+    "options": [
+      "append()",
+      "add()",
+      "push()",
+      "insert_end()"
+    ],
+    "normalizedOptions": [
+      "append()",
+      "add()",
+      "push()",
+      "insert_end()"
+    ],
+    "suggestedAnswer": "append()",
+    "verifiedAnswer": "append()",
+    "confidenceScore": 1,
+    "explanation": "دالة append() تضيف عنصراً في نهاية القائمة",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_17",
+    "questionHash": "558f42cb2e885a88",
+    "questionText": "ما ناتج تنفيذ العملية 2 ** 3 في بايثون؟",
+    "normalizedText": "ما ناتج تنفيذ العمليه 2 ** 3 في بايثون",
+    "options": [
+      "8",
+      "6",
+      "5",
+      "9"
+    ],
+    "normalizedOptions": [
+      "8",
+      "6",
+      "5",
+      "9"
+    ],
+    "suggestedAnswer": "8",
+    "verifiedAnswer": "8",
+    "confidenceScore": 1,
+    "explanation": "المعامل ** يمثل الأس، 2 أس 3 = 8",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_18",
+    "questionHash": "cd77d08e31fb5e6b",
+    "questionText": "ما هي الكلمة المفتاحية المستخدمة لإيقاف حلقة تكرارية والخروج منها فوراً؟",
+    "normalizedText": "ما هي الكلمه المفتاحيه المستخدمه لايقاف حلقه تكراريه والخروج منها فورا",
+    "options": [
+      "break",
+      "stop",
+      "exit",
+      "continue"
+    ],
+    "normalizedOptions": [
+      "break",
+      "stop",
+      "exit",
+      "continue"
+    ],
+    "suggestedAnswer": "break",
+    "verifiedAnswer": "break",
+    "confidenceScore": 1,
+    "explanation": "أمر break ينهي التكرار ويخرج من الحلقة فوراً",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_19",
+    "questionHash": "92aafda9b54eb020",
+    "questionText": "ما هي الكلمة المفتاحية المستخدمة للانتقال إلى التكرار التالي وتخطي الكود المتبقي في الحلقة؟",
+    "normalizedText": "ما هي الكلمه المفتاحيه المستخدمه للانتقال الي التكرار التالي وتخطي الكود المتبقي في الحلقه",
+    "options": [
+      "continue",
+      "pass",
+      "skip",
+      "next"
+    ],
+    "normalizedOptions": [
+      "continue",
+      "pass",
+      "skip",
+      "next"
+    ],
+    "suggestedAnswer": "continue",
+    "verifiedAnswer": "continue",
+    "confidenceScore": 1,
+    "explanation": "أمر continue يتخطى الدورة الحالية وينتقل للتالية",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  },
+  {
+    "id": "seed_qureo_py_lvl1_20",
+    "questionHash": "d53f4c39d90d1d6d",
+    "questionText": "أي من أنواع البيانات التالية يمثل قيمة منطقية إما صواب أو خطأ؟",
+    "normalizedText": "اي من انواع البيانات التاليه يمثل قيمه منطقيه اما صواب او خطا",
+    "options": [
+      "bool",
+      "binary",
+      "logic",
+      "flag"
+    ],
+    "normalizedOptions": [
+      "bool",
+      "binary",
+      "logic",
+      "flag"
+    ],
+    "suggestedAnswer": "bool",
+    "verifiedAnswer": "bool",
+    "confidenceScore": 1,
+    "explanation": "النوع المنطقي في بايثون هو bool وله قيمتان True و False",
+    "isVerified": true,
+    "source": "PLATFORM_VERIFIED",
+    "verificationStatus": "VERIFIED",
+    "retrievalCount": 0,
+    "occurrenceCount": 1,
+    "platform": "QUREO",
+    "subject": "PYTHON",
+    "platformArabic": "كيريو",
+    "subjectArabic": "بايثون",
+    "tags": [
+      "QUREO_PYTHON",
+      "level_1"
+    ],
+    "createdAt": "2026-11-09T16:12:04.257Z",
+    "updatedAt": "2026-11-09T16:12:04.257Z"
+  }
+]

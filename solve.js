@@ -32,13 +32,33 @@ function log(level, message) {
   console.log(`${color}[${time}] ${icon} ${message}${colors.reset}`);
 }
 
-// Load 418 Verified Questions
+// Load Separated Knowledge Store (SPRIX Financial Literacy by default, or specific subject)
 let knowledgeStore = [];
+const subjectArg = (process.argv[4] || 'sprix').toLowerCase();
+
 try {
-  const storePath = path.join(__dirname, 'data', 'question_knowledge_store.json');
+  let targetFile = 'financial_literacy_questions.json';
+  let subjectLabel = 'الثقافة المالية (سبريكس - SPRIX)';
+
+  if (subjectArg.includes('py') || subjectArg.includes('بايثون')) {
+    targetFile = 'qureo_python_questions.json';
+    subjectLabel = 'كيريو بايثون (QUREO Python)';
+  } else if (subjectArg.includes('js') || subjectArg.includes('جافا')) {
+    targetFile = 'qureo_javascript_questions.json';
+    subjectLabel = 'كيريو جافاسكريبت (QUREO JS)';
+  }
+
+  const storePath = path.join(__dirname, 'data', targetFile);
   if (fs.existsSync(storePath)) {
     knowledgeStore = JSON.parse(fs.readFileSync(storePath, 'utf8'));
-    log('success', `تم تحميل بنك الأسئلة المعتمد بنجاح (${knowledgeStore.length} سؤالاً نموذجياً موثقاً).`);
+    log('success', `✓ تم تحميل بنك أسئلة [${subjectLabel}] المفصول بنجاح (${knowledgeStore.length} سؤالاً نموذجياً موثقاً ومفصولاً).`);
+  } else {
+    // Fallback to combined store
+    const fallbackPath = path.join(__dirname, 'data', 'question_knowledge_store.json');
+    if (fs.existsSync(fallbackPath)) {
+      knowledgeStore = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+      log('warn', `تم استخدام البنك الاحتياطي العام (${knowledgeStore.length} سؤال).`);
+    }
   }
 } catch (e) {
   log('warn', `تعذر قراءة بنك الأسئلة: ${e.message}`);
@@ -104,16 +124,27 @@ async function startCliSolver() {
     process.exit(1);
   }
 
+  // Auto-detect Linux/Docker servers: Headless is mandatory when no display exists
+  const isLinux = process.platform === 'linux';
+  const isHeadless = isLinux || process.argv.includes('--headless') || !process.env.DISPLAY;
+
   log('title', `بدء جلسة الحل المباشر للطالب: [${studentId}]...`);
-  log('info', 'جاري إطلاق متصفح Chromium المرئي...');
+  log('info', `جاري إطلاق متصفح Chromium (${isHeadless ? 'Headless Mode للتشغيل على السيرفر/Docker' : 'المرئي'})...`);
 
   const browser = await chromium.launch({
-    headless: false, // User can see the browser solving live!
-    args: ['--start-maximized', '--disable-blink-features=AutomationControlled'],
+    headless: isHeadless,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-blink-features=AutomationControlled',
+      ...(isHeadless ? ['--window-size=1280,800'] : ['--start-maximized']),
+    ],
   });
 
   const context = await browser.newContext({
-    viewport: null, // Full maximized window
+    viewport: isHeadless ? { width: 1280, height: 800 } : null,
     locale: 'ar-EG',
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
   });

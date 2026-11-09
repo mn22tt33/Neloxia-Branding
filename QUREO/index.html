@@ -93,7 +93,7 @@
       <div class="flex items-center gap-2">
         <div id="server-status-pill" class="status-pill online text-[11px]">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span id="server-status-text">متصل (Port 4000)</span>
+          <span id="server-status-text">متصل سحابياً (Railway Cloud)</span>
         </div>
         <button id="settings-btn" class="p-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-bold" title="إعدادات الخادم">
           ⚙️
@@ -585,16 +585,16 @@
 
         <div class="space-y-3">
           <div>
-            <label class="block text-xs font-bold text-slate-400 mb-1">رابط الخادم (Backend URL):</label>
-            <input type="text" id="backend-url-input" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500">
+            <label class="block text-xs font-bold text-slate-400 mb-1">رابط الخادم السحابي (Railway Backend URL):</label>
+            <input type="text" id="backend-url-input" value="https://neloxia-branding-production.up.railway.app" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-cyan-400 font-mono focus:outline-none focus:border-cyan-500">
           </div>
 
           <div class="flex gap-2">
-            <button id="preset-local" class="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200">
-              Localhost:4000
+            <button id="preset-railway" class="flex-1 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-[11px] font-bold text-white">
+              ☁️ سيرفر Railway السحابي (معتمد)
             </button>
-            <button id="preset-railway" class="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200">
-              Railway Server
+            <button id="preset-local" class="py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-400">
+              محلي (4000)
             </button>
           </div>
         </div>

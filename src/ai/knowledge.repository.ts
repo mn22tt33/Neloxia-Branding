@@ -14,6 +14,9 @@ export class KnowledgeRepository {
   private static instance: KnowledgeRepository;
   private readonly storeFilePath: string;
   private readonly logFilePath: string;
+  private readonly flFilePath: string;
+  private readonly qureoJsFilePath: string;
+  private readonly qureoPyFilePath: string;
   
   // Fast in-memory cache indexed by questionHash
   private memoryCache: Map<string, QuestionKnowledgeRecord> = new Map();
@@ -42,6 +45,9 @@ export class KnowledgeRepository {
     }
     this.storeFilePath = path.join(dataDir, 'question_knowledge_store.json');
     this.logFilePath = path.join(dataDir, 'question_correction_logs.json');
+    this.flFilePath = path.join(dataDir, 'financial_literacy_questions.json');
+    this.qureoJsFilePath = path.join(dataDir, 'qureo_javascript_questions.json');
+    this.qureoPyFilePath = path.join(dataDir, 'qureo_python_questions.json');
 
     this.loadFromDisk();
   }
@@ -54,18 +60,61 @@ export class KnowledgeRepository {
   }
 
   /**
-   * Load stored records from local persistent JSON backup on startup
+   * Load stored records from local persistent separated JSON stores on startup
    */
   private loadFromDisk() {
     try {
+      let loadedCount = 0;
+
+      // 1. Load Financial Literacy Questions (SPRIX)
+      if (fs.existsSync(this.flFilePath)) {
+        const flRaw = fs.readFileSync(this.flFilePath, 'utf8');
+        const flItems: any[] = JSON.parse(flRaw);
+        for (const item of flItems) {
+          const rec = this.normalizeStoreRecord(item, 'SPRIX', 'FINANCIAL_LITERACY');
+          this.memoryCache.set(rec.questionHash, rec);
+        }
+        loadedCount += flItems.length;
+        logger.info(`[KnowledgeRepository] Loaded ${flItems.length} questions from SPRIX Financial Literacy store.`);
+      }
+
+      // 2. Load QUREO JavaScript Questions
+      if (fs.existsSync(this.qureoJsFilePath)) {
+        const jsRaw = fs.readFileSync(this.qureoJsFilePath, 'utf8');
+        const jsItems: any[] = JSON.parse(jsRaw);
+        for (const item of jsItems) {
+          const rec = this.normalizeStoreRecord(item, 'QUREO', 'JAVASCRIPT');
+          this.memoryCache.set(rec.questionHash, rec);
+        }
+        loadedCount += jsItems.length;
+        logger.info(`[KnowledgeRepository] Loaded ${jsItems.length} questions from QUREO JavaScript store.`);
+      }
+
+      // 3. Load QUREO Python Questions
+      if (fs.existsSync(this.qureoPyFilePath)) {
+        const pyRaw = fs.readFileSync(this.qureoPyFilePath, 'utf8');
+        const pyItems: any[] = JSON.parse(pyRaw);
+        for (const item of pyItems) {
+          const rec = this.normalizeStoreRecord(item, 'QUREO', 'PYTHON');
+          this.memoryCache.set(rec.questionHash, rec);
+        }
+        loadedCount += pyItems.length;
+        logger.info(`[KnowledgeRepository] Loaded ${pyItems.length} questions from QUREO Python store.`);
+      }
+
+      // 4. Merge any additional items from general backup if not already present
       if (fs.existsSync(this.storeFilePath)) {
         const raw = fs.readFileSync(this.storeFilePath, 'utf8');
-        const items: QuestionKnowledgeRecord[] = JSON.parse(raw);
+        const items: any[] = JSON.parse(raw);
         for (const item of items) {
-          this.memoryCache.set(item.questionHash, item);
+          if (!this.memoryCache.has(item.questionHash)) {
+            const rec = this.normalizeStoreRecord(item);
+            this.memoryCache.set(rec.questionHash, rec);
+          }
         }
-        logger.info(`[KnowledgeRepository] Loaded ${items.length} questions from persistent storage.`);
       }
+
+      logger.info(`[KnowledgeRepository] Total active in-memory knowledge base: ${this.memoryCache.size} verified questions.`);
 
       if (fs.existsSync(this.logFilePath)) {
         const raw = fs.readFileSync(this.logFilePath, 'utf8');
@@ -77,12 +126,71 @@ export class KnowledgeRepository {
   }
 
   /**
-   * Persist in-memory records to disk
+   * Helper to normalize raw JSON items to standard QuestionKnowledgeRecord
+   */
+  private normalizeStoreRecord(item: any, defaultPlatform?: string, defaultSubject?: string): QuestionKnowledgeRecord {
+    return {
+      id: item.id || `q_${item.questionHash}`,
+      questionHash: item.questionHash,
+      normalizedText: item.normalizedText || '',
+      rawQuestionText: item.rawQuestionText || item.questionText || '',
+      questionType: item.questionType || 'MULTIPLE_CHOICE',
+      options: item.options || [],
+      normalizedOptions: item.normalizedOptions || [],
+      proposedAnswer: item.proposedAnswer || item.suggestedAnswer || null,
+      verifiedAnswer: item.verifiedAnswer || item.answer || null,
+      explanation: item.explanation || null,
+      platformName: item.platformName || item.platform || defaultPlatform || 'SPRIX',
+      subjectName: item.subjectName || item.subject || defaultSubject || 'FINANCIAL_LITERACY',
+      lessonName: item.lessonName || null,
+      source: item.source || 'PLATFORM_VERIFIED',
+      confidenceScore: item.confidenceScore !== undefined ? item.confidenceScore : 1.0,
+      verificationStatus: item.verificationStatus || (item.isVerified ? 'VERIFIED' : 'PENDING'),
+      occurrenceCount: item.occurrenceCount || 1,
+      retrievalCount: item.retrievalCount || 0,
+      lastSeenAt: item.lastSeenAt || new Date(),
+      createdAt: item.createdAt || new Date(),
+      updatedAt: item.updatedAt || new Date(),
+    };
+  }
+
+  /**
+   * Persist in-memory records to separated disk stores and combined backup
    */
   private saveToDisk() {
     try {
-      const items = Array.from(this.memoryCache.values());
-      fs.writeFileSync(this.storeFilePath, JSON.stringify(items, null, 2), 'utf8');
+      const allItems = Array.from(this.memoryCache.values());
+
+      // Separate by platform & subject
+      const flItems = allItems.filter(item => {
+        const plat = (item.platformName || '').toUpperCase();
+        const subj = (item.subjectName || '').toUpperCase();
+        return plat.includes('SPRIX') || plat.includes('SPX') || subj.includes('FINANCIAL') || subj.includes('ثقافة') || subj.includes('مالية');
+      });
+
+      const jsItems = allItems.filter(item => {
+        const subj = (item.subjectName || '').toUpperCase();
+        return subj.includes('JAVASCRIPT') || subj.includes('JS') || subj.includes('جافا');
+      });
+
+      const pyItems = allItems.filter(item => {
+        const subj = (item.subjectName || '').toUpperCase();
+        return subj.includes('PYTHON') || subj.includes('بايثون');
+      });
+
+      // Write separated files
+      if (flItems.length > 0) {
+        fs.writeFileSync(this.flFilePath, JSON.stringify(flItems, null, 2), 'utf8');
+      }
+      if (jsItems.length > 0) {
+        fs.writeFileSync(this.qureoJsFilePath, JSON.stringify(jsItems, null, 2), 'utf8');
+      }
+      if (pyItems.length > 0) {
+        fs.writeFileSync(this.qureoPyFilePath, JSON.stringify(pyItems, null, 2), 'utf8');
+      }
+
+      // Write combined backup & correction logs
+      fs.writeFileSync(this.storeFilePath, JSON.stringify(allItems, null, 2), 'utf8');
       fs.writeFileSync(this.logFilePath, JSON.stringify(this.correctionLogs, null, 2), 'utf8');
     } catch (err: any) {
       logger.warn(`[KnowledgeRepository] Failed to write disk backup: ${err.message}`);
@@ -138,9 +246,36 @@ export class KnowledgeRepository {
 
   /**
    * Return all known questions (used for smart fuzzy matching)
+   * Supports optional strict subject/platform filtering (separates SPRIX, QUREO JS, and QUREO Python)
    */
-  public async getAllRecords(): Promise<QuestionKnowledgeRecord[]> {
-    return Array.from(this.memoryCache.values());
+  public async getAllRecords(filter?: { platform?: string; subject?: string }): Promise<QuestionKnowledgeRecord[]> {
+    const all = Array.from(this.memoryCache.values());
+    if (!filter || (!filter.platform && !filter.subject)) {
+      return all;
+    }
+    return all.filter(r => {
+      if (filter.subject) {
+        const sTarget = filter.subject.toUpperCase();
+        const sRec = (r.subjectName || '').toUpperCase();
+        if (sTarget.includes('FINANCIAL') || sTarget.includes('مالية') || sTarget.includes('ثقافة')) {
+          if (!sRec.includes('FINANCIAL') && !sRec.includes('مالية') && !sRec.includes('ثقافة')) return false;
+        } else if (sTarget.includes('PYTHON') || sTarget.includes('بايثون')) {
+          if (!sRec.includes('PYTHON') && !sRec.includes('بايثون')) return false;
+        } else if (sTarget.includes('JAVASCRIPT') || sTarget.includes('JS') || sTarget.includes('جافا')) {
+          if (!sRec.includes('JAVASCRIPT') && !sRec.includes('JS') && !sRec.includes('جافا')) return false;
+        }
+      }
+      if (filter.platform) {
+        const pTarget = filter.platform.toUpperCase();
+        const pRec = (r.platformName || '').toUpperCase();
+        if (pTarget.includes('SPRIX') || pTarget.includes('SPX')) {
+          if (!pRec.includes('SPRIX') && !pRec.includes('SPX')) return false;
+        } else if (pTarget.includes('QUREO') || pTarget.includes('كيريو')) {
+          if (!pRec.includes('QUREO') && !pRec.includes('كيريو')) return false;
+        }
+      }
+      return true;
+    });
   }
 
   /**
