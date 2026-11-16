@@ -298,6 +298,9 @@ class BankStore:
                     log(f"تعذر حفظ بنك المادة {sid}: {e}", "warning")
 
 
+IS_CLOUD = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("QUIZORA_REQUIRE_DATABASE"))
+HEADLESS = os.environ.get("HEADLESS", "1" if IS_CLOUD else "0") == "1"
+
 class Solver:
     def __init__(self, log=None, stop=None, shared=None, subject_id=None, turbo=True):
         self.log = log or (lambda *a: None)
@@ -421,10 +424,10 @@ class Solver:
             try:
                 if channel:
                     self.browser = self.playwright.chromium.launch(
-                        channel=channel, headless=True, args=args
+                        channel=channel, headless=HEADLESS, args=args
                     )
                 else:
-                    self.browser = self.playwright.chromium.launch(headless=True, args=args)
+                    self.browser = self.playwright.chromium.launch(headless=HEADLESS, args=args)
                 self.log(f"تم تشغيل المتصفح ({label}).", "info")
                 break
             except Exception as e:

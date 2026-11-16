@@ -458,13 +458,16 @@ def _run_spx(acct, code, password, subject, turbo=False):
     return bool(ok), msg
 
 
+IS_CLOUD = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("QUIZORA_REQUIRE_DATABASE"))
+HEADLESS = os.environ.get("HEADLESS", "1" if IS_CLOUD else "0") == "1"
+
 def _run_qureo(acct, code, password, courses, turbo=False, lang=None):
     mod = _install_qureo()
     bank = _load_qureo_bank()
     _tls.acct = acct
     stop_evt = acct.get("_stop_event")
     try:
-        solver = mod.QureoSolver(headless=True, courses=courses, turbo=turbo, lang=lang)
+        solver = mod.QureoSolver(headless=HEADLESS, courses=courses, turbo=turbo, lang=lang)
         solver.answers = bank
         completed = solver.run(code, password, courses, close_pause=0)
         if completed is not True:

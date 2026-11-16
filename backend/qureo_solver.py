@@ -286,19 +286,28 @@ class QureoSolver:
     def _native_login(self, student_id, password):
         """دخول عادي عبر صفحات البوابة (بيستخدم في الوضع العادي أو بعد التحويل للمتصفح)."""
         print("🔑 جاري تسجيل الدخول تلقائيًا...", flush=True)
-        self.page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
+        try:
+            self.page.goto(PORTAL_URL, wait_until="networkidle", timeout=45000)
+        except Exception:
+            self.page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=45000)
+
         # لو حقل اسم المستخدم غير ظاهر، ننقر زر اختيار بوابة التعلم
         try:
             if not self.page.locator("#student_id").is_visible():
                 btn = self.page.locator(
                     ".portal-selection-button-secondary, button:has-text('Learning Login'), button:has-text('تسجيل الدخول للتعلم')"
                 ).first
-                btn.wait_for(state="visible", timeout=20000)
+                btn.wait_for(state="visible", timeout=15000)
                 btn.click()
+                try:
+                    self.page.wait_for_selector("#student_id", timeout=4000)
+                except Exception:
+                    # في حال لم يستجب النقر الأولي قبل اكتمال ربط أحداث React
+                    btn.dispatch_event("click")
         except Exception:
             pass
 
-        self.page.wait_for_selector("#student_id", timeout=30000)
+        self.page.wait_for_selector("#student_id", timeout=20000)
         self.page.fill("#student_id", student_id)
         self.page.fill("#password", password)
         self.page.locator("button.login-button, button[type='submit']").first.click()

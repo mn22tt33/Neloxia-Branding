@@ -2054,7 +2054,7 @@
       accounts: complete.map(function(a){ return { code: a.code, password: a.password }; }),
       concurrency: DEFAULT_CONCURRENCY,
       lang: state.lang,
-      turbo: true
+      turbo: false
     };
     if (state.type === "spx") payload.subject = state.subject;
     if (state.type === "qureo") payload.courses = state.courses;
