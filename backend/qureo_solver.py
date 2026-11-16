@@ -383,15 +383,35 @@ class QureoSolver:
         lang = (self.lang or "").lower()
         hits = []
         for e in courses:
-            cc = str(e.get("course_code") or "").lower()
-            cid = str(e.get("content_id") or "").lower()
-            elang = str(e.get("course_lang_code") or "").lower()
+            fields = (
+                e.get("course_code"),
+                e.get("content_id"),
+                e.get("course_name"),
+                e.get("course_title"),
+                e.get("name"),
+                e.get("title"),
+                e.get("display_name"),
+            )
+            values = [str(value or "").strip().lower() for value in fields]
+            cc = values[0]
+            cid = values[1]
+            course_text = " ".join(values)
+            elang = str(
+                e.get("course_lang_code")
+                or e.get("language_code")
+                or e.get("lang")
+                or ""
+            ).strip().lower()
             # فلترة اللغة إن طُلبت: إما course_lang_code أو لاحقة content_id
             if lang and elang != lang and not cid.endswith("_" + lang):
                 continue
-            if norm in ("python",) and ("python" in cc or "python" in cid):
+            if norm == "python" and any(
+                token in course_text for token in ("python", "بايثون")
+            ):
                 hits.append(e)
-            elif norm in ("javascript", "js") and ("javascript" in cc or "javascript" in cid):
+            elif norm in ("javascript", "js") and any(
+                token in course_text for token in ("javascript", "جافاسكريبت")
+            ):
                 hits.append(e)
             elif norm and (norm == cc or norm == cid):
                 # فرع احتياطي صارم: تطابق كامل فقط — لا تطابق جزئي (حتى لا يلتبس "java" مع "javascript")
@@ -455,8 +475,34 @@ class QureoSolver:
     def _enter_course_native(self, name):
         """دخول عادي عبر صفحات البوابة (اختيار المادة بالضغط عليها)."""
         self.page.goto(PORTAL_HOME, wait_until="domcontentloaded")
-        self.page.wait_for_selector(f"text={name}", timeout=30000)
-        self.page.locator(f"text={name}").first.click()
+        labels = {
+            "python": ("Python", "بايثون"),
+            "javascript": ("JavaScript", "جافاسكريبت"),
+            "js": ("JavaScript", "جافاسكريبت"),
+        }.get(self._norm_name(name), (name,))
+        deadline = time.monotonic() + 30
+        course_locator = None
+        while time.monotonic() < deadline and course_locator is None:
+            for frame in self.page.frames:
+                for label in labels:
+                    matches = frame.get_by_text(label, exact=False)
+                    for index in range(matches.count()):
+                        candidate = matches.nth(index)
+                        if candidate.is_visible():
+                            course_locator = candidate
+                            break
+                    if course_locator is not None:
+                        break
+                if course_locator is not None:
+                    break
+            if course_locator is None:
+                time.sleep(0.25)
+        if course_locator is None:
+            raise RuntimeError(
+                f"بوابة Qureo لم تعرض مسار {name} بعد الانتظار. "
+                "تأكد أن المسار متاح لهذا الحساب، ثم أعد المحاولة."
+            )
+        course_locator.click()
         self.page.wait_for_url("**/me-tp.qureo.education/**", timeout=30000)
         time.sleep(0.8)
         print(f"✅ تم الدخول إلى مسار {name}: {self.page.url}", flush=True)

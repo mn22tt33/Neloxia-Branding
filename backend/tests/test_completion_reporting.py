@@ -7,6 +7,71 @@ from backend import qureo_solver, server, spx_solver
 
 
 class CompletionReportingTests(unittest.TestCase):
+    def test_qureo_course_match_uses_course_name_metadata(self):
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.lang = "ar"
+        solver._id_token = lambda: {
+            "available_courses": [
+                {
+                    "content_id": "python_ar",
+                    "course_lang_code": "ar",
+                    "course_name": "Python",
+                }
+            ]
+        }
+
+        self.assertEqual(solver._course_content_id("Python"), "python_ar")
+
+    def test_qureo_native_course_selection_searches_iframe_and_localized_label(self):
+        class Locator:
+            def __init__(self):
+                self.clicked = False
+
+            def count(self):
+                return 1
+
+            def nth(self, _index):
+                return self
+
+            def is_visible(self):
+                return True
+
+            def click(self):
+                self.clicked = True
+
+        class Frame:
+            def __init__(self):
+                self.locator = Locator()
+                self.labels = []
+
+            def get_by_text(self, label, exact=False):
+                self.labels.append((label, exact))
+                return self.locator if label == "بايثون" else LocatorWithNoMatch()
+
+        class LocatorWithNoMatch:
+            def count(self):
+                return 0
+
+        class Page:
+            def __init__(self):
+                self.frames = [Frame()]
+                self.url = "https://me-portal.qureo.education/"
+
+            def goto(self, *_args, **_kwargs):
+                pass
+
+            def wait_for_url(self, *_args, **_kwargs):
+                pass
+
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.page = Page()
+
+        with patch.object(qureo_solver.time, "sleep"):
+            solver._enter_course_native("Python")
+
+        self.assertTrue(solver.page.frames[0].locator.clicked)
+        self.assertIn(("بايثون", False), solver.page.frames[0].labels)
+
     def test_qureo_server_rejects_missing_completion_confirmation(self):
         class FakeSolver:
             def __init__(self, **kwargs):
