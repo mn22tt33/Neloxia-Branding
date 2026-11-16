@@ -56,10 +56,14 @@ CORS_ALLOWED_ORIGINS = {
     origin.strip().rstrip("/")
     for origin in os.environ.get(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost:8700,http://127.0.0.1:8700",
+        "http://localhost:8700,http://127.0.0.1:8700,https://quizora55.up.railway.app",
     ).split(",")
     if origin.strip()
 }
+# Auto-add Railway public domain if available
+_railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+if _railway_domain:
+    CORS_ALLOWED_ORIGINS.add("https://" + _railway_domain.rstrip("/"))
 if (
     os.environ.get("QUIZORA_REQUIRE_DATABASE") == "1"
     and not os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
@@ -817,7 +821,7 @@ def make_handler():
 
         def _cors_headers(self):
             origin = (self.headers.get("Origin") or "").rstrip("/")
-            if origin in CORS_ALLOWED_ORIGINS:
+            if origin in CORS_ALLOWED_ORIGINS or origin == "null":
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
