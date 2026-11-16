@@ -984,6 +984,9 @@ def make_handler():
                 if not plan:
                     self._json(400, {"ok": False, "message": "اختر نوع الحل أولًا (ثقافة / كيريو / الاتنين معًا / اللعبة / الخيار الثاني)."})
                     return
+                for item in plan:
+                    if "detail" not in item:
+                        item["detail"] = _detail_for(item)
                 if "concurrency" in data:
                     _set_concurrency(data["concurrency"])
                 try:

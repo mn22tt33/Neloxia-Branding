@@ -336,7 +336,7 @@ class PostgresQueue:
                                 fingerprint,
                                 self._encrypt(password),
                                 item["mode"],
-                                item["detail"],
+                                item.get("detail", ""),
                                 json.dumps(item, ensure_ascii=False),
                             ),
                         )
@@ -682,7 +682,7 @@ class PostgresQueue:
                     "id": str(job["id"]),
                     "code": self._decrypt(job["code_ciphertext"]),
                     "mode": job["mode"],
-                    "detail": job["detail"],
+                    "detail": job.get("detail", ""),
                     "running": status in ACTIVE_STATUSES,
                     "finished": status in TERMINAL_STATUSES,
                     "success": bool(job["success"]),
