@@ -56,7 +56,7 @@ CORS_ALLOWED_ORIGINS = {
     origin.strip().rstrip("/")
     for origin in os.environ.get(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost:8700,http://127.0.0.1:8700,https://quizora55.up.railway.app",
+        "http://localhost:8700,http://127.0.0.1:8700,https://quizora55.up.railway.app,https://quizora.movb.workers.dev",
     ).split(",")
     if origin.strip()
 }
