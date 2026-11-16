@@ -1,0 +1,26 @@
+طريقة التشغيل على الهاتف (Termux)
+===================================
+
+1. انقل Solver_Update.zip إلى مجلد Downloads وفك ضغطه في مجلد، مثل tool.
+2. افتح Termux وانتقل إلى المجلد الذي فُك فيه الضغط. مثال:
+
+   termux-setup-storage
+   cd /sdcard/Download
+   unzip Solver_Update.zip -d tool
+   cd tool
+
+3. ثبّت المتطلبات مرة واحدة:
+
+   bash setup.sh
+
+4. شغّل الخادم:
+
+   bash run.sh
+
+5. افتح الرابط الذي يظهر في Termux، وغالبًا يكون:
+
+   http://localhost:8700
+
+أوقف الخادم بالضغط على Ctrl+C. يمكن تشغيله مباشرةً بالأمر python server.py أيضًا.
+لشرح وظائف الملفات وملاحظات الأمان، راجع README.md.
+

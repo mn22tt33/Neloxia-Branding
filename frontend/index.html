@@ -1,0 +1,2390 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#493849">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/assets/icon-192.png">
+<script src="/config.js"></script>
+<script>
+  window.__IS_PHONE =
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 0 &&
+      matchMedia("(pointer: coarse)").matches &&
+      matchMedia("(hover: none)").matches);
+  if (window.__IS_PHONE) document.documentElement.classList.add("phone");
+</script>
+<title>QUIZORA</title>
+<style>  :root{
+    /* ===== Brand — deep iris / violet (distinctive, eye-comfortable) ===== */
+    --brand-900:#2C2054;
+    --brand-800:#38296A;
+    --brand-700:#4A3790;
+    --brand-600:#5A45AC;
+    --brand-500:#7A63CB;
+    --brand-400:#9C87DD;
+    --brand-100:#ECE6F9;
+    --brand-50:#F6F3FC;
+
+    /* ===== Neutrals — warm linen, never pure white ===== */
+    --ink:#2A2438;
+    --ink-2:#544D63;
+    --muted:#8C8398;
+    --line:#E9E2F0;
+    --bg:#F6F3EE;
+    --surface:#FFFDFA;
+    --surface-2:#FAF6F0;
+
+    /* ===== Supporting accents ===== */
+    --amber:#A2661F;
+    --amber-bg:#FBEEDC;
+    --red:#B8465A;
+    --red-bg:#FAE9EE;
+    --blue:#3E5F9E;
+    --blue-bg:#E9EEF8;
+    --ok:#2E8B6B;
+    --ok-bg:#E4F3EC;
+
+    --radius-lg:26px;
+    --radius:18px;
+    --radius-sm:12px;
+    --shadow-sm:0 1px 2px rgba(42,36,56,.04),0 10px 28px rgba(74,55,144,.07);
+    --shadow:0 22px 60px rgba(42,36,56,.16);
+    --max:1080px;
+
+    /* Legacy aliases — referenced by inline JS markup */
+    --green-700:var(--brand-700);
+    --green-600:var(--brand-600);
+    --green-500:var(--brand-500);
+    --green-100:var(--brand-100);
+    --green-50:var(--brand-50);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Segoe UI","Tajawal","Cairo","Noto Kufi Arabic","Noto Naskh Arabic",Tahoma,system-ui,sans-serif;
+    background:
+      radial-gradient(1000px 520px at 100% -10%,rgba(156,135,221,.16),transparent 62%),
+      radial-gradient(840px 460px at 0% 8%,rgba(226,178,116,.18),transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+    font-size:15px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button{font-family:inherit}
+  button:focus-visible, input:focus-visible, summary:focus-visible{
+    outline:2px solid rgba(90,69,172,.5);
+    outline-offset:2px;
+  }
+  img{max-width:100%}
+
+  /* ===== Header ===== */
+  .app-header{
+    max-width:var(--max);
+    margin:0 auto;
+    padding:22px 22px 12px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .brand-logo{
+    width:112px;height:75px;object-fit:contain;flex:none;
+  }
+  .brand h1{
+    font-size:20px;line-height:1.2;margin:0;font-weight:850;letter-spacing:-.3px;
+    background:linear-gradient(120deg,var(--ink) 20%,var(--brand-700));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  }
+  /* ===== Stepper ===== */
+  .stepper{
+    max-width:var(--max);
+    margin:12px auto 0;
+    padding:0 20px;
+    display:flex;
+    gap:6px;
+  }
+  .step{
+    flex:1;min-width:0;
+    display:flex;align-items:center;justify-content:center;gap:9px;
+    background:rgba(255,253,250,.6);
+    border:1px solid var(--line);border-radius:14px;
+    padding:9px 6px;cursor:pointer;
+    color:var(--muted);transition:.18s;
+  }
+  .step .dot{
+    width:28px;height:28px;border-radius:50%;flex:none;
+    display:grid;place-items:center;
+    background:#EFE9F5;color:var(--muted);
+    font-size:12px;font-weight:800;
+    transition:.18s;
+  }
+  .step .lbl{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .step:hover:not(.locked){background:var(--surface);border-color:var(--brand-400)}
+  .step.active{color:var(--brand-700);background:var(--surface);border-color:var(--brand-400);box-shadow:var(--shadow-sm)}
+  .step.active .dot{background:linear-gradient(135deg,var(--brand-600),var(--brand-800));color:#fff;box-shadow:0 0 0 4px var(--brand-100)}
+  .step.done .dot{background:var(--brand-100);color:var(--brand-700)}
+  .step.done .dot::before{content:"✓";font-size:13px}
+  .step.done .dot .num{display:none}
+  .step.locked{opacity:.5;cursor:not-allowed;background:transparent;border-color:transparent}
+
+  /* ===== Main ===== */
+  .wrap{max-width:var(--max);margin:0 auto;padding:10px 20px 130px}
+  .panel{
+    display:none;
+    background:rgba(255,253,250,.94);
+    border:1px solid rgba(233,226,240,.95);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-sm);
+    padding:32px;
+    -webkit-backdrop-filter:blur(16px);
+    backdrop-filter:blur(16px);
+  }
+  .panel.active{display:block;animation:panelIn .24s ease both}
+  @keyframes panelIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .panel-head{margin:0 0 18px}
+  .panel-head h2{margin:0 0 7px;font-size:24px;letter-spacing:-.5px;font-weight:850}
+  .panel-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.85}
+  .panel-head .kicker{
+    display:inline-block;font-size:10.5px;font-weight:800;color:var(--brand-700);
+    background:var(--brand-100);border-radius:999px;padding:4px 10px;margin-bottom:9px;
+    letter-spacing:.3px;
+  }
+
+  /* ===== Type cards ===== */
+  .type-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .selection-layout{display:grid;gap:14px}
+  .selection-group{
+    border:1px solid var(--line);border-radius:20px;
+    background:linear-gradient(160deg,var(--surface),var(--surface-2));
+    padding:20px;box-shadow:0 4px 16px rgba(42,36,56,.03);
+  }
+  .selection-heading{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .selection-step{
+    display:grid;place-items:center;width:36px;height:36px;border-radius:12px;flex:none;
+    background:linear-gradient(135deg,var(--brand-100),#F3EDFB);
+    color:var(--brand-700);font-size:11px;font-weight:900;
+    letter-spacing:.4px;direction:ltr;
+  }
+  .selection-heading h3{margin:0;font-size:14px;font-weight:850}
+  .selection-heading p{margin:2px 0 0;color:var(--muted);font-size:11.5px}
+  .track-grid,.year-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+  .track-card,.year-card,.service-card{
+    position:relative;display:flex;align-items:center;gap:12px;min-width:0;width:100%;
+    text-align:start;border:1.5px solid var(--line);border-radius:16px;
+    background:var(--surface);color:var(--ink);cursor:pointer;
+    transition:transform .18s,border-color .18s,box-shadow .18s,background .18s;
+  }
+  .track-card,.year-card{padding:14px 44px 14px 14px;min-height:78px}
+  .year-card:disabled{cursor:not-allowed;opacity:.55}
+  .year-card:disabled:hover{transform:none;box-shadow:none;border-color:var(--line)}
+  .track-card:hover,.year-card:hover,.service-card:hover{
+    transform:translateY(-2px);border-color:var(--brand-400);box-shadow:0 12px 26px rgba(74,55,144,.09)
+  }
+  .track-card.selected,.year-card.selected,.service-card.selected{
+    border-color:var(--brand-600);background:var(--brand-50);box-shadow:0 0 0 3px rgba(90,69,172,.1)
+  }
+  .track-symbol,.year-number,.service-icon{
+    display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:13px;
+    background:var(--brand-100);color:var(--brand-700);font-size:19px;font-weight:900;
+  }
+  .track-symbol-alt{background:var(--blue-bg);color:var(--blue);font-size:11px;letter-spacing:.5px}
+  .track-copy,.year-copy,.service-copy{display:grid;gap:3px;min-width:0}
+  .track-copy b,.year-copy b,.service-copy b{font-size:13px;font-weight:850}
+  .track-copy small,.year-copy small,.service-copy small{color:var(--muted);font-size:11px;line-height:1.6}
+  .year-number{background:#F1ECF6;color:var(--ink-2);font-size:13px;direction:ltr}
+  .year-card.selected .year-number{background:linear-gradient(135deg,var(--brand-600),var(--brand-800));color:#fff}
+  .selection-check,.service-check{
+    position:absolute;top:50%;inset-inline-end:13px;transform:translateY(-50%);
+    display:grid;place-items:center;width:21px;height:21px;border:1.5px solid #DCD4E7;
+    border-radius:50%;background:var(--surface);color:transparent;font-size:11px;font-weight:900;
+    transition:.16s;
+  }
+  .selected .selection-check,.service-card.selected .service-check{
+    background:var(--brand-600);border-color:var(--brand-600);color:#fff;
+  }
+  .selection-note{
+    display:flex;align-items:center;gap:10px;padding:13px 15px;border:1px solid #E3D9F2;
+    border-radius:14px;background:rgba(246,243,252,.8);color:var(--ink-2);font-size:12px;line-height:1.7;
+  }
+  .note-icon{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:9px;background:var(--brand-100);color:var(--brand-700)}
+  .service-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:2px 0 14px}
+  .service-heading h3{margin:0;font-size:15px;font-weight:850}
+  .service-heading p{margin:4px 0 0;font-size:11.5px;color:var(--muted);line-height:1.7}
+  .service-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+  .service-card{padding:15px 46px 15px 15px;min-height:92px}
+  .service-card.fixed{cursor:default}
+  .service-card.fixed:hover{transform:none;box-shadow:0 0 0 3px rgba(90,69,172,.1)}
+  .service-card .service-icon{width:46px;height:46px;font-size:20px}
+  .service-card.wide{grid-column:1/-1}
+  .service-card.independent{background:linear-gradient(135deg,#FBF1DE,#FFFDFA)}
+  .service-card.independent.selected{background:#FBEEDC;border-color:#DFA552;box-shadow:0 0 0 3px rgba(162,102,31,.1)}
+  .service-card.independent.selected .service-icon{background:#F5E1BD;color:var(--amber)}
+  .service-card.independent.selected .service-check{background:var(--amber);border-color:var(--amber)}
+  .type-card{
+    position:relative;display:flex;gap:12px;align-items:flex-start;
+    text-align:start;cursor:pointer;
+    background:var(--surface);border:1.5px solid var(--line);border-radius:17px;
+    padding:16px 16px 16px 40px;
+    transition:.18s;
+  }
+  .type-card:hover{border-color:var(--brand-400);box-shadow:0 9px 24px rgba(42,36,56,.07);transform:translateY(-1px)}
+  .type-card.selected{border-color:var(--brand-600);background:var(--brand-50);box-shadow:0 0 0 3px rgba(90,69,172,.1)}
+  .type-icon{
+    width:44px;height:44px;border-radius:13px;flex:none;
+    display:grid;place-items:center;font-size:21px;
+    background:var(--brand-100);
+  }
+  .type-body{min-width:0;display:block;padding-top:1px}
+  .type-body b{display:block;font-size:14px;font-weight:800;margin-bottom:3px}
+  .type-body small{display:block;font-size:11.5px;line-height:1.55;color:var(--muted)}
+  .type-check{
+    position:absolute;top:14px;inset-inline-end:14px;
+    width:20px;height:20px;border-radius:50%;
+    border:1.5px solid #DCD4E7;background:var(--surface);
+    display:grid;place-items:center;
+    color:transparent;font-size:11px;font-weight:900;
+    transition:.18s;
+  }
+  .selected .type-check{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
+  .sub-mode{margin-top:14px}
+  .sub-mode-title{
+    display:flex;align-items:center;gap:7px;
+    margin:0 2px 8px;font-size:12px;font-weight:800;color:var(--ink-2);
+  }
+  .sub-mode-title::before{
+    content:"";width:3px;height:14px;border-radius:2px;background:var(--brand-600);flex:none;
+  }
+  .sub-mode-title span{font-weight:600;color:var(--muted)}
+  .type-card.type-second{
+    width:100%;
+    background:linear-gradient(180deg,var(--brand-50) 0%,var(--surface) 100%);
+    border-style:dashed;
+  }
+  .type-card.type-second:hover{border-style:solid}
+  .type-card.type-second.selected{border-style:solid}
+  .type-card.type-second .type-icon{background:var(--blue-bg)}
+  .type-badge{
+    display:inline-flex;align-items:center;gap:4px;flex:none;
+    margin-inline-start:auto;align-self:center;
+    background:var(--blue-bg);color:var(--blue);
+    font-size:10.5px;font-weight:800;border-radius:999px;padding:4px 9px;
+    white-space:nowrap;
+  }
+
+  /* ===== Selection helpers ===== */
+  .choice-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .choice{
+    display:flex;align-items:center;gap:10px;text-align:start;
+    border:1.5px solid var(--line);background:var(--surface);border-radius:13px;
+    padding:12px 13px;cursor:pointer;transition:.16s;
+  }
+  .choice:hover{border-color:var(--brand-400);background:var(--surface-2)}
+  .choice.selected{border-color:var(--brand-600);background:var(--brand-50)}
+  .choice .radio{
+    width:18px;height:18px;border-radius:50%;border:1.5px solid #D3C9E2;flex:none;
+    display:grid;place-items:center;transition:.16s;
+  }
+  .choice.selected .radio{border-color:var(--brand-600);background:var(--brand-600)}
+  .choice.selected .radio::after{content:"";width:6px;height:6px;border-radius:50%;background:#fff}
+  .choice .ct b{display:block;font-size:13px;font-weight:800}
+  .choice .ct small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    border:1.5px solid var(--line);background:var(--surface);color:var(--ink-2);
+    border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;
+    cursor:pointer;transition:.16s;
+  }
+  .chip:hover{border-color:var(--brand-400)}
+  .chip .tick{
+    width:15px;height:15px;border-radius:50%;border:1.5px solid #D3C9E2;
+    display:grid;place-items:center;color:transparent;font-size:9px;flex:none;
+  }
+  .chip.selected{background:linear-gradient(135deg,var(--brand-600),var(--brand-700));border-color:var(--brand-600);color:#fff}
+  .chip.selected .tick{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.6);color:#fff}
+  .hint{font-size:11.5px;line-height:1.75;color:var(--muted);margin:8px 0 0}
+  .hint.info{
+    background:var(--blue-bg);color:#36527F;border:1px solid #D6E0F4;
+    border-radius:11px;padding:9px 12px;
+  }
+  .hint.warn{
+    background:var(--amber-bg);color:var(--amber);border:1px solid #F0DEBA;
+    border-radius:11px;padding:9px 12px;
+  }
+  .divider{height:1px;background:var(--line);margin:20px 0 0}
+  /* ===== Accounts ===== */
+  .acc-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px}
+  .count-pill{
+    background:var(--brand-100);color:var(--brand-700);
+    border-radius:999px;padding:4px 12px;font-size:11.5px;font-weight:800;
+    white-space:nowrap;
+  }
+  .acc-toolbar .hint{margin:0;font-size:11px}
+  .account{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    border:1px solid var(--line);border-radius:13px;background:var(--surface-2);
+    padding:8px;margin-bottom:8px;
+  }
+  .account input{
+    width:100%;border:1px solid #E0D9EA;background:var(--surface);border-radius:10px;
+    padding:10px 12px;font-size:13px;color:var(--ink);font-family:inherit;
+    direction:ltr;text-align:left;transition:.16s;
+  }
+  .account input::placeholder{color:#A79DB5;direction:rtl;text-align:right}
+  .account input:focus{outline:2px solid rgba(90,69,172,.28);border-color:var(--brand-600)}
+  .acc-code{flex:1 1 150px}
+  .pw-wrap{position:relative;flex:1.5 1 200px}
+  .pw-wrap input{padding-left:40px}
+  .pw-wrap .eye{
+    position:absolute;top:50%;left:4px;transform:translateY(-50%);
+    width:32px;height:32px;border:0;background:transparent;color:var(--muted);
+    border-radius:8px;cursor:pointer;display:grid;place-items:center;font-size:14px;
+  }
+  .pw-wrap .eye:hover{background:var(--surface-2);color:var(--brand-700)}
+  .icon-btn{
+    width:40px;height:40px;flex:none;border-radius:10px;
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    display:grid;place-items:center;cursor:pointer;font-size:14px;transition:.16s;
+  }
+  .icon-btn:hover{background:var(--surface-2)}
+  .icon-btn.danger{color:var(--red);border-color:#F0CBD1;background:#FFF7F8}
+  .icon-btn.danger:hover{background:var(--red-bg)}
+  /* ===== Alerts ===== */
+  .alert{
+    display:flex;align-items:flex-start;gap:8px;
+    border-radius:11px;padding:10px 13px;font-size:12px;line-height:1.7;
+    margin-top:12px;
+  }
+  .alert.error{background:var(--red-bg);color:var(--red);border:1px solid #F2CFD5}
+  .alert.warn{background:var(--amber-bg);color:var(--amber);border:1px solid #F0DEBA}
+  .alert.info{background:var(--blue-bg);color:#36527F;border:1px solid #D6E0F4}
+  .alert[hidden]{display:none}
+
+  /* ===== Review / summary ===== */
+  .summary{
+    border:1px solid var(--line);border-radius:16px;background:var(--surface-2);
+    padding:16px;
+  }
+  .summary-top{display:flex;align-items:flex-start;gap:10px}
+  .summary-title{font-size:15px;font-weight:800}
+  .summary-sub{font-size:12px;color:var(--muted);line-height:1.7;margin-top:3px}
+  .summary-top .btn{margin-inline-start:auto;flex:none}
+  .summary-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .tag{
+    display:inline-flex;align-items:center;gap:5px;
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;
+    padding:5px 11px;font-size:11.5px;font-weight:700;color:var(--ink-2);
+  }
+  .tag b{color:var(--brand-700);font-weight:800}
+  .progress-card{
+    margin-top:12px;border:1px solid var(--line);border-radius:16px;
+    background:var(--surface);padding:15px;
+  }
+  .progress-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .progress-top .lbl{font-size:12.5px;font-weight:800;color:var(--ink-2)}
+  .progress-top .pct{font-size:12px;font-weight:800;color:var(--brand-700);font-variant-numeric:tabular-nums}
+  .bar{height:9px;background:#ECE7F1;border-radius:999px;overflow:hidden}
+  .bar > i{
+    display:block;height:100%;width:0;border-radius:inherit;
+    background:linear-gradient(90deg,var(--brand-700),var(--brand-400));
+    transition:width .3s ease;
+  }
+  .progress-foot{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:11px;color:var(--muted)}
+
+  .results-head{display:flex;align-items:center;gap:8px;margin:22px 0 10px}
+  .results-head h3{font-size:13.5px;margin:0;font-weight:800}
+  .results-head span{font-size:11px;color:var(--muted);margin-inline-start:auto}
+  .results{display:grid;gap:10px}
+  .result{border:1px solid var(--line);border-radius:15px;background:var(--surface);overflow:hidden}
+  .result-head{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:11px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);
+  }
+  .r-id{min-width:0}
+  .r-code{font-size:13px;font-weight:800;direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
+  .r-meta{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5}
+  .status{
+    margin-inline-start:auto;font-size:11px;font-weight:800;border-radius:999px;
+    padding:4px 11px;white-space:nowrap;
+  }
+  .status.run{background:var(--blue-bg);color:var(--blue)}
+  .status.ok{background:var(--ok-bg);color:var(--ok)}
+  .status.fail{background:var(--red-bg);color:var(--red)}
+  .status.stop{background:#EEEAED;color:#675F6E}
+  .result-body{padding:12px 14px}
+  .r-msg{font-size:12px;line-height:1.7;color:var(--ink-2);margin:0 0 9px}
+  .r-msg.ok{color:var(--ok);font-weight:700}
+  .r-msg.fail{color:var(--red);font-weight:700}
+  .r-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .r-bar-row .bar{flex:1;height:7px}
+  .r-title{font-size:10.5px;color:var(--muted);white-space:nowrap;max-width:45%;overflow:hidden;text-overflow:ellipsis}
+  .r-count{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .log-toggle{
+    display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);
+    border-radius:10px;padding:7px 11px;font-size:11.5px;font-weight:700;
+    cursor:pointer;transition:.16s;
+  }
+  .log-toggle:hover{background:var(--surface-2);border-color:var(--brand-400)}
+  .log-toggle .chev{transition:transform .2s;font-size:9px;color:var(--muted)}
+  .log-toggle[aria-expanded="true"] .chev{transform:rotate(180deg)}
+  .log-wrap{display:none;margin-top:8px}
+  .log-wrap.open{display:block}
+  .log{
+    background:#1B1526;color:#D8CFEA;border-radius:11px;
+    padding:10px 12px;font-family:Consolas,"Courier New",monospace;
+    font-size:11px;line-height:1.8;max-height:180px;overflow:auto;
+    direction:rtl;text-align:right;
+  }
+  .log div{white-space:pre-wrap;overflow-wrap:anywhere}
+  .log .t{color:#8F83B8;font-size:10px;margin-inline-end:5px}
+  .log .ok{color:#7FD6B0}
+  .log .err{color:#FF9AA6}
+  .log .wrn{color:#F2C071}
+  .log .sys{color:#A99CD1}
+
+  /* ===== Empty / bank ===== */
+  .empty{
+    border:1.5px dashed var(--brand-400);border-radius:15px;background:var(--surface-2);
+    text-align:center;padding:28px 16px;color:var(--muted);font-size:12.5px;line-height:1.8;
+    margin-top:12px;
+  }
+  .empty .big{display:block;font-size:26px;margin-bottom:6px}
+  .empty b{color:var(--ink-2);font-size:13.5px}
+  details.bank{
+    margin-top:16px;border:1px solid var(--line);border-radius:15px;
+    background:var(--surface-2);overflow:hidden;
+  }
+  details.bank summary{
+    list-style:none;cursor:pointer;padding:12px 14px;
+    display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:800;color:var(--ink-2);
+  }
+  details.bank summary::-webkit-details-marker{display:none}
+  details.bank summary .muted{margin-inline-start:auto;font-size:11px;color:var(--muted);font-weight:600}
+  .bank-body{padding:0 12px 12px;display:grid;gap:7px}
+  .bank-row{
+    display:flex;align-items:center;gap:9px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 11px;
+    font-size:11.5px;
+  }
+  .bank-row .grade{
+    width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+    font-weight:900;font-size:11px;flex:none;
+  }
+  .grade.ss{background:var(--ok-bg);color:var(--ok)}
+  .grade.s{background:var(--blue-bg);color:var(--blue)}
+  .grade.a{background:var(--amber-bg);color:var(--amber)}
+  .bank-row .bk-main{min-width:0}
+  .bank-row .bk-main b{display:block;font-size:12px}
+  .bank-row .bk-main small{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}
+  .bank-row .bk-score{margin-inline-start:auto;font-weight:800;color:var(--brand-700);white-space:nowrap}
+
+  /* ===== Sticky action bar ===== */
+  .actionbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:60;
+    background:rgba(255,253,250,.9);
+    -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3);
+    border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);
+    box-shadow:0 -10px 34px rgba(42,36,56,.07);
+  }
+  .actionbar-inner{
+    max-width:var(--max);margin:0 auto;padding:13px 20px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .ab-side{display:flex;align-items:center;gap:8px;flex:none}
+  .ab-meta{
+    flex:1;min-width:0;text-align:center;font-size:11.5px;color:var(--muted);
+    line-height:1.5;
+  }
+  .ab-meta b{color:var(--ink-2)}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    border:0;border-radius:12px;padding:11px 19px;
+    font-size:13px;font-weight:800;cursor:pointer;transition:.16s;
+    white-space:nowrap;
+  }
+  .btn.primary{
+    background:linear-gradient(135deg,var(--brand-600),var(--brand-800));color:#fff;
+    box-shadow:0 8px 20px rgba(74,55,144,.28);
+  }
+  .btn.primary:hover{filter:brightness(1.05);transform:translateY(-1px)}
+  .btn.primary:active{transform:translateY(0)}
+  .btn.primary:disabled{background:#C7BFD6;box-shadow:none;cursor:not-allowed;transform:none;filter:none}
+  .btn.secondary{background:var(--surface);color:var(--ink-2);border:1px solid var(--line)}
+  .btn.secondary:hover{background:var(--surface-2);border-color:var(--brand-400)}
+  .btn.danger{background:linear-gradient(135deg,var(--red),#9E3346);color:#fff;box-shadow:0 8px 20px rgba(184,70,90,.26)}
+  .btn.danger:hover{filter:brightness(1.05);transform:translateY(-1px)}
+  .btn.ghost{background:transparent;color:var(--brand-700);padding:8px 10px}
+  .btn.ghost:hover{background:var(--brand-50)}
+  .btn[hidden]{display:none}
+
+  /* ===== Toast ===== */
+  .toast{
+    position:fixed;top:14px;left:50%;transform:translate(-50%,-14px);
+    background:linear-gradient(135deg,var(--brand-900),var(--brand-700));color:#fff;
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:12px;padding:10px 15px;
+    font-size:12px;font-weight:700;z-index:100;opacity:0;pointer-events:none;
+    transition:.22s;box-shadow:var(--shadow);max-width:calc(100vw - 32px);
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* ===== Live Background Jobs Banner ===== */
+  .live-jobs-container{max-width:var(--max);margin:4px auto 8px;padding:0 20px;}
+  .live-jobs-pill{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:linear-gradient(135deg, rgba(122,99,203,.16), rgba(74,55,144,.3));
+    border:1px solid rgba(156,135,221,.5);
+    border-radius:13px;padding:10px 16px;
+    cursor:pointer;font-size:13px;font-weight:700;color:#5A45AC;
+    box-shadow:0 4px 16px rgba(90,69,172,.16);
+    transition:all .2s ease;
+  }
+  .live-jobs-pill:hover{
+    background:linear-gradient(135deg, rgba(122,99,203,.26), rgba(74,55,144,.42));
+    border-color:rgba(156,135,221,.8);
+    transform:translateY(-1px);
+    box-shadow:0 7px 22px rgba(90,69,172,.26);
+  }
+  .live-pulse{
+    width:10px;height:10px;background:#5A45AC;border-radius:50%;
+    box-shadow:0 0 10px #7A63CB;animation:pulseLive 1.4s infinite;flex-shrink:0;
+  }
+  @keyframes pulseLive{
+    0%,100%{transform:scale(1);opacity:1}
+    50%{transform:scale(1.35);opacity:.6}
+  }
+  .live-act{
+    background:rgba(90,69,172,.16);padding:4px 12px;
+    border-radius:9px;font-size:12px;color:#3A2A6E;display:flex;align-items:center;gap:4px;
+  }
+  .stop-single-btn{
+    background:rgba(184,70,90,.1);color:var(--red);border:1px solid rgba(184,70,90,.28);
+    border-radius:7px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;transition:.16s;
+    margin-inline-start:auto;
+  }
+  .stop-single-btn:hover{background:rgba(184,70,90,.2);border-color:var(--red);}
+
+  /* ===== Responsive ===== */
+  @media (max-width:720px){
+    .app-header{padding:14px 14px 4px}
+    .brand-avatar{width:40px;height:40px;border-radius:13px}
+    .brand h1{font-size:16.5px}
+    .stepper{padding:0 10px;gap:4px}
+    .step{flex-direction:column;gap:4px;padding:8px 2px;border-radius:12px}
+    .step .lbl{font-size:10px}
+    .step .dot{width:26px;height:26px;font-size:11px}
+    .wrap{padding:8px 12px 140px}
+    .panel{padding:18px;border-radius:18px}
+    .panel-head h2{font-size:18px}
+    .panel-head p{font-size:12px}
+    .type-grid{grid-template-columns:1fr;gap:10px}
+    .type-card{padding:13px 13px 13px 38px}
+    .type-icon{width:40px;height:40px;font-size:19px}
+    .choice-row{grid-template-columns:1fr}
+    .service-grid{grid-template-columns:1fr}
+    .account{padding:7px}
+    .acc-code{flex:1 1 100%}
+    .pw-wrap{flex:1 1 100%}
+    .actionbar-inner{padding:10px 12px;gap:8px}
+    .ab-meta{display:none}
+    .btn{padding:11px 16px;font-size:12.5px}
+    .summary-top{flex-wrap:wrap}
+    .summary-top .btn{margin-inline-start:0;padding-inline:0}
+    .r-title{max-width:40%}
+    .live-jobs-container{padding:0 12px}
+  }
+  @media (max-width:380px){
+    .brand p{display:none}
+    .btn{padding:10px 14px;font-size:12px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important}
+    html{scroll-behavior:auto}
+  }
+</style>
+<style>
+  :root{
+    --brand-900:#302735;
+    --brand-800:#493849;
+    --brand-700:#614D63;
+    --brand-600:#79647B;
+    --brand-500:#9B829A;
+    --brand-400:#C0AABD;
+    --brand-100:#EFE7EE;
+    --brand-50:#F8F3F7;
+    --ink:#302B31;
+    --ink-2:#5D565F;
+    --muted:#88818A;
+    --line:#E6DED9;
+    --bg:#F3EFE9;
+    --surface:#FFFCF8;
+    --surface-2:#F8F4EE;
+    --amber:#94613C;
+    --amber-bg:#F6EBDD;
+    --red:#A64F5D;
+    --red-bg:#F8E9EB;
+    --blue:#526F89;
+    --blue-bg:#EAF0F3;
+    --ok:#39786A;
+    --ok-bg:#E6F1EC;
+    --accent:#BD7654;
+    --accent-soft:#F4E6DD;
+    --radius-lg:25px;
+    --radius:17px;
+    --radius-sm:12px;
+    --shadow-sm:0 2px 6px rgba(48,39,53,.035),0 12px 30px rgba(48,39,53,.065);
+    --shadow:0 20px 50px rgba(48,39,53,.17);
+    --max:1080px;
+    --green-700:var(--brand-700);
+    --green-600:var(--brand-600);
+    --green-500:var(--brand-500);
+    --green-100:var(--brand-100);
+    --green-50:var(--brand-50);
+  }
+  html{scroll-behavior:smooth;scroll-padding-top:18px}
+  body{
+    color:var(--ink);
+    background:
+      radial-gradient(800px 440px at 92% -8%,rgba(189,118,84,.12),transparent 66%),
+      radial-gradient(700px 500px at -8% 36%,rgba(121,100,123,.09),transparent 68%),
+      linear-gradient(180deg,#F5F1EB 0%,var(--bg) 62%,#F5F1EB 100%);
+    font-family:"Segoe UI","Tajawal","Cairo","Noto Naskh Arabic",Tahoma,system-ui,sans-serif;
+    line-height:1.65;
+  }
+  button,input,summary{font:inherit}
+  button{ -webkit-tap-highlight-color:transparent }
+  button:focus-visible,input:focus-visible,summary:focus-visible{
+    outline:3px solid rgba(189,118,84,.52);outline-offset:3px;
+  }
+  button:disabled{cursor:not-allowed}
+
+  .app-header{
+    position:relative;isolation:isolate;overflow:hidden;
+    max-width:var(--max);min-height:74px;margin:14px auto 0;padding:11px 18px;
+    border:1px solid rgba(255,255,255,.13);border-radius:25px;
+    background:linear-gradient(112deg,#302735 0%,#463849 58%,#5A4658 100%);
+    box-shadow:0 16px 38px rgba(48,39,53,.17);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .app-header::before,.app-header::after{
+    content:"";position:absolute;z-index:-1;pointer-events:none;border-radius:50%;
+  }
+  .app-header::before{
+    width:210px;height:210px;inset-inline-end:12%;top:-145px;
+    border:1px solid rgba(244,230,221,.18);box-shadow:0 0 0 24px rgba(244,230,221,.035),0 0 0 52px rgba(244,230,221,.025);
+  }
+  .app-header::after{
+    width:115px;height:115px;inset-inline-end:5%;bottom:-82px;
+    background:radial-gradient(circle,rgba(189,118,84,.36),rgba(189,118,84,0) 72%);
+  }
+  .brand-avatar{
+    width:46px;height:46px;border:2px solid rgba(255,255,255,.5);
+    border-radius:14px;object-fit:cover;background:#79647B;box-shadow:0 5px 16px rgba(0,0,0,.2);
+  }
+  .brand h1{
+    color:#FFFCF8;background:none;-webkit-text-fill-color:currentColor;
+    font-size:20px;letter-spacing:0;font-weight:850;
+  }
+  .brand p{display:none}
+
+  .stepper{
+    max-width:var(--max);margin:15px auto 0;padding:6px;gap:5px;
+    border:1px solid rgba(230,222,217,.9);border-radius:17px;
+    background:rgba(255,252,248,.7);box-shadow:0 5px 18px rgba(48,39,53,.035);
+  }
+  .step{
+    min-height:46px;gap:9px;padding:7px 12px;
+    color:var(--muted);background:transparent;border:1px solid transparent;border-radius:12px;
+  }
+  .step .dot{
+    width:29px;height:29px;background:#EEE8E5;color:#777078;
+    font-size:11px;font-weight:850;
+  }
+  .step .lbl{font-size:12px;font-weight:750}
+  .step:hover:not(.locked){background:#F8F3F7;border-color:#E4D9E4}
+  .step.active{
+    color:var(--brand-800);background:#F1EAF1;border-color:#E3D6E4;box-shadow:none;
+  }
+  .step.active .dot{background:var(--brand-800);color:#fff;box-shadow:0 0 0 3px rgba(121,100,123,.13)}
+  .step.done .dot{background:#E4EEE8;color:var(--ok)}
+  .step.locked{opacity:.55}
+
+  .live-jobs-container{max-width:var(--max);margin:10px auto 0;padding:0 20px}
+  .live-jobs-pill{
+    min-height:48px;color:#684B3C;background:linear-gradient(105deg,#F3E4D8,#F7EEE6);
+    border:1px solid #E8D3C5;border-radius:14px;box-shadow:0 6px 20px rgba(112,76,56,.08);
+  }
+  .live-jobs-pill:hover{background:#F0DFD1;border-color:#D7B9A5;box-shadow:0 9px 22px rgba(112,76,56,.12)}
+  .live-pulse{background:var(--accent);box-shadow:0 0 9px rgba(189,118,84,.7)}
+  .live-act{color:#684B3C;background:rgba(189,118,84,.13)}
+
+  .wrap{max-width:var(--max);padding:17px 20px 145px}
+  .panel{
+    position:relative;overflow:hidden;padding:32px;
+    background:rgba(255,252,248,.96);border:1px solid rgba(230,222,217,.9);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  }
+  .panel::before{
+    content:"";position:absolute;top:0;inset-inline:0;height:3px;
+    background:linear-gradient(90deg,transparent 0%,var(--accent) 26%,var(--brand-500) 72%,transparent 100%);
+    opacity:.78;
+  }
+  .panel-head{position:relative;margin:0 0 23px}
+  .panel-head h2{font-size:27px;line-height:1.35;letter-spacing:-.4px;font-weight:850}
+  .panel-head p{max-width:760px;color:var(--muted);font-size:13px;line-height:1.85}
+  .panel-head .kicker{
+    color:#8C583D;background:var(--accent-soft);border:1px solid #EBD5C7;
+    border-radius:8px;padding:4px 10px;margin-bottom:10px;font-size:10px;letter-spacing:.1px;
+  }
+
+  .selection-layout{grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+  .selection-layout.selection-single{grid-template-columns:minmax(0,1fr)}
+  .selection-group{
+    min-width:0;padding:20px;border:1px solid var(--line);border-radius:18px;
+    background:linear-gradient(145deg,#FFFCF8,#FAF6F1);box-shadow:0 5px 18px rgba(48,39,53,.035);
+  }
+  .selection-heading{gap:12px;margin-bottom:15px}
+  .selection-step{
+    width:36px;height:36px;border-radius:12px;color:#795B65;
+    background:linear-gradient(145deg,#F0E6EC,#F5E8DD);
+  }
+  .selection-heading h3{font-size:14px;color:var(--ink)}
+  .selection-heading p{font-size:11px;color:var(--muted)}
+  .track-grid,.year-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .track-card,.year-card,.service-card{
+    color:var(--ink);border:1px solid var(--line);border-radius:15px;
+    background:#FFFCF8;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease;
+  }
+  .track-card,.year-card{min-height:82px;padding:13px 43px 13px 13px}
+  .year-card:disabled{opacity:.62}
+  .track-card:hover,.year-card:hover:not(:disabled),.service-card:hover{
+    transform:translateY(-2px);border-color:#C4A9BC;box-shadow:0 9px 22px rgba(72,52,73,.09);
+  }
+  .track-card.selected,.year-card.selected,.service-card.selected{
+    border-color:var(--brand-600);background:#F7F0F6;box-shadow:0 0 0 3px rgba(121,100,123,.11);
+  }
+  .track-symbol,.year-number,.service-icon{
+    width:43px;height:43px;border-radius:13px;color:var(--brand-800);background:#EFE7EE;
+  }
+  .track-symbol-alt{color:var(--blue);background:var(--blue-bg)}
+  .track-copy b,.year-copy b,.service-copy b{font-size:13px}
+  .track-copy small,.year-copy small,.service-copy small{font-size:10.5px;color:#827B83}
+  .year-number{color:#756C76;background:#F0EAE5}
+  .year-card.selected .year-number{color:#fff;background:var(--brand-700)}
+  .selection-check,.service-check{border-color:#DDD3D9;background:#FFFCF8}
+  .selected .selection-check,.service-card.selected .service-check{background:var(--brand-700);border-color:var(--brand-700)}
+  .selection-note{
+    grid-column:1/-1;padding:13px 15px;border-color:#E8D8CD;border-radius:13px;
+    background:linear-gradient(110deg,#F8EEE7,#F8F3F7);color:#65585C;font-size:12px;
+  }
+  .note-icon{background:var(--accent-soft);color:#955D44}
+
+  .service-heading{align-items:center;margin:3px 0 16px;padding-bottom:13px;border-bottom:1px solid var(--line)}
+  .service-heading h3{font-size:17px}
+  .service-heading p{font-size:12px}
+  .service-heading .tag{flex:none}
+  .service-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .service-card{min-height:96px;padding:15px 48px 15px 15px}
+  .service-card.fixed{cursor:default}
+  .service-card.fixed:hover{transform:none;box-shadow:0 0 0 3px rgba(121,100,123,.11)}
+  .service-card .service-icon{width:46px;height:46px;font-size:18px}
+  .service-card.wide{grid-column:1/-1}
+  .service-card.independent{background:linear-gradient(120deg,#FBF1E9,#FFFCF8)}
+  .service-card.independent.selected{background:#F8EDE5;border-color:#D4A687;box-shadow:0 0 0 3px rgba(189,118,84,.13)}
+  .service-card.independent.selected .service-icon{color:#8C573D;background:#F0DCCF}
+  .service-card.independent.selected .service-check{background:var(--accent);border-color:var(--accent)}
+  .service-heading .tag,.tag{
+    color:#625A63;background:#F9F5F1;border-color:#E8DFD9;
+  }
+
+  .choice{
+    min-height:48px;border-color:var(--line);border-radius:13px;background:#FFFCF8;
+  }
+  .choice:hover{border-color:#C4A9BC;background:#FBF6FA}
+  .choice.selected{border-color:var(--brand-600);background:#F7F0F6}
+  .choice .radio{border-color:#CCBEC9}
+  .choice.selected .radio{border-color:var(--brand-700);background:var(--brand-700)}
+  .chip{min-height:40px;border-color:var(--line);background:#FFFCF8}
+  .chip:hover{border-color:#C4A9BC}
+  .chip .tick{border-color:#CCBEC9}
+  .chip.selected{background:var(--brand-700);border-color:var(--brand-700)}
+  .hint{font-size:11.5px;color:#807982}
+  .hint.info,.alert.info{color:#4E6679;background:var(--blue-bg);border-color:#D6E0E5}
+  .hint.warn,.alert.warn{color:#805832;background:var(--amber-bg);border-color:#E9D4B8}
+
+  .acc-toolbar{margin-bottom:13px}
+  .count-pill{color:var(--brand-800);background:#EFE7EE;border:1px solid #E2D6E1}
+  .account{
+    gap:12px;padding:12px;margin-bottom:12px;border-color:#E8DFD9;
+    border-radius:16px;background:linear-gradient(145deg,#FFFCF8,#F8F3EF);
+  }
+  .account input{
+    min-height:52px;padding:12px 14px;font-size:14px;
+    border-color:#E2DAD5;border-radius:12px;background:#FFFDFA;
+    box-shadow:0 2px 6px rgba(42,36,56,.04);
+  }
+  .pw-wrap input{padding-left:48px}
+  .account input::placeholder{color:#9A9299}
+  .account input:focus{
+    outline:3px solid rgba(189,118,84,.17);border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(189,118,84,.08);
+  }
+  .pw-wrap .eye{width:38px;height:38px}
+  .pw-wrap .eye:hover{color:var(--brand-700);background:#F4EEF3}
+  .icon-btn{width:46px;height:46px;border-radius:12px}
+  .icon-btn.danger{color:var(--red);border-color:#EBD0D3;background:#FCF4F4}
+  .icon-btn.danger:hover{background:var(--red-bg)}
+  .alert{border-radius:12px;padding:11px 14px}
+  .alert.error{color:var(--red);background:var(--red-bg);border-color:#EBD0D3}
+  .alert[hidden]{display:none}
+  .summary{border-color:var(--line);border-radius:17px;background:#FAF6F1;padding:18px}
+  .summary-title{font-size:16px}
+  .summary-sub{font-size:12px}
+  .tag{min-height:30px}
+  .tag b{color:var(--brand-700)}
+  .progress-card{border-color:var(--line);border-radius:16px;background:#FFFCF8}
+  .progress-top .lbl{color:var(--ink-2)}
+  .progress-top .pct{color:var(--brand-700)}
+  .bar{background:#ECE5E2}
+  .bar>i{background:linear-gradient(90deg,#765F78 0%,#9A7F97 68%,#BD7654 100%)}
+  .results-head{margin:24px 0 11px}
+  .results-head h3{font-size:14px}
+  .result{border-color:var(--line);border-radius:15px;background:#FFFCF8}
+  .result-head{padding:13px 15px;background:#F8F4EE;border-color:var(--line)}
+  .r-code{font-size:13px}
+  .status{padding:5px 11px}
+  .status.run{color:#4F6A85;background:#EAF0F4}
+  .status.ok{color:#39786A;background:#E6F1EC}
+  .status.fail{color:#A64F5D;background:#F8E9EB}
+  .status.stop{color:#665E66;background:#ECE8E7}
+  .result-body{padding:13px 15px}
+  .r-msg{color:var(--ink-2)}
+  .log-toggle{min-height:38px;border-color:var(--line);border-radius:10px}
+  .log-toggle:hover{background:#F7F0F6;border-color:#C4A9BC}
+  .log{
+    color:#EEE7ED;background:#29242D;border:1px solid #403743;border-radius:12px;
+    font-size:11px;line-height:1.85;
+  }
+  .log .t{color:#C1A9BD}
+  .log .ok{color:#92C5AD}
+  .log .err{color:#E79AA2}
+  .log .wrn{color:#E0B57A}
+  .log .sys{color:#C4B5CB}
+  .empty{border-color:#C8B2C6;border-radius:15px;background:#FAF6F1}
+  .empty b{color:var(--ink-2)}
+  .bank-row{border-color:var(--line);background:#FFFCF8}
+  .bank-row .bk-score{color:var(--brand-700)}
+
+  .actionbar{
+    background:rgba(255,252,248,.93);border-color:rgba(220,210,205,.9);
+    box-shadow:0 -8px 26px rgba(48,39,53,.08);
+    -webkit-backdrop-filter:blur(18px) saturate(1.2);backdrop-filter:blur(18px) saturate(1.2);
+  }
+  .actionbar-inner{min-height:76px;padding:12px 20px}
+  .ab-meta{font-size:11.5px}
+  .btn{min-height:44px;border-radius:12px;padding:11px 19px;font-weight:800}
+  .btn.primary{
+    color:#fff;background:linear-gradient(115deg,#493849 0%,#705A72 75%,#866B7D 100%);
+    box-shadow:0 7px 17px rgba(73,56,73,.22);
+  }
+  .btn.primary:hover{filter:brightness(1.08);box-shadow:0 9px 21px rgba(73,56,73,.27)}
+  .btn.primary:disabled{color:#FCFAF8;background:#C8BFC6;box-shadow:none}
+  .btn.secondary{border-color:var(--line);background:#FFFCF8;color:var(--ink-2)}
+  .btn.secondary:hover{border-color:#C4A9BC;background:#FBF6FA}
+  .btn.danger{background:linear-gradient(115deg,#A64F5D,#8E4253);box-shadow:0 7px 18px rgba(166,79,93,.2)}
+  .btn.ghost{color:var(--brand-700)}
+  .btn.ghost:hover{background:#F4EDF3}
+
+  .toast{
+    top:18px;color:#fff;background:linear-gradient(110deg,#302735,#604B61);
+    border:1px solid rgba(255,255,255,.14);border-radius:13px;box-shadow:0 12px 32px rgba(48,39,53,.24);
+  }
+  .stop-single-btn{color:#9D4A57;background:#F8E9EB;border-color:#EACBD0}
+  .stop-single-btn:hover{background:#F1DADD;border-color:#C9828B}
+
+  @media (max-width:760px){
+    .app-header{min-height:64px;margin:10px 12px 0;padding:9px 13px;border-radius:17px}
+    .brand{gap:10px}
+    .brand-logo{width:90px;height:60px}
+    .brand h1{font-size:17px}
+    .stepper{margin:11px 12px 0;padding:4px;gap:3px;border-radius:14px}
+    .step{min-height:58px;flex-direction:column;gap:3px;padding:5px 2px}
+    .step .dot{width:25px;height:25px}
+    .step .lbl{max-width:100%;font-size:9.5px}
+    .live-jobs-container{margin-top:9px;padding:0 12px}
+    .live-jobs-pill{padding:9px 11px;font-size:11px}
+    .live-act{font-size:10px;padding:4px 7px}
+    .wrap{padding:11px 12px 130px}
+    .panel{padding:21px 17px;border-radius:19px}
+    .panel-head{margin-bottom:19px}
+    .panel-head h2{font-size:21px}
+    .panel-head p{font-size:12px}
+    .selection-layout{grid-template-columns:1fr;gap:12px}
+    .track-grid,.year-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .selection-group{padding:16px;border-radius:16px}
+    .selection-note{grid-column:auto}
+    .service-grid{grid-template-columns:1fr}
+    .service-card.wide{grid-column:auto}
+    .service-heading{align-items:flex-start}
+    .service-heading .tag{font-size:10px}
+    .account{padding:10px}
+    .acc-code,.pw-wrap{flex:1 1 100%}
+    .actionbar-inner{min-height:67px;padding:9px 12px;gap:7px}
+    .ab-meta{display:none}
+    .ab-side{gap:6px}
+    .btn{min-height:43px;padding:10px 14px;font-size:12px}
+    .summary-top{flex-wrap:wrap}
+    .summary-top .btn{margin-inline-start:0;padding-inline:10px}
+    .summary-chips{gap:6px}
+    .tag{font-size:10.5px;padding:4px 8px}
+    .results-head{align-items:flex-start}
+    .results-head span{flex-wrap:wrap;justify-content:flex-end}
+    .result-head{gap:7px}
+    .r-title{max-width:34%}
+    .r-count{font-size:10px}
+    .log{max-height:230px}
+  }
+  @media (max-width:520px){
+    .track-grid,.year-grid{grid-template-columns:1fr}
+    .track-card,.year-card{min-height:74px}
+    .panel-head h2{font-size:19px}
+    .selection-heading{margin-bottom:12px}
+    .service-heading{display:block}
+    .service-heading .tag{display:inline-flex;margin-top:8px}
+    .summary{padding:14px}
+    .summary-top .btn{margin-inline-start:auto}
+    .results-head{display:block}
+    .results-head span{margin:5px 0 0;justify-content:flex-start!important}
+    .result-head{align-items:flex-start}
+    .r-id{width:100%}
+    .status{margin-inline-start:0}
+    .stop-single-btn{margin-inline-start:auto}
+    .r-bar-row{gap:6px}
+    .r-title{max-width:31%;font-size:10px}
+    .actionbar-inner{justify-content:space-between}
+    .actionbar .btn{padding-inline:11px}
+  }
+  @media (max-width:360px){
+    .app-header{margin-inline:8px;padding:9px 11px}
+    .brand-logo{width:82px;height:55px}
+    .brand h1{font-size:16px}
+    .stepper{margin-inline:8px}
+    .wrap{padding-inline:8px}
+    .panel{padding:17px 13px}
+    .btn{font-size:11px;padding-inline:9px}
+  }
+
+  /* Review dashboard */
+  .panel[data-panel="5"]{padding:30px}
+  #review{
+    display:grid;
+    grid-template-columns:minmax(270px,.78fr) minmax(0,1.3fr);
+    grid-template-areas:"summary results" "queue results" "progress results";
+    gap:18px;align-items:start;
+  }
+  #review>.summary{
+    grid-area:summary;position:relative;overflow:hidden;
+    border:0;border-radius:22px;padding:24px;
+    background:linear-gradient(145deg,#493849 0%,#705A72 100%);
+    color:#fff;box-shadow:0 18px 38px rgba(73,56,73,.2);
+  }
+  #review>.summary::before{
+    content:"";position:absolute;inset-block-start:-95px;inset-inline-start:-80px;
+    width:220px;height:220px;border-radius:50%;
+    background:radial-gradient(circle,rgba(189,118,84,.28),transparent 70%);
+    pointer-events:none;
+  }
+  #review .summary-top,#review .summary-chips,#review .summary>.alert{position:relative}
+  #review .summary-top{align-items:flex-start;gap:14px}
+  #review .summary-kicker,.results-kicker,.progress-eyebrow{
+    display:block;color:#D8C6D6;font-size:10px;font-weight:850;letter-spacing:.5px;
+  }
+  #review .summary-title{margin-top:7px;color:#fff;font-size:20px;line-height:1.35}
+  #review .summary-sub{margin-top:7px;color:rgba(255,255,255,.72);font-size:12px}
+  #review .summary-chips{gap:8px;margin-top:20px}
+  #review .summary-chips .tag{
+    min-height:36px;border-color:rgba(255,255,255,.17);
+    background:rgba(255,255,255,.1);color:#F8F1F6;padding:7px 12px;
+  }
+  #review .summary-chips .tag b{color:#F0C3A6;font-size:13px}
+  #review .summary>.alert{border-radius:12px}
+  #review>.queue-stats{
+    grid-area:queue;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  }
+  #review .queue-card{
+    min-width:0;padding:16px;border:1px solid #E8DFD9;border-radius:17px;
+    background:linear-gradient(150deg,#fffdfa,#f8f3ef);
+    box-shadow:0 8px 20px rgba(58,44,55,.05);
+  }
+  #review .queue-card-label{display:block;color:#9A858F;font-size:11px;font-weight:800}
+  #review .queue-card-value{
+    display:block;margin-top:5px;color:var(--brand-700);
+    font-size:29px;font-weight:900;line-height:1.2;font-variant-numeric:tabular-nums;
+  }
+  #review .queue-card-note{display:block;margin-top:6px;color:var(--muted);font-size:10px;line-height:1.6}
+  #review>.progress-card{
+    grid-area:progress;margin:0;padding:21px;border:1px solid #E8DFD9;
+    border-radius:20px;background:linear-gradient(150deg,#fffdfa,#f8f3ef);
+    box-shadow:0 10px 24px rgba(58,44,55,.06);
+  }
+  #review .progress-top{align-items:center;margin-bottom:16px}
+  #review .progress-copy{display:grid;gap:4px}
+  #review .progress-eyebrow{color:#9A858F}
+  #review .progress-top .lbl{font-size:14px;color:var(--ink)}
+  #review .progress-top .pct{
+    display:grid;place-items:center;min-width:58px;height:58px;padding:0 8px;
+    border:1px solid #E8DFD9;border-radius:18px;background:#F7F0F6;
+    color:var(--brand-700);font-size:19px;
+  }
+  #review .progress-card .bar{height:11px;background:#EAE1E7}
+  #review .progress-card .bar>i{
+    background:linear-gradient(90deg,#705A72 0%,#9A7F97 65%,#BD7654 100%);
+  }
+  #review .progress-foot{margin-top:12px;font-size:11px;font-weight:700}
+  #review>.review-results{
+    grid-area:results;display:grid;align-content:start;gap:14px;min-width:0;
+  }
+  #review .results-head{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:14px;margin:0;padding:16px 19px;border:1px solid #E8DFD9;
+    border-radius:18px;background:#F8F3EF;
+  }
+  #review .results-title{display:grid;gap:3px}
+  #review .results-kicker{color:#9A858F}
+  #review .results-head h3{margin:0;color:var(--ink);font-size:18px}
+  #review .results-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+  #review .results-meta{color:var(--muted);font-size:11px;font-weight:700;white-space:nowrap}
+
+  #review .review-results>.results{display:grid;align-content:start;gap:14px}
+  #review .result{
+    border:1px solid #E8DFD9;border-inline-start:5px solid #9A7F97;
+    border-radius:19px;background:#FFFCF8;
+    box-shadow:0 10px 25px rgba(58,44,55,.06);
+    transition:transform .18s,box-shadow .18s;
+  }
+  #review .result:hover{transform:translateY(-2px);box-shadow:0 15px 30px rgba(58,44,55,.1)}
+  #review .result-ok{border-inline-start-color:var(--ok)}
+  #review .result-fail{border-inline-start-color:var(--red)}
+  #review .result-stop{border-inline-start-color:#9A858F}
+  #review .result-head{
+    min-height:78px;gap:12px;padding:16px 19px;
+    border-bottom:1px solid #EEE6E0;background:linear-gradient(120deg,#FCF8F4,#FFFCF8);
+  }
+  #review .r-id{flex:1;min-width:0}
+  #review .r-code{font-size:16px;letter-spacing:.2px}
+  #review .r-meta{margin-top:4px}
+  #review .status{margin-inline-start:auto;padding:7px 13px;font-size:11px}
+  #review .result-body{padding:17px 19px 19px}
+  #review .r-msg{margin-bottom:14px;font-size:13px;line-height:1.8}
+  #review .r-bar-row{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;
+    gap:9px 12px;margin:0 0 15px;
+  }
+  #review .r-title{grid-column:1/-1;max-width:100%;font-size:11px}
+  #review .r-bar-row .bar{height:9px}
+  #review .r-count{
+    padding:2px 8px;border-radius:999px;background:#F3ECEF;
+    color:#796775;font-size:10px;font-weight:800;
+  }
+  #review .log-toggle{
+    min-height:40px;padding:8px 12px;border-color:#E6DCE2;
+    border-radius:11px;background:#FAF6F1;
+  }
+  #review .log-wrap{margin-top:12px}
+  #review .log{max-height:300px;border-radius:13px}
+  #review #results>.empty{
+    min-height:210px;display:grid;place-content:center;
+    border:1px dashed #C8B2C6;border-radius:19px;
+  }
+  @media (max-width:850px){
+    .panel[data-panel="5"]{padding:22px}
+    #review{
+      grid-template-columns:minmax(0,1fr);
+      grid-template-areas:"summary" "queue" "progress" "results";
+      gap:13px;
+    }
+  }
+  @media (max-width:520px){
+    .panel[data-panel="5"]{padding:18px 14px}
+    #review{gap:11px}
+    #review>.summary{padding:19px;border-radius:19px}
+    #review .summary-title{font-size:18px}
+    #review>.queue-stats{gap:8px}
+    #review .queue-card{padding:14px}
+    #review .queue-card-value{font-size:25px}
+    #review>.progress-card{padding:17px;border-radius:17px}
+    #review .progress-top .pct{min-width:52px;height:52px;border-radius:16px;font-size:17px}
+    #review .results-head{align-items:flex-start;padding:14px;border-radius:16px}
+    #review .results-head h3{font-size:16px}
+    #review .results-actions{justify-content:flex-start;gap:7px}
+    #review .results-meta{white-space:normal}
+    #review .result{border-radius:16px}
+    #review .result-head{min-height:0;padding:14px;gap:9px}
+    #review .r-id{width:auto;flex:1 1 100%}
+    #review .status{margin-inline-start:0}
+    #review .result-body{padding:14px}
+    #review #results>.empty{min-height:170px;padding:22px 14px}
+  }
+  @media (max-width:360px){
+    .panel[data-panel="5"]{padding:16px 11px}
+    #review .summary-top{flex-wrap:wrap}
+    #review .results-head{flex-direction:column}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;transition-duration:.001ms!important}
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار منصة QUIZORA">
+    <h1>QUIZORA</h1>
+  </div>
+</header>
+
+<nav class="stepper" aria-label="خطوات الاستخدام">
+  <button class="step active" type="button" data-step="1" aria-current="step">
+    <span class="dot"><span class="num">1</span></span><span class="lbl">النظام</span>
+  </button>
+  <button class="step" type="button" data-step="2">
+    <span class="dot"><span class="num">2</span></span><span class="lbl">الصف</span>
+  </button>
+  <button class="step" type="button" data-step="3">
+    <span class="dot"><span class="num">3</span></span><span class="lbl">الخدمة</span>
+  </button>
+  <button class="step" type="button" data-step="4">
+    <span class="dot"><span class="num">4</span></span><span class="lbl">الحسابات</span>
+  </button>
+  <button class="step" type="button" data-step="5">
+    <span class="dot"><span class="num">5</span></span><span class="lbl">التشغيل</span>
+  </button>
+</nav>
+
+<div class="live-jobs-container">
+  <div id="liveJobsPill" class="live-jobs-pill" style="display:none;" onclick="showLiveJobs()">
+    <span class="live-pulse"></span>
+    <span id="liveJobsText">⚡ يوجد (1) حساب قيد الحل في الخلفية حالياً</span>
+    <span class="live-act">👁️ عرض الشاشة والتقدم ←</span>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- STEP 1: school system -->
+  <section class="panel active" data-panel="1" aria-labelledby="p1title">
+    <div class="panel-head">
+      <span class="kicker">الخطوة 1</span>
+      <h2 id="p1title">اختار نظام الدراسة</h2>
+      <p>اختار حكومي أو لغات، وبعدها اضغط التالي لاختيار الصف الدراسي.</p>
+    </div>
+
+    <div class="selection-layout selection-single" id="schoolSelection">
+      <section class="selection-group" aria-labelledby="trackTitle">
+        <div class="selection-heading">
+          <span class="selection-step">01</span>
+          <div><h3 id="trackTitle">نظام الدراسة</h3><p>اختار النظام المسجل في حسابك</p></div>
+        </div>
+        <div class="track-grid">
+          <button type="button" class="track-card" data-track="general" aria-pressed="false">
+            <span class="track-symbol" aria-hidden="true">ع</span>
+            <span class="track-copy"><b>حكومي</b><small>المحتوى العربي</small></span>
+            <span class="selection-check" aria-hidden="true">✓</span>
+          </button>
+          <button type="button" class="track-card" data-track="languages" aria-pressed="false">
+            <span class="track-symbol track-symbol-alt" aria-hidden="true">EN</span>
+            <span class="track-copy"><b>لغات</b><small>المحتوى الإنجليزي</small></span>
+            <span class="selection-check" aria-hidden="true">✓</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- STEP 2: grade -->
+  <section class="panel" data-panel="2" aria-labelledby="p2title">
+    <div class="panel-head">
+      <span class="kicker">الخطوة 2</span>
+      <h2 id="p2title">اختار الصف الدراسي</h2>
+      <p>حدد الصف المناسب لحسابك.</p>
+    </div>
+    <div class="selection-layout selection-single" id="gradeSelection">
+      <section class="selection-group" aria-labelledby="yearTitle">
+        <div class="selection-heading">
+          <span class="selection-step">02</span>
+          <div><h3 id="yearTitle">السنة الدراسية</h3><p>الخدمات ستتغير حسب السنة</p></div>
+        </div>
+        <div class="year-grid">
+          <button type="button" class="year-card" data-year="first" aria-pressed="false">
+            <span class="year-number">01</span>
+            <span class="year-copy"><b>أولى بكالوريا</b><small>JavaScript</small></span>
+            <span class="selection-check" aria-hidden="true">✓</span>
+          </button>
+          <button type="button" class="year-card" data-year="second" aria-pressed="false">
+            <span class="year-number">02</span>
+            <span class="year-copy"><b>ثانية بكالوريا</b><small>الثقافة المالية · Python · JavaScript</small></span>
+            <span class="selection-check" aria-hidden="true">✓</span>
+          </button>
+        </div>
+      </section>
+      <div class="selection-note" id="selectionNote" role="status">
+        <span class="note-icon" aria-hidden="true">✦</span>
+        <span>اختار النظام الدراسي أولاً، ثم حدد الصف للمتابعة.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 3: service -->
+  <section class="panel" data-panel="3" aria-labelledby="p3title">
+    <div class="panel-head">
+      <span class="kicker">الخطوة 3</span>
+      <h2 id="p3title">اختار خدمة واحدة</h2>
+      <p>تقدر تختار الثقافة المالية أو مسار برمجة واحد فقط.</p>
+    </div>
+    <div id="step3"></div>
+    <div class="alert error" id="step3Alert" role="alert" hidden></div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="panel" data-panel="4" aria-labelledby="p4title">
+    <div class="panel-head">
+      <span class="kicker">الخطوة 4</span>
+      <h2 id="p4title">الحسابات</h2>
+      <p>أضف كود وكلمة مرور لكل حساب. تقدر تلصق قائمة كاملة بصيغة <b dir="ltr">كود : باسورد</b> في أول خانة.</p>
+    </div>
+
+    <div class="acc-toolbar">
+      <span class="count-pill" id="accCountPill">0 أكواد</span>
+      <span class="hint">كل حساب بيتشغّل لوحده — والأكواد مش بتتحفظ في المتصفح.</span>
+    </div>
+
+    <div id="accounts"></div>
+    <div class="alert error" id="accAlert" role="alert" hidden></div>
+  </section>
+
+  <!-- STEP 5 -->
+  <section class="panel" data-panel="5" aria-labelledby="p5title">
+    <div class="panel-head">
+      <span class="kicker">الخطوة 5</span>
+      <h2 id="p5title">المراجعة والتشغيل</h2>
+      <p>راجع الاختيارات، وبعدين ابدأ من الشريط السفلي. السجل مطوي جوه كل حساب — اضغط عليه عشان يفتح.</p>
+    </div>
+    <div id="review"></div>
+  </section>
+</main>
+
+<div class="actionbar">
+  <div class="actionbar-inner">
+    <div class="ab-side" id="abPrimary"></div>
+    <div class="ab-meta" id="abMeta">الخطوة 1 من 5</div>
+    <div class="ab-side">
+      <button class="btn secondary" type="button" id="backBtn" data-action="back" hidden>→ السابق</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var configuredApiBase = window.APP_CONFIG && typeof window.APP_CONFIG.apiBaseUrl === "string"
+    ? window.APP_CONFIG.apiBaseUrl.trim()
+    : "";
+  var API_BASE_URL = (configuredApiBase || location.origin).replace(/\/+$/, "");
+
+  function apiFetch(path, options){
+    return fetch(API_BASE_URL + path, options);
+  }
+
+  var CLIENT_ID_KEY = "quizora-client-id";
+  var CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function createClientId(){
+    if (window.crypto && typeof window.crypto.randomUUID === "function"){
+      return window.crypto.randomUUID();
+    }
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c){
+      var r = Math.random() * 16 | 0;
+      return (c === "x" ? r : (r & 3 | 8)).toString(16);
+    });
+  }
+
+  function loadClientId(){
+    try {
+      var saved = sessionStorage.getItem(CLIENT_ID_KEY);
+      if (saved && CLIENT_ID_PATTERN.test(saved)) return saved;
+      var generated = createClientId();
+      sessionStorage.setItem(CLIENT_ID_KEY, generated);
+      return generated;
+    } catch (error) {
+      console.warn("تعذّر حفظ معرّف الجلسة في المتصفح.", error);
+      return createClientId();
+    }
+  }
+
+  var DEFAULT_CONCURRENCY = 1;
+
+  var state = {
+    clientId: loadClientId(),
+    step: 1,
+    maxStep: 1,
+    type: null,
+    track: null,
+    year: null,
+    subject: "7",
+    courses: [],
+    services: { culture: false, python: false, javascript: false },
+    lang: "ar",
+    accounts: [{ code: "", password: "" }],
+    running: false,
+    serverRunningCount: 0,
+    queueTotal: 0,
+    queueAhead: null,
+    queuePosition: null,
+    queueState: "none",
+    finished: false,
+    results: [],
+    openLogs: {},
+    timer: null
+  };
+
+  var $ = function(sel, root){ return (root || document).querySelector(sel); };
+  var $$ = function(sel, root){ return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
+
+  function esc(v){
+    return String(v == null ? "" : v)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function now(){
+    var d = new Date();
+    var p = function(n){ return String(n).padStart(2, "0"); };
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+
+  function typeLabel(t){
+    if (t === "spx") return "الثقافة المالية";
+    if (t === "qureo") return "Qureo";
+    if (t === "qureo2") return "JavaScript — أولى بكالوريا";
+    return "—";
+  }
+
+  function subjectLabel(){
+    return state.subject === "7" ? "عربي — الثقافة المالية" : "لغات — Financial Literacy";
+  }
+
+  function sortedCourses(){
+    return ["Python", "JavaScript"].filter(function(c){ return state.courses.indexOf(c) !== -1; });
+  }
+
+  function coursesLabel(){
+    var c = sortedCourses();
+    return c.length ? c.join(" + ") : "لم يتم اختيار خدمة";
+  }
+
+  function langLabel(){
+    if (state.lang === "ar") return "عربي";
+    if (state.lang === "en") return "لغات";
+    return "تلقائي";
+  }
+
+  function trackLabel(){
+    return state.track === "languages" ? "لغات" : state.track === "general" ? "حكومي" : "لم يُحدد";
+  }
+
+  function yearLabel(){
+    return state.year === "first"
+      ? "أولى بكالوريا"
+      : state.year === "second" ? "ثانية بكالوريا" : "لم تُحدد";
+  }
+
+  function syncServiceSelection(){
+    state.courses = ["Python", "JavaScript"].filter(function(course){
+      return state.services[course.toLowerCase()];
+    });
+    if (state.year === "first"){
+      state.courses = ["JavaScript"];
+      state.type = "qureo2";
+    } else if (state.services.culture){
+      state.type = "spx";
+    } else if (state.courses.length){
+      state.type = "qureo";
+    } else {
+      state.type = null;
+    }
+  }
+
+  var WIZARD_STATE_KEY = "quizora-wizard-state";
+
+  function persistWizardState(){
+    try {
+      sessionStorage.setItem(WIZARD_STATE_KEY, JSON.stringify({
+        clientId: state.clientId,
+        step: state.step,
+        track: state.track,
+        year: state.year,
+        services: state.services
+      }));
+    } catch (error) {
+      console.warn("تعذّر حفظ تقدم الجلسة.", error);
+    }
+  }
+
+  function restoreWizardState(){
+    var saved;
+    try {
+      var serialized = sessionStorage.getItem(WIZARD_STATE_KEY);
+      if (!serialized) return;
+      saved = JSON.parse(serialized);
+    } catch (error) {
+      console.warn("تعذّرت استعادة تقدم الجلسة.", error);
+      return;
+    }
+
+    if (!saved || typeof saved !== "object") return;
+    if (typeof saved.clientId === "string" && CLIENT_ID_PATTERN.test(saved.clientId)){
+      state.clientId = saved.clientId;
+      try {
+        sessionStorage.setItem(CLIENT_ID_KEY, state.clientId);
+      } catch (error) {
+        console.warn("تعذّر استعادة معرّف الجلسة.", error);
+      }
+    }
+    if (saved.track !== "general" && saved.track !== "languages") return;
+
+    state.track = saved.track;
+    state.lang = state.track === "languages" ? "en" : "ar";
+    state.subject = state.track === "languages" ? "3" : "7";
+    state.year = saved.year === "first" || saved.year === "second" ? saved.year : null;
+
+    if (state.year === "first") {
+      state.services = { culture: false, python: false, javascript: true };
+    } else if (state.year === "second") {
+      var services = saved.services || {};
+      state.services = {
+        culture: services.culture === true,
+        python: services.culture !== true && services.python === true,
+        javascript: services.culture !== true && services.python !== true && services.javascript === true
+      };
+    }
+
+    if (state.year) syncServiceSelection();
+
+    state.maxStep = state.year ? (state.type ? 4 : 3) : 2;
+    var requestedStep = Number(saved.step);
+    if (!Number.isInteger(requestedStep) || requestedStep < 1) requestedStep = 1;
+    if (state.type && requestedStep === 5) state.maxStep = 5;
+    state.step = Math.min(requestedStep, state.maxStep);
+  }
+
+  function jobsPerAccount(){
+    return 1;
+  }
+
+  function completeAccounts(){
+    return state.accounts.filter(function(a){ return a.code.trim() && a.password; });
+  }
+
+  function totalJobs(){
+    return completeAccounts().length * jobsPerAccount();
+  }
+
+  function selectionDetail(){
+    var school = trackLabel() + " · " + yearLabel();
+    if (state.type === "spx") return school + " · " + subjectLabel();
+    if (state.type === "qureo") {
+      return school + " · Qureo — " + coursesLabel();
+    }
+    if (state.type === "qureo2") return school + " · JavaScript فقط — " + langLabel();
+    return "—";
+  }
+
+  /* ===== Rendering ===== */
+  function showLiveJobs(){
+    state.maxStep = 5;
+    go(5);
+  }
+  window.showLiveJobs = showLiveJobs;
+
+  function renderLiveBanner(){
+    var pill = $("#liveJobsPill");
+    var txt = $("#liveJobsText");
+    if (!pill) return;
+    var cnt = state.serverRunningCount || 0;
+    if (cnt > 0 && state.step !== 4){
+      pill.style.display = "flex";
+      if (txt) txt.textContent = "⚡ يوجد (" + cnt + ") حساب قيد الحل في الخلفية حالياً";
+    } else {
+      pill.style.display = "none";
+    }
+  }
+
+  function renderAll(){
+    persistWizardState();
+    renderStepper();
+    renderPanels();
+    renderStep1();
+    renderStep2();
+    renderStep3();
+    renderAccounts();
+    renderReview();
+    renderActionBar();
+    renderLiveBanner();
+  }
+
+  function renderStepper(){
+    $$(".step").forEach(function(btn){
+      var n = Number(btn.getAttribute("data-step"));
+      var locked = n > state.maxStep;
+      btn.classList.toggle("active", n === state.step);
+      btn.classList.toggle("done", n < state.step);
+      btn.classList.toggle("locked", locked && n !== state.step);
+      btn.disabled = locked && n !== state.step;
+      if (n === state.step) btn.setAttribute("aria-current", "step");
+      else btn.removeAttribute("aria-current");
+    });
+  }
+
+  function renderPanels(){
+    $$(".panel").forEach(function(p){
+      p.classList.toggle("active", Number(p.getAttribute("data-panel")) === state.step);
+    });
+  }
+
+  function renderStep1(){
+    $$(".track-card").forEach(function(card){
+      var selected = card.getAttribute("data-track") === state.track;
+      card.classList.toggle("selected", selected);
+      card.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+  }
+
+  function renderStep2(){
+    $$(".year-card").forEach(function(card){
+      var selected = card.getAttribute("data-year") === state.year;
+      card.classList.toggle("selected", selected);
+      card.setAttribute("aria-pressed", selected ? "true" : "false");
+      card.disabled = !state.track;
+    });
+    var note = $("#selectionNote");
+    if (note){
+      var text = !state.track
+        ? "ارجع واختار نظام الدراسة أولاً."
+        : !state.year
+          ? "تم اختيار " + trackLabel() + ". اختار الصف للمتابعة."
+          : "المسار المحدد: " + trackLabel() + " · " + yearLabel() + ".";
+      note.querySelector("span:last-child").textContent = text;
+    }
+  }
+
+  function renderStep3(){
+    var host = $("#step3");
+    if (!state.track || !state.year){
+      host.innerHTML = '<div class="empty"><span class="big">☝️</span><b>أكمل اختيار المسار والصف</b><br>ارجع للخطوتين السابقتين وحدد اختياراتك.</div>';
+      return;
+    }
+
+    var html = '<div class="service-heading"><div><h3>خدمات ' + esc(yearLabel()) + '</h3>' +
+      '<p>' + (state.year === "first"
+        ? "أولى بكالوريا مخصصة لمسار JavaScript فقط."
+        : "اختار خدمة واحدة فقط للمتابعة.") +
+      '</p></div><span class="tag">' + esc(trackLabel()) + '</span></div>';
+
+    html += '<div class="service-grid" role="group" aria-label="اختر خدمة واحدة فقط">';
+    if (state.year === "first"){
+      html += '<div class="service-card fixed selected wide" aria-label="JavaScript فقط، محدد تلقائيًا">' +
+        '<span class="service-icon">JS</span><span class="service-copy"><b>JavaScript</b>' +
+        '<small>المسار الوحيد المتاح في أولى بكالوريا · ' + esc(langLabel()) + '</small></span>' +
+        '<span class="service-check" aria-hidden="true">✓</span></div>';
+    } else {
+      html += serviceCard(
+        "culture", "الثقافة المالية",
+        state.track === "languages" ? "Financial Literacy · لغات" : "الثقافة المالية · حكومي",
+        "◈", state.services.culture, ""
+      );
+      html += serviceCard(
+        "python", "Python", "مسار البرمجة", "Py",
+        state.services.python, ""
+      );
+      html += serviceCard(
+        "javascript", "JavaScript", "مسار البرمجة", "JS",
+        state.services.javascript, ""
+      );
+    }
+    html += '</div>';
+
+    host.innerHTML = html;
+  }
+
+  function serviceCard(id, title, description, icon, selected, extraClass){
+    return '<button type="button" class="service-card ' + (selected ? "selected " : "") +
+      (extraClass || "") + '" data-service="' + id + '" aria-pressed="' + selected + '">' +
+      '<span class="service-icon">' + icon + '</span><span class="service-copy"><b>' + title +
+      '</b><small>' + description + '</small></span><span class="service-check" aria-hidden="true">✓</span></button>';
+  }
+
+  function renderAccounts(){
+    var host = $("#accounts");
+    if (!host) return;
+    host.innerHTML = state.accounts.map(function(a, i){
+      return '<div class="account" data-i="' + i + '">' +
+        '<input class="acc-code" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" ' +
+          'value="' + esc(a.code) + '" placeholder="كود الطالب" aria-label="كود الطالب ' + (i + 1) + '" dir="ltr">' +
+        '<div class="pw-wrap">' +
+          '<input class="acc-pw" type="password" autocomplete="off" spellcheck="false" ' +
+            'value="' + esc(a.password) + '" placeholder="كلمة المرور" aria-label="كلمة المرور ' + (i + 1) + '" dir="ltr">' +
+          '<button type="button" class="eye" data-action="eye" aria-label="إظهار كلمة المرور" aria-pressed="false">👁</button>' +
+        '</div>' +
+        '<button type="button" class="icon-btn danger" data-action="del-account" aria-label="حذف الحساب">✕</button>' +
+      '</div>';
+    }).join("");
+
+    updateAccountCount();
+  }
+
+  function updateAccountCount(){
+    var count = state.accounts.filter(function(a){ return a.code.trim(); }).length;
+    var pill = $("#accCountPill");
+    if (pill) pill.textContent = count + (count === 1 ? " كود" : " أكواد");
+  }
+
+  function progressSnapshot(){
+    if (!state.results.length){
+      return { pct: 0, done: 0, total: 0, running: 0, label: "لم تبدأ العملية بعد", foot: "جاهز للبدء" };
+    }
+    var done = 0, total = 0, running = 0;
+    state.results.forEach(function(r){
+      done += r.done;
+      total += r.total;
+      if (r.status === "run") running += 1;
+    });
+    var pct = total ? Math.round(done / total * 100) : 0;
+    if (state.running){
+      return { pct: pct, done: done, total: total, running: running, label: "جاري التشغيل…", foot: running + " عملية شغالة" };
+    }
+    var ok = state.results.filter(function(r){ return r.status === "ok"; }).length;
+    var failed = state.results.filter(function(r){ return r.status === "fail"; }).length;
+    var stopped = state.results.filter(function(r){ return r.status === "stop"; }).length;
+    var label = "انتهت العملية";
+    if (stopped) label = "تم الإيقاف";
+    var foot = ok + " ناجحة";
+    if (failed) foot += " · " + failed + " فاشلة";
+    if (stopped) foot += " · " + stopped + " متوقفة";
+    return { pct: pct, done: done, total: total, running: 0, label: label, foot: foot };
+  }
+
+  function statusInfo(r){
+    if (r.status === "ok") return { cls: "ok", txt: "اكتمل" };
+    if (r.status === "fail") return { cls: "fail", txt: "فشل" };
+    if (r.status === "stop") return { cls: "stop", txt: "متوقف" };
+    return { cls: "run", txt: "جاري الحل" };
+  }
+
+  function logHtml(lines){
+    return lines.map(function(l){
+      var cls = l.level === "ok" ? "ok" : l.level === "err" ? "err" : l.level === "wrn" ? "wrn" : l.level === "sys" ? "sys" : "";
+      return '<div class="' + cls + '"><span class="t">' + esc(l.t) + '</span>' + esc(l.msg) + '</div>';
+    }).join("");
+  }
+
+  function renderResults(){
+    var host = $("#results");
+    if (!host) return;
+    if (!state.results.length){
+      host.innerHTML = '<div class="empty"><span class="big">🚀</span><b>جاهز للبدء</b><br>اضغط «ابدأ الحل» من الشريط السفلي، وهتلاقي كل حساب هنا ببطاقته وسجله.</div>';
+      return;
+    }
+
+    var keepScroll = {};
+    Object.keys(state.openLogs).forEach(function(k){
+      if (!state.openLogs[k]) return;
+      var box = host.querySelector('[data-log="' + k + '"] .log');
+      if (!box) return;
+      keepScroll[k] = {
+        top: box.scrollTop,
+        atBottom: box.scrollHeight - box.scrollTop - box.clientHeight < 24
+      };
+    });
+
+    host.innerHTML = state.results.map(function(r, i){
+      var st = statusInfo(r);
+      var pct = r.total ? Math.round(r.done / r.total * 100) : 0;
+      var open = !!state.openLogs[i];
+      var msgCls = r.status === "ok" ? "ok" : r.status === "fail" ? "fail" : "";
+      var singleStop = r.status === "run" ? '<button type="button" class="stop-single-btn" data-action="stop-single" data-code="' + esc(r.code) + '">إيقاف ✕</button>' : '';
+      return '<article class="result result-' + st.cls + '">' +
+        '<div class="result-head">' +
+          '<div class="r-id"><div class="r-code">' + esc(r.code) + '</div><div class="r-meta">' + esc(r.detail) + '</div></div>' +
+          singleStop +
+          '<span class="status ' + st.cls + '">' + st.txt + '</span>' +
+        '</div>' +
+        '<div class="result-body">' +
+          '<p class="r-msg ' + msgCls + '">' + esc(r.message || r.phase || "في الانتظار…") + '</p>' +
+          '<div class="r-bar-row">' +
+            '<span class="r-title">' + esc(r.title || "—") + '</span>' +
+            '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+            '<span class="r-count">' + r.done + '/' + r.total + '</span>' +
+          '</div>' +
+          '<button type="button" class="log-toggle" data-action="toggle-log" data-i="' + i + '" aria-expanded="' + open + '">' +
+            (open ? "إخفاء السجل" : "عرض السجل") + ' <span class="chev">▼</span>' +
+          '</button>' +
+          '<div class="log-wrap ' + (open ? "open" : "") + '" data-log="' + i + '">' +
+            '<div class="log">' + logHtml(r.lines) + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</article>';
+    }).join("");
+
+    Object.keys(state.openLogs).forEach(function(k){
+      if (!state.openLogs[k]) return;
+      var box = host.querySelector('[data-log="' + k + '"] .log');
+      if (!box) return;
+      var keep = keepScroll[k];
+      if (keep && !keep.atBottom) box.scrollTop = keep.top;
+      else box.scrollTop = box.scrollHeight;
+    });
+  }
+
+  function renderReview(){
+    var host = $("#review");
+    if (!host) return;
+    if (!state.type){
+      host.innerHTML = '<div class="empty"><span class="big">☝️</span><b>لسه مفيش خدمة</b><br>ارجع للخطوة 3 واختار خدمة واحدة.</div>';
+      return;
+    }
+
+    var prog = progressSnapshot();
+    var n = completeAccounts().length;
+    var jobs = totalJobs();
+    var over = jobs > 20;
+
+    var html = '<div class="summary">' +
+      '<div class="summary-top">' +
+        '<div class="summary-copy"><span class="summary-kicker">ملخص المهمة</span><div class="summary-title">' + esc(typeLabel(state.type)) + '</div>' +
+        '<div class="summary-sub">' + esc(selectionDetail()) + '</div></div>' +
+      '</div>' +
+      '<div class="summary-chips">' +
+        '<span class="tag">👤 <b>' + n + '</b> حساب</span>' +
+        '<span class="tag">⚙️ <b>' + jobs + '</b> عملية</span>' +
+      '</div>';
+
+    if (over){
+      html += '<div class="alert warn">⚠️ الحد الأقصى 20 عملية في المرة. قلّل الحسابات أو غيّر النوع قبل البدء.</div>';
+    }
+    if (!n){
+      html += '<div class="alert info">أعد إدخال الحسابات من الخطوة 4 بعد إعادة التحميل؛ بيانات الحسابات لا تُحفظ في المتصفح.</div>';
+    }
+    html += '<div class="alert error" id="runAlert" role="alert" hidden></div>';
+    html += '</div>';
+
+    var queueTotal = Math.max(0, Number(state.queueTotal) || 0);
+    var queueAheadValue = "—";
+    var queueNote = "ابدأ العملية لمعرفة دورك.";
+    if (state.queueState === "waiting"){
+      queueAheadValue = Math.max(0, Number(state.queueAhead) || 0);
+      queueNote = "دورك رقم " + Math.max(1, Number(state.queuePosition) || 1) + " في الطابور.";
+    } else if (state.queueState === "running"){
+      queueAheadValue = "0";
+      queueNote = "بدأ تنفيذ مهام جلستك.";
+    } else if (state.queueState === "finished"){
+      queueAheadValue = "0";
+      queueNote = "اكتملت مهام جلستك.";
+    }
+    html += '<div class="queue-stats" aria-label="إحصاءات الطابور">' +
+      '<div class="queue-card"><span class="queue-card-label">المهام في الطابور</span><strong class="queue-card-value">' + queueTotal + '</strong><span class="queue-card-note">تشمل المهام الجارية والمنتظرة.</span></div>' +
+      '<div class="queue-card"><span class="queue-card-label">المهام قبلك</span><strong class="queue-card-value">' + queueAheadValue + '</strong><span class="queue-card-note">' + esc(queueNote) + '</span></div>' +
+      '</div>';
+
+    html += '<div class="progress-card">' +
+      '<div class="progress-top"><div class="progress-copy"><span class="progress-eyebrow">حالة المهمة</span><span class="lbl">' + esc(prog.label) + '</span></div><span class="pct">' + prog.pct + '%</span></div>' +
+      '<div class="bar"><i style="width:' + prog.pct + '%"></i></div>' +
+      '<div class="progress-foot"><span>' + (prog.total ? prog.done + " من " + prog.total : "—") + '</span><span>' + esc(prog.foot) + '</span></div>' +
+    '</div>';
+
+    var ok = state.results.filter(function(r){ return r.status === "ok"; }).length;
+    var resultsMeta = state.results.length
+      ? state.results.length + ' عملية · ' + ok + ' ناجحة'
+      : 'سيظهر هنا تقدم الحسابات';
+    html += '<div class="review-results">';
+    html += '<div class="results-head">' +
+      '<div class="results-title"><span class="results-kicker">المتابعة المباشرة</span><h3>نتائج التشغيل</h3></div>' +
+      '<div class="results-actions"><span class="results-meta">' + esc(resultsMeta) + '</span></div>' +
+      '</div>';
+
+    html += '<div id="results" class="results"></div>';
+    html += '</div>';
+
+    host.innerHTML = html;
+    renderResults();
+  }
+
+  function renderActionBar(){
+    var primary = $("#abPrimary");
+    var meta = $("#abMeta");
+    var back = $("#backBtn");
+    if (!primary) return;
+
+    var prog = progressSnapshot();
+    var over = totalJobs() > 20;
+
+    if (state.step === 5){
+      var html = "";
+      if (state.serverRunningCount > 0){
+        html += '<button class="btn danger" type="button" data-action="stop">■ إيقاف الكل</button>';
+        html += '<button class="btn primary" type="button" data-action="new-job" style="margin-inline-start:8px">＋ إضافة حسابات أخرى</button>';
+        meta.innerHTML = 'جاري التشغيل (' + state.serverRunningCount + ') — <b>' + prog.done + ' / ' + prog.total + '</b>';
+      } else if (state.finished){
+        html += '<button class="btn primary" type="button" data-action="restart">↻ عملية جديدة</button>';
+        meta.innerHTML = "انتهت — <b>" + prog.foot + "</b>";
+      } else {
+        html += '<button class="btn primary" type="button" data-action="start" ' + (!state.type || !totalJobs() || over ? "disabled" : "") + '>▶ ابدأ الحل</button>';
+        meta.innerHTML = 'جاهز للبدء · <b>' + totalJobs() + '</b> عملية';
+      }
+      primary.innerHTML = html;
+      back.hidden = false;
+      return;
+    }
+
+    var nextDisabled = ((state.step === 1 && !state.track) || (state.step === 2 && !state.year)) ? "disabled" : "";
+    var phtml = '<button class="btn primary" type="button" data-action="next" ' + nextDisabled + '>التالي ←</button>';
+    if (state.serverRunningCount > 0){
+      phtml += '<button class="btn secondary" type="button" onclick="showLiveJobs()" style="margin-inline-start:8px">👁️ العمليات الجارية (' + state.serverRunningCount + ')</button>';
+    }
+    primary.innerHTML = phtml;
+    meta.innerHTML = 'الخطوة <b>' + state.step + '</b> من 5';
+    back.hidden = state.step === 1;
+  }
+
+  /* ===== Alerts / toast ===== */
+  function showAlert(id, msg, kind){
+    var el = $("#" + id);
+    if (!el) return;
+    el.className = "alert " + (kind || "error");
+    el.textContent = msg;
+    el.hidden = false;
+  }
+  function clearAlert(id){
+    var el = $("#" + id);
+    if (!el) return;
+    el.hidden = true;
+    el.textContent = "";
+  }
+  var toastTimer = null;
+  function toast(msg){
+    var el = $("#toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove("show"); }, 2200);
+  }
+
+  /* ===== Navigation ===== */
+  function go(n){
+    n = Math.max(1, Math.min(5, n));
+    state.step = n;
+    if (n > state.maxStep) state.maxStep = n;
+    renderAll();
+    var top = $(".stepper");
+    if (top) top.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  function invalidateResults(){
+    if (state.serverRunningCount > 0) return;
+    if (!state.results.length && !state.finished) return;
+    state.results = [];
+    state.openLogs = {};
+    state.finished = false;
+    state.running = false;
+    if (state.timer){ clearInterval(state.timer); state.timer = null; }
+  }
+
+  function next(){
+    clearAlert("step3Alert");
+    clearAlert("accAlert");
+    clearAlert("runAlert");
+
+    if (state.step === 1){
+      if (!state.track){ toast("اختار نظام الدراسة أولاً"); return; }
+      go(2);
+      return;
+    }
+
+    if (state.step === 2){
+      if (!state.year){ toast("اختار الصف الدراسي أولاً"); return; }
+      go(3);
+      return;
+    }
+
+    if (state.step === 3){
+      if (!state.type){
+        showAlert("step3Alert", "اختار خدمة واحدة فقط للمتابعة.");
+        return;
+      }
+      go(4);
+      return;
+    }
+
+    if (state.step === 4){
+      var withCode = state.accounts.filter(function(a){ return a.code.trim(); });
+      var missingPw = withCode.filter(function(a){ return !a.password; });
+      var complete = withCode.filter(function(a){ return a.password; });
+      if (missingPw.length){
+        showAlert("accAlert", "فيه " + missingPw.length + " كود بدون كلمة مرور — أكمله أو احذفه.");
+        return;
+      }
+      if (!complete.length){
+        showAlert("accAlert", "اكتب كود وكلمة مرور لحساب واحد على الأقل.");
+        return;
+      }
+      var codes = complete.map(function(a){ return a.code.trim(); });
+      var dup = codes.filter(function(c, i){ return codes.indexOf(c) !== i; });
+      if (dup.length){
+        showAlert("accAlert", "فيه كود مكرر: " + dup[0] + " — شيل التكرار الأول.");
+        return;
+      }
+      state.accounts = complete.map(function(a){ return { code: a.code.trim(), password: a.password }; });
+      renderAccounts();
+      go(5);
+      return;
+    }
+
+    if (state.step === 5 && !state.finished){
+      startRun();
+    }
+  }
+
+  /* ===== Simulation ===== */
+  var LOGS = {
+    qureo: [
+      ["🔑 جاري تسجيل الدخول تلقائيًا...", "sys"],
+      ["✅ تم تسجيل الدخول.", "ok"],
+      ["📚 القسم الحالي: 511001 — عدد الفصول: 8", "sys"],
+      ["▶️ الفصل 1: المتغيرات — أسئلة: 6 [review]", "sys"],
+      ["   📗 محاضرة 1: مقدمة — تم", "ok"],
+      ["   ✔️ الاختبار: 6/6", "ok"],
+      ["▶️ الفصل 2: الشروط — أسئلة: 5 [review]", "sys"],
+      ["   📗 محاضرة 2: if / else — تم", "ok"],
+      ["   ✔️ الاختبار: 5/5", "ok"],
+      ["✨ اكتمل مسار Python!", "ok"]
+    ],
+    spx: [
+      ["بدء وضع الحل المباشر عبر API...", "sys"],
+      ["تم تسجيل الدخول بنجاح.", "ok"],
+      ["جاري حل: الوحدة الأولى", "sys"],
+      ["درس اكتمل: #6485 (نجوم 3).", "ok"],
+      ["اختبار اجتاز بنجاح بدرجة 100 في محاولة 1.", "ok"],
+      ["درس اكتمل: #6486 (نجوم 3).", "ok"],
+      ["تم الانتهاء من كل البنود المفتوحة.", "ok"]
+    ]
+  };
+
+  function detailFor(kind){
+    if (kind === "qureo"){
+      if (state.type === "qureo2") return "JavaScript — " + yearLabel() + " (" + langLabel() + ")";
+      return "Qureo (" + coursesLabel() + ")";
+    }
+    if (kind === "spx") return subjectLabel();
+    return "—";
+  }
+
+  function makeResult(account, kind){
+    return {
+      code: account.code,
+      kind: kind,
+      detail: detailFor(kind),
+      status: "run",
+      phase: "في الانتظار…",
+      message: "",
+      title: "تهيئة…",
+      done: 0,
+      total: kind === "spx" ? 24 : 8,
+      lines: [{ t: now(), msg: "بدء العملية…", level: "sys" }]
+    };
+  }
+
+  function buildResults(){
+    var jobs = [];
+    state.accounts.forEach(function(a){
+      if (state.type === "qureo" || state.type === "qureo2"){
+        jobs.push(makeResult(a, "qureo"));
+      } else if (state.type === "spx"){
+        jobs.push(makeResult(a, "spx"));
+      }
+    });
+    return jobs;
+  }
+
+  function addLog(r, msg, level){
+    r.lines.push({ t: now(), msg: msg, level: level || "sys" });
+    if (r.lines.length > 120) r.lines.splice(0, r.lines.length - 120);
+  }
+
+  function phaseFor(r){
+    if (r.kind === "qureo") return r.done < 2 ? "تسجيل الدخول…" : "جاري حل الفصل " + Math.min(8, Math.max(1, r.done - 1)) + " من 8";
+    if (r.kind === "spx") return r.done < 2 ? "تسجيل الدخول…" : "جاري حل البند " + Math.min(24, r.done) + " من 24";
+    return "—";
+  }
+
+  function titleFor(r){
+    if (r.kind === "qureo") return "الفصل " + Math.min(8, Math.max(1, r.done)) + " / 8";
+    if (r.kind === "spx") return "البند " + Math.min(24, Math.max(1, r.done)) + " / 24";
+    return "—";
+  }
+
+  function collectPayload(){
+    var complete = completeAccounts();
+    var payload = {
+      client_id: state.clientId,
+      mode: state.type,
+      accounts: complete.map(function(a){ return { code: a.code, password: a.password }; }),
+      concurrency: DEFAULT_CONCURRENCY,
+      lang: state.lang,
+      turbo: true
+    };
+    if (state.type === "spx") payload.subject = state.subject;
+    if (state.type === "qureo") payload.courses = state.courses;
+    if (state.type === "qureo2") {
+      payload.lang = state.lang;
+      payload.courses = ["JavaScript"];
+    }
+    return payload;
+  }
+
+  async function startRun(){
+    if (!state.type){
+      toast("اختار خدمة واحدة قبل بدء الحل.");
+      return;
+    }
+    var complete = completeAccounts();
+    if (!complete.length){
+      showAlert("runAlert", "مفيش حسابات كاملة. ارجع للخطوة 4.");
+      return;
+    }
+    if (totalJobs() > 20){
+      showAlert("runAlert", "الحد الأقصى 20 عملية في المرة. قلّل الحسابات أو غيّر النوع.");
+      return;
+    }
+
+    clearAlert("runAlert");
+    var payload = collectPayload();
+    try {
+      const res = await apiFetch("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const r = await res.json();
+      if (!r || !r.ok) { showAlert("runAlert", (r && r.message) || "تعذّر البدء."); return; }
+      if (r.client_id && CLIENT_ID_PATTERN.test(r.client_id)){
+        state.clientId = r.client_id;
+        try {
+          sessionStorage.setItem(CLIENT_ID_KEY, state.clientId);
+        } catch (error) {
+          console.warn("تعذّر حفظ معرّف الجلسة بعد بدء العملية.", error);
+        }
+      }
+      toast(r.message || "بدأت العملية بنجاح!");
+      clearAlert("runAlert");
+      state.maxStep = 5;
+      state.step = 5;
+      state.running = true;
+      state.finished = false;
+      renderAll();
+      poll();
+    } catch (e) {
+      showAlert("runAlert", "تعذّر الاتصال بالخادم — تأكد أن الأداة شغالة.");
+    }
+  }
+
+  var pollTimer = null;
+  function applyStatus(s){
+    if (!s) return;
+    var accs = s.accounts || [];
+    state.serverRunningCount = s.running_count != null ? s.running_count : accs.filter(function(a){ return a.running; }).length;
+    state.queueTotal = s.queue_total != null ? s.queue_total : state.serverRunningCount;
+    state.queueAhead = s.queue_ahead != null ? s.queue_ahead : null;
+    state.queuePosition = s.queue_position != null ? s.queue_position : null;
+    state.queueState = s.queue_state || "none";
+    state.running = state.serverRunningCount > 0;
+    state.finished = accs.length > 0 && state.serverRunningCount === 0;
+    state.results = accs.map(function(a){
+      return {
+        id: a.id || a.code,
+        code: a.code,
+        mode: a.mode,
+        detail: a.detail || "",
+        status: a.running ? "run" : (a.finished ? (a.success ? "ok" : "fail") : "wait"),
+        phase: a.phase || "",
+        message: a.message || "",
+        title: (a.progress && a.progress.title) || a.phase || "",
+        done: (a.progress && a.progress.done) || 0,
+        total: (a.progress && a.progress.total) || 0,
+        lines: a.lines || []
+      };
+    });
+
+    renderLiveBanner();
+    if (state.step === 5) {
+      renderReview();
+      renderActionBar();
+      renderStepper();
+    }
+  }
+
+  async function poll(){
+    clearTimeout(pollTimer);
+    try {
+      const res = await apiFetch("/api/status?client_id=" + encodeURIComponent(state.clientId));
+      const s = await res.json();
+      applyStatus(s);
+    } catch (e) {}
+    var interval = (state.serverRunningCount > 0 || state.step === 5) ? 900 : 2000;
+    pollTimer = setTimeout(poll, interval);
+  }
+
+  async function stopRun(){
+    try {
+      await apiFetch("/api/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: state.clientId })
+      });
+      toast("تم طلب إيقاف جميع العمليات...");
+      poll();
+    } catch (e) {}
+  }
+
+  async function stopSingle(code){
+    if (!code) return;
+    try {
+      const res = await apiFetch("/api/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code, client_id: state.clientId })
+      });
+      const r = await res.json();
+      toast((r && r.message) || ("تم طلب إيقاف الحساب: " + code));
+      poll();
+    } catch (e) {}
+  }
+
+  async function clearFinished(){
+    try {
+      const res = await apiFetch("/api/clear_finished", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: state.clientId })
+      });
+      const r = await res.json();
+      if (!res.ok || !r || !r.ok) throw new Error((r && r.message) || "تعذّر مسح النتائج السابقة.");
+      toast((r && r.message) || "تم تجهيز عملية جديدة.");
+      poll();
+    } catch (e) {
+      console.error("تعذّر مسح نتائج العملية السابقة.", e);
+      toast("تعذّر مسح النتائج السابقة من الخادم.");
+      poll();
+    }
+  }
+
+  function restart(){
+    state.step = 1;
+    state.maxStep = 1;
+    state.track = null;
+    state.year = null;
+    state.type = null;
+    state.subject = "7";
+    state.courses = [];
+    state.services = { culture: false, python: false, javascript: false };
+    state.lang = "ar";
+    state.accounts = [{ code: "", password: "" }];
+    state.running = false;
+    state.serverRunningCount = 0;
+    state.results = [];
+    state.openLogs = {};
+    state.finished = false;
+    if (state.timer){ clearInterval(state.timer); state.timer = null; }
+    if (pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
+    renderAll();
+    var top = $(".stepper");
+    if (top) top.scrollIntoView({ block: "start", behavior: "smooth" });
+    clearFinished();
+  }
+
+  /* ===== Events ===== */
+  document.addEventListener("click", function(e){
+    var stepBtn = e.target.closest(".step");
+    if (stepBtn){
+      var n = Number(stepBtn.getAttribute("data-step"));
+      if (!stepBtn.disabled && n <= state.maxStep) go(n);
+      return;
+    }
+
+    var trackCard = e.target.closest(".track-card");
+    if (trackCard){
+      var selectedTrack = trackCard.getAttribute("data-track");
+      if (state.track !== selectedTrack) invalidateResults();
+      state.track = selectedTrack;
+      state.lang = selectedTrack === "languages" ? "en" : "ar";
+      state.subject = selectedTrack === "languages" ? "3" : "7";
+      if (state.year) syncServiceSelection();
+      clearAlert("step3Alert");
+      renderAll();
+      return;
+    }
+
+    var yearCard = e.target.closest(".year-card");
+    if (yearCard && !yearCard.disabled){
+      var selectedYear = yearCard.getAttribute("data-year");
+      if (state.year !== selectedYear){
+        invalidateResults();
+        state.services = { culture: false, python: false, javascript: selectedYear === "first" };
+        state.maxStep = Math.min(state.maxStep, 2);
+      }
+      state.year = selectedYear;
+      syncServiceSelection();
+      clearAlert("step3Alert");
+      renderAll();
+      return;
+    }
+
+    var service = e.target.closest("[data-service]");
+    if (service){
+      var selectedService = service.getAttribute("data-service");
+      state.services = {
+        culture: selectedService === "culture",
+        python: selectedService === "python",
+        javascript: selectedService === "javascript"
+      };
+      syncServiceSelection();
+      invalidateResults();
+      clearAlert("step3Alert");
+      renderAll();
+      return;
+    }
+
+    var action = e.target.closest("[data-action]");
+    if (action){
+      var a = action.getAttribute("data-action");
+
+      if (a === "next"){ next(); return; }
+      if (a === "back"){ go(state.step - 1); return; }
+      if (a === "start"){ startRun(); return; }
+      if (a === "stop"){ stopRun(); return; }
+      if (a === "restart"){ restart(); return; }
+      if (a === "new-job"){ go(1); return; }
+      if (a === "stop-single"){ stopSingle(action.getAttribute("data-code")); return; }
+      if (a === "del-account"){
+        var row = action.closest(".account");
+        var idx = Number(row.getAttribute("data-i"));
+        invalidateResults();
+        state.accounts.splice(idx, 1);
+        if (!state.accounts.length) state.accounts.push({ code: "", password: "" });
+        renderAccounts();
+        clearAlert("accAlert");
+        return;
+      }
+
+      if (a === "eye"){
+        var wrap = action.closest(".pw-wrap");
+        var input = wrap.querySelector("input");
+        var showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        action.textContent = showing ? "👁" : "🙈";
+        action.setAttribute("aria-label", showing ? "إظهار كلمة المرور" : "إخفاء كلمة المرور");
+        action.setAttribute("aria-pressed", String(!showing));
+        return;
+      }
+
+      if (a === "toggle-log"){
+        var ri = Number(action.getAttribute("data-i"));
+        state.openLogs[ri] = !state.openLogs[ri];
+        renderResults();
+        return;
+      }
+    }
+  });
+
+  document.addEventListener("input", function(e){
+    var row = e.target.closest(".account");
+    if (!row) return;
+    var i = Number(row.getAttribute("data-i"));
+    if (!state.accounts[i]) return;
+    if (e.target.classList.contains("acc-code")){
+      state.accounts[i].code = e.target.value;
+      updateAccountCount();
+      invalidateResults();
+      clearAlert("accAlert");
+    } else if (e.target.classList.contains("acc-pw")){
+      state.accounts[i].password = e.target.value;
+      invalidateResults();
+      clearAlert("accAlert");
+    }
+  });
+
+  // Paste a whole list into the first code field: "code : password" per line
+  document.addEventListener("paste", function(e){
+    var input = e.target.closest && e.target.closest(".acc-code");
+    if (!input) return;
+    var text = (e.clipboardData || window.clipboardData).getData("text");
+    if (!text || (!text.includes("\n") && !text.includes(":"))) return;
+
+    e.preventDefault();
+    var parsed = text.split(/\r?\n/).map(function(line){
+      var parts = line.trim().split(/\s*[:,\t]\s*/);
+      if (parts.length < 2) return null;
+      var code = parts[0].trim();
+      var pw = parts.slice(1).join(" ").trim();
+      if (!code || !pw) return null;
+      return { code: code, password: pw };
+    }).filter(Boolean);
+
+    if (!parsed.length){
+      toast("الصيغة غير مفهومة — استخدم: كود : باسورد");
+      return;
+    }
+
+    // Replace the current blank row + append the rest, and skip duplicates
+    invalidateResults();
+    var row = input.closest(".account");
+    var idx = Number(row.getAttribute("data-i"));
+    var existing = state.accounts.map(function(x){ return x.code.trim(); });
+    var seen = {};
+    var toAdd = parsed.filter(function(p){
+      if (existing.indexOf(p.code) !== -1 || seen[p.code]) return false;
+      seen[p.code] = true;
+      return true;
+    });
+    if (state.accounts[idx] && !state.accounts[idx].code.trim()){
+      state.accounts.splice(idx, 1);
+    }
+    state.accounts = state.accounts.concat(toAdd);
+    if (!state.accounts.length) state.accounts.push({ code: "", password: "" });
+    renderAccounts();
+    toast("تمت إضافة " + toAdd.length + " حساب");
+  });
+
+  // Boot
+  restoreWizardState();
+  renderAll();
+  poll().then(function(){
+    if (state.serverRunningCount > 0){
+      state.maxStep = 5;
+      state.step = 5;
+      renderAll();
+    }
+  });
+})();
+</script>
+</body>
+</html>
