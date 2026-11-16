@@ -127,7 +127,12 @@ class _UrllibSession:
                     parsed = None
                 return _HttpResp(r.status, parsed)
         except urllib.error.HTTPError as e:
-            return _HttpResp(e.code, None)
+            try:
+                raw = e.read()
+                parsed = json.loads(raw.decode("utf-8", "replace"))
+            except Exception:
+                parsed = None
+            return _HttpResp(e.code, parsed)
         except Exception:
             return _HttpResp(0, None)
 
@@ -222,15 +227,25 @@ class QureoSolver:
         # تحويل للمتصفح، وإلا كان التحويل بيفشل دايمًا.
         if self.playwright is None:
             self.playwright = sync_playwright().start()
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-infobars",
+            "--no-first-run",
+        ]
         last_err = None
         for channel in ("chrome", "msedge", None):
             try:
                 if channel:
                     self.browser = self.playwright.chromium.launch(
-                        headless=self.headless, channel=channel
+                        headless=self.headless, channel=channel, args=args
                     )
                 else:
-                    self.browser = self.playwright.chromium.launch(headless=self.headless)
+                    self.browser = self.playwright.chromium.launch(
+                        headless=self.headless, args=args
+                    )
                 break
             except Exception as e:
                 last_err = e
@@ -239,7 +254,11 @@ class QureoSolver:
                 "تعذّر تشغيل المتصفح — تأكد من تثبيت Google Chrome أو Microsoft Edge "
                 "(أو شغّل drive.bat لتنزيل Chromium)."
             ) from last_err
-        self.context = self.browser.new_context(viewport={"width": 1280, "height": 800})
+        self.context = self.browser.new_context(
+            user_agent=self.UA,
+            viewport={"width": 1280, "height": 800},
+            locale="ar-EG",
+        )
         self.page = self.context.new_page()
 
     def login(self, student_id=None, password=None):
@@ -257,13 +276,33 @@ class QureoSolver:
     def _native_login(self, student_id, password):
         """دخول عادي عبر صفحات البوابة (بيستخدم في الوضع العادي أو بعد التحويل للمتصفح)."""
         print("🔑 جاري تسجيل الدخول تلقائيًا...", flush=True)
-        self.page.goto(PORTAL_URL, wait_until="domcontentloaded")
-        # صفحة البوابة تطلب أولاً اختيار نوع الحساب لإظهار حقول الدخول
-        self.page.locator(".portal-selection-button-secondary").first.click()
+        self.page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
+        # لو حقل اسم المستخدم غير ظاهر، ننقر زر اختيار بوابة التعلم
+        try:
+            if not self.page.locator("#student_id").is_visible():
+                btn = self.page.locator(
+                    ".portal-selection-button-secondary, button:has-text('Learning Login'), button:has-text('تسجيل الدخول للتعلم')"
+                ).first
+                btn.wait_for(state="visible", timeout=20000)
+                btn.click()
+        except Exception:
+            pass
+
         self.page.wait_for_selector("#student_id", timeout=30000)
         self.page.fill("#student_id", student_id)
         self.page.fill("#password", password)
-        self.page.locator("button.login-button").first.click()
+        self.page.locator("button.login-button, button[type='submit']").first.click()
+
+        # التحقق من ظهور رسائل خطأ فورية
+        try:
+            err_box = self.page.locator(".login-error").first
+            err_box.wait_for(state="visible", timeout=3000)
+            err_txt = err_box.inner_text().strip()
+            if err_txt:
+                raise RuntimeError(f"فشل تسجيل الدخول: {err_txt}")
+        except Exception as e:
+            if "فشل تسجيل الدخول:" in str(e):
+                raise
 
         # نتحقق من النجاح باختفاء نموذج الدخول (الموقع مش بيغيّر الرابط بعد الدخول)
         try:
@@ -483,7 +522,12 @@ class QureoSolver:
                     data = None
                 return _HttpResp(r.status, data)
         except urllib.error.HTTPError as e:
-            return _HttpResp(e.code, None)
+            try:
+                raw = e.read()
+                parsed = json.loads(raw.decode("utf-8", "replace"))
+            except Exception:
+                parsed = None
+            return _HttpResp(e.code, parsed)
         except Exception:
             return _HttpResp(0, None)
 

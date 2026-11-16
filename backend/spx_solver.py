@@ -97,7 +97,12 @@ class _UrllibSession:
                     parsed = None
                 return _UrllibResp(r.status, parsed)
         except urllib.error.HTTPError as e:
-            return _UrllibResp(e.code, None)
+            try:
+                raw = e.read()
+                parsed = json.loads(raw.decode("utf-8", "replace"))
+            except Exception:
+                parsed = None
+            return _UrllibResp(e.code, parsed)
         except Exception:
             return _UrllibResp(0, None)
 
@@ -468,6 +473,8 @@ class Solver:
         """نعيد المحاولة بمتصفح فقط لو الموقع حظر الجلسة — وليس لو البيانات نفسها غلط."""
         if status == 0:
             return True  # خطأ شبكة/حظر تام
+        if status in (401, 400):
+            return False  # بيانات غلط — المتصفح مش هيفرق
         if status in (403, 429, 503):
             return True  # حظر ظاهر من الموقع
         return d is None  # رد غير JSON — غالبًا صفحة حظر/كابتشا
