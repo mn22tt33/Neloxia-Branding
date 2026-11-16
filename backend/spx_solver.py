@@ -337,8 +337,11 @@ class Solver:
     def _headers(self):
         return {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "application/json, text/plain, */*",
             "User-Agent": USER_AGENT,
+            "Origin": BASE,
+            "Referer": BASE + "/",
+            "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
         }
 
     @staticmethod

@@ -29,7 +29,17 @@ PORTAL_HOME = "https://me-portal.qureo.education/"
 BASE = "https://me-tp.qureo.education"
 # دخول مباشر لمنصة me-tp بنفس بيانات بوابة المدرسة (أسرع بكتير — من غير بوابة)
 TP_LOGIN = BASE + "/oauth2/password-login"
-JSON_HEADERS = {"Content-Type": "application/json"}
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+JSON_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Origin": BASE,
+    "Referer": BASE + "/",
+    "User-Agent": USER_AGENT,
+}
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 ANSWER_FILE = os.path.join(BACKEND_DIR, "data", "qureo_answers.json")
@@ -255,7 +265,7 @@ class QureoSolver:
                 "(أو شغّل drive.bat لتنزيل Chromium)."
             ) from last_err
         self.context = self.browser.new_context(
-            user_agent=self.UA,
+            user_agent=USER_AGENT,
             viewport={"width": 1280, "height": 800},
             locale="ar-EG",
         )
@@ -317,7 +327,7 @@ class QureoSolver:
         try:
             r = self.context.request.post(
                 TP_LOGIN,
-                headers={"Content-Type": "application/json"},
+                headers=JSON_HEADERS,
                 data=json.dumps({"student_id": student_id, "password": password}),
             )
         except Exception:
