@@ -1,0 +1,45 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -eu
+
+STATE_FILE="$HOME/.local/state/quizora/widget.pid"
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "QUIZORA is not running."
+    exit 0
+fi
+
+RUN_PID="$(sed -n '1p' "$STATE_FILE")"
+RUN_ROOT="$(sed -n '2p' "$STATE_FILE")"
+case "$RUN_PID" in
+    ''|*[!0-9]*|0|0[0-9]*)
+        echo "Invalid QUIZORA process record; refusing to signal any process." >&2
+        exit 1
+        ;;
+esac
+if [ -z "$RUN_ROOT" ] || ! kill -0 "$RUN_PID" 2>/dev/null; then
+    rm -f "$STATE_FILE"
+    echo "Removed stale QUIZORA process record."
+    exit 0
+fi
+
+CMDLINE="$(tr '\000' ' ' < "/proc/$RUN_PID/cmdline" 2>/dev/null || true)"
+case "$CMDLINE" in
+    *"$RUN_ROOT/backend/scripts/run.sh"*) ;;
+    *)
+        echo "The saved process is not the QUIZORA runner; refusing to stop it." >&2
+        exit 1
+        ;;
+esac
+
+kill -TERM "$RUN_PID"
+for _ in {1..20}; do
+    if ! kill -0 "$RUN_PID" 2>/dev/null; then
+        rm -f "$STATE_FILE"
+        echo "QUIZORA stopped."
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "QUIZORA did not stop in time. Check the Termux task notification and retry." >&2
+exit 1

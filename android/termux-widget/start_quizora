@@ -1,0 +1,46 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -eu
+
+CONFIG_DIR="$HOME/.config/quizora"
+PROJECT_FILE="$CONFIG_DIR/project_dir"
+STATE_DIR="$HOME/.local/state/quizora"
+STATE_FILE="$STATE_DIR/widget.pid"
+
+if [ ! -f "$PROJECT_FILE" ]; then
+    echo "QUIZORA shortcuts are not configured. Run bash install_android_widget.sh first." >&2
+    exit 1
+fi
+
+PROJECT_ROOT="$(cat "$PROJECT_FILE")"
+if [ -z "$PROJECT_ROOT" ] || [ ! -f "$PROJECT_ROOT/run.sh" ]; then
+    echo "Project folder not found. Run bash install_android_widget.sh from the current project folder." >&2
+    exit 1
+fi
+
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
+
+if [ -f "$STATE_FILE" ]; then
+    RUN_PID="$(sed -n '1p' "$STATE_FILE")"
+    RUN_ROOT="$(sed -n '2p' "$STATE_FILE")"
+    case "$RUN_PID" in
+        ''|*[!0-9]*) RUN_PID="" ;;
+    esac
+    if [ -n "$RUN_PID" ] && [ "$RUN_PID" -ne 0 ] && [ -n "$RUN_ROOT" ] \
+        && kill -0 "$RUN_PID" 2>/dev/null; then
+        CMDLINE="$(tr '\000' ' ' < "/proc/$RUN_PID/cmdline" 2>/dev/null || true)"
+        case "$CMDLINE" in
+            *"$RUN_ROOT/backend/scripts/run.sh"*)
+                echo "QUIZORA is already running."
+                exit 0
+                ;;
+        esac
+    fi
+    rm -f "$STATE_FILE"
+fi
+
+printf '%s\n%s\n' "$$" "$PROJECT_ROOT" > "$STATE_FILE"
+chmod 600 "$STATE_FILE"
+
+echo "Starting QUIZORA. Use the Stop QUIZORA widget task to stop it."
+exec bash "$PROJECT_ROOT/backend/scripts/run.sh"
