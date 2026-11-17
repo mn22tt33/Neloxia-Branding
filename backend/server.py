@@ -325,6 +325,7 @@ def _make_fast_login(mod, native):
         pwd = password or getattr(mod, "PASSWORD", "") or ""
         if not (sid and pwd):
             return native(self_, sid, pwd)
+        print("🔐 جاري التحقق من تسجيل الدخول...", flush=True)
         if getattr(self_, "turbo", False):
             # دخول سريع مباشر لمنصة me-tp (نفس بيانات بوابة المدرسة — من غير متصفح)
             login_err = getattr(mod, "LoginError", RuntimeError)
@@ -342,6 +343,7 @@ def _make_fast_login(mod, native):
                 except Exception:
                     cookies = []
                 if any(c.get("name") == "egy_student_id_token" for c in cookies):
+                    print("✅ تم تأكيد تسجيل الدخول والجلسة.", flush=True)
                     return
                 raise RuntimeError("تعذّر تأكيد جلسة المنصة السريعة — جرّب الوضع العادي.")
             if r is not None and r.status in (400, 401, 422):
@@ -356,6 +358,7 @@ def _make_fast_login(mod, native):
             if r.status in (200, 201, 204):
                 ru = self_.context.request.get(PORTAL_USERINFO)
                 if ru.status in (200, 201, 204):
+                    print("✅ تم تأكيد تسجيل الدخول والجلسة.", flush=True)
                     return
         except Exception:
             pass

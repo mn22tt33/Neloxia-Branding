@@ -1,3 +1,4 @@
+import io
 import threading
 import unittest
 from types import SimpleNamespace
@@ -7,6 +8,25 @@ from backend import qureo_solver, server, spx_solver
 
 
 class CompletionReportingTests(unittest.TestCase):
+    def test_qureo_fast_login_logs_that_authentication_was_confirmed(self):
+        response = SimpleNamespace(status=200)
+        context = SimpleNamespace(
+            request=SimpleNamespace(post=Mock(return_value=response)),
+            storage_state=lambda: {
+                "cookies": [{"name": "egy_student_id_token", "value": "token"}]
+            },
+        )
+        solver = SimpleNamespace(turbo=True, context=context)
+        module = SimpleNamespace(TP_LOGIN="https://example.test/login")
+        login = server._make_fast_login(module, Mock())
+        output = io.StringIO()
+
+        with patch("sys.stdout", output):
+            login(solver, "student", "password")
+
+        self.assertIn("جاري التحقق من تسجيل الدخول", output.getvalue())
+        self.assertIn("تم تأكيد تسجيل الدخول", output.getvalue())
+
     def test_qureo_course_match_uses_course_name_metadata(self):
         solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
         solver.lang = "ar"
