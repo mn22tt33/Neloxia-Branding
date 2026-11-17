@@ -50,8 +50,8 @@ ww/
 
 ### `backend/scripts/` و`backend/tests/` و`docs/`
 
-- `backend/scripts/run.sh`: يشغّل الخادم من مجلد `backend/`.
-- `backend/scripts/setup.sh`: يثبّت Python وأداة فك الضغط في Termux.
+- `backend/scripts/run.sh`: يشغّل الخادم ونفق ngrok بعنوان الـAPI الثابت من Termux.
+- `backend/scripts/setup.sh`: يثبّت Python وأداة فك الضغط وngrok في Termux.
 - `backend/tests/`: اختبارات رجوع لاكتمال الحل والطابور والتزامن؛ تُشغّل من الجذر بـ `python -m unittest discover -s backend/tests -v`.
 - `docs/اقرأني_طريقة_التشغيل.txt`: خطوات تشغيل مختصرة للهاتف.
 - `docs/README.md`: هذا الشرح.
@@ -60,14 +60,27 @@ ww/
 
 ### Termux
 
-بعد فك `Solver_Update.zip`، ادخل مجلد المشروع ونفّذ:
+بعد فك `Solver_Update.zip`، ادخل مجلد المشروع ونفّذ أمر الإعداد مرة واحدة:
 
 ```bash
 bash setup.sh
+```
+
+أضف رمز حساب ngrok على الهاتف مرة واحدة، واستبدل النص برمزك من لوحة ngrok:
+
+```bash
+ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+```
+
+لا تشارك الرمز ولا تضفه إلى ملفات المشروع. بعد ذلك شغّل الخادم والنفق معًا:
+
+```bash
 bash run.sh
 ```
 
-ملفا الجذر `setup.sh` و`run.sh` مشغّلان مختصران للنسختين داخل `backend/scripts/`، للإبقاء على طريقة التشغيل السابقة. افتح الرابط الذي يظهر في الطرفية (عادةً `http://localhost:8700`) وأوقف الخادم بـ `Ctrl+C`.
+يعرض التشغيل رابط الموقع العام `https://quizora.movb.workers.dev`، ويظل يعمل ما دام الهاتف متصلًا بالإنترنت وTermux يعمل في الخلفية. استخدم عنوان `http://localhost:8700` للوصول المحلي فقط.
+ملفا الجذر `setup.sh` و`run.sh` مشغّلان مختصران للنسختين داخل `backend/scripts/`. أوقف الخادم والنفق بـ `Ctrl+C`.
+لا تشغّل النفق على الكمبيوتر والهاتف في الوقت نفسه؛ العنوان العام الثابت مرتبط باتصال واحد. أوقفه على الجهاز الأول قبل تشغيله على الثاني.
 
 ### الكمبيوتر
 
@@ -79,7 +92,7 @@ bash run.sh
 - من PowerShell على جهازك، ضيف مفتاح ngrok لحسابك بالأمر `ngrok config add-authtoken <NGROK_AUTHTOKEN>`. ما تشاركش المفتاح أو تحطه في ملفات المشروع.
 - هتلاقي عنوانك الثابت في صفحة [Domains](https://dashboard.ngrok.com/domains) بحساب ngrok. الخطة المجانية بتستخدم العنوان اللي ngrok بيخصصه لحسابك؛ ما تختارش عنوانًا تخمينيًا.
 - لازم يتضبط العنوان المخصص لك في `frontend/config.js` وفي `frontend/config.js` داخل مستودع الواجهة `mn22tt33/Qry33`، وبعدها انشر التعديل على Cloudflare مرة واحدة.
-- بعد الإعداد، انقر مرتين على `START_QUIZORA.bat`. الملف بيشغّل الخادم المحلي وngrok، وبيتأكد إن الواجهة على Workers بتستخدم نفس عنوان الـAPI.
+- بعد الإعداد، انقر مرتين على `START_QUIZORA.bat`. الملف بيشغّل الخادم المحلي وngrok على عنوان الـAPI الثابت نفسه المستخدم من Termux، وبيتأكد إن الواجهة على Workers بتستخدمه.
 - رابط الموقع اللي تشاركه هو `https://quizora.movb.workers.dev`، وبيفضل ثابت. انشره في [قناة تيليجرام](https://t.me/sprxui77) أو ابعته مباشرة.
 - انقر مرتين على `STOP_QUIZORA.bat` لإيقاف الخادم والنفق. لو الخادم وقف، الموقع بيعرض رسالة إن السيرفر المحلي مش متاح؛ أول ما تشغّله تاني الرابط نفسه بيرجع يشتغل.
 

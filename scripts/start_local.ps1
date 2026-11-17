@@ -6,6 +6,16 @@ $statePath = Join-Path $runtimeDirectory "state.json"
 $port = 8700
 $serverProcess = $null
 $tunnelProcess = $null
+$configPath = Join-Path $projectRoot "frontend\config.js"
+$configContent = Get-Content -LiteralPath $configPath -Raw
+$apiUrlMatch = [regex]::Match(
+    $configContent,
+    'var\s+apiBaseUrl\s*=\s*"(?<url>https://[^"]+)"'
+)
+if (-not $apiUrlMatch.Success) {
+    throw "تعذّر قراءة عنوان ngrok من frontend\config.js."
+}
+$apiUrl = $apiUrlMatch.Groups["url"].Value.TrimEnd("/")
 
 New-Item -ItemType Directory -Path $runtimeDirectory -Force | Out-Null
 
@@ -138,7 +148,7 @@ try {
 
     $tunnelProcess = Start-Process `
         -FilePath $ngrokPath `
-        -ArgumentList @("http", "$port") `
+        -ArgumentList @("http", "$port", "--url", $apiUrl) `
         -WorkingDirectory $projectRoot `
         -WindowStyle Hidden `
         -RedirectStandardOutput $tunnelStdout `
