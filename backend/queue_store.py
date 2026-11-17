@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import time
 import uuid
 
 
@@ -402,6 +403,38 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not claim the next PostgreSQL queue job.") from error
 
+    def claim_job_for_admin(self, job_id):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE quizora_jobs
+                        SET status = 'running', worker_id = %s,
+                            started_at = now(), phase = 'جاري التشغيل...',
+                            cancel_requested = FALSE
+                        WHERE id = %s AND status = 'queued'
+                        RETURNING id, operation_id, code_ciphertext,
+                                  password_ciphertext, mode, detail, options
+                        """,
+                        ("admin-" + uuid.uuid4().hex, self._as_uuid(job_id)),
+                    )
+                    job = cursor.fetchone()
+                    if not job:
+                        return None
+                    operation_id = job["operation_id"]
+                    self._refresh_operations(cursor, {operation_id})
+                    job["id"] = str(job["id"])
+                    job["operation_id"] = str(operation_id)
+                    job["code"] = self._decrypt(job.pop("code_ciphertext"))
+                    password_ciphertext = job.pop("password_ciphertext")
+                    if not password_ciphertext:
+                        raise QueueStoreError("The queued job has no stored password.")
+                    job["password"] = self._decrypt(password_ciphertext)
+                    return job
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not start the selected queue job.") from error
+
     def is_cancel_requested(self, job_id):
         try:
             with self._connect() as connection:
@@ -705,6 +738,69 @@ class PostgresQueue:
             }
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not read the PostgreSQL queue status.") from error
+
+    def admin_queue_payload(self):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT id, code_ciphertext, mode, detail, status,
+                               phase, queue_order, progress, created_at, started_at
+                        FROM quizora_jobs
+                        WHERE status IN ('queued', 'running')
+                        ORDER BY queue_order
+                        """
+                    )
+                    rows = cursor.fetchall()
+                    cursor.execute(
+                        """
+                        SELECT count(*) AS solved
+                        FROM quizora_jobs
+                        WHERE status = 'succeeded'
+                        """
+                    )
+                    solved_count = cursor.fetchone()["solved"]
+
+            jobs = []
+            current_time = time.time()
+            active_codes = set()
+            running_codes = set()
+            for position, row in enumerate(rows, start=1):
+                code = self._decrypt(row["code_ciphertext"])
+                is_running = row["status"] == "running"
+                active_codes.add(code)
+                if is_running:
+                    running_codes.add(code)
+                jobs.append({
+                    "id": str(row["id"]),
+                    "code": code,
+                    "mode": row["mode"],
+                    "detail": row["detail"],
+                    "phase": row["phase"],
+                    "running": is_running,
+                    "position": position,
+                    "progress": row["progress"],
+                    "elapsed_seconds": (
+                        max(0, int(current_time - row["started_at"].timestamp()))
+                        if row["started_at"] is not None
+                        else None
+                    ),
+                    "queued_seconds": max(
+                        0,
+                        int(current_time - row["created_at"].timestamp()),
+                    ),
+                })
+            return {
+                "ok": True,
+                "queue_count": len(active_codes),
+                "running_count": len(running_codes),
+                "active_job_count": len(rows),
+                "solved_count": solved_count,
+                "jobs": jobs,
+            }
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not read the administration queue.") from error
 
     def _update_job(self, query, params, error_message):
         try:

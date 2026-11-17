@@ -6,6 +6,7 @@
 من إعداد أحمد نادي.
 """
 import json
+import ipaddress
 import os
 import sys
 import threading
@@ -22,6 +23,7 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 from queue_store import PostgresQueue, QueueCapacityError, QueueStoreError
+from admin_page import ADMIN_PAGE
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -36,6 +38,11 @@ MAX_ACCOUNTS = 20
 MAX_LOG_LINES = 800
 STATUS_LOG_LINES = 120
 DEFAULT_CONCURRENCY = 1
+START_RATE_LIMIT = 3
+START_RATE_WINDOW_SECONDS = 60
+MAX_JSON_BODY_BYTES = 256 * 1024
+HEADLESS = os.environ.get("HEADLESS", "1") == "1"
+ADMIN_SETTINGS_PATH = os.path.join(APP_DIR, ".local-run", "admin_settings.json")
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 APP_ENCRYPTION_KEY = os.environ.get("APP_ENCRYPTION_KEY", "").strip()
 if not DATABASE_URL and os.environ.get("QUIZORA_REQUIRE_DATABASE") == "1":
@@ -49,7 +56,6 @@ _queue_store = (
 )
 _worker_shutdown = threading.Event()
 QUREO_BANK_PATH = os.path.join(DATA_DIR, "qureo_answers.json")
-GFQ_RESULTS_PATH = os.path.join(DATA_DIR, "spx_game_results.json")
 PORTAL_LOGIN = "https://me-portal.qureo.education/oauth2/password-login"
 PORTAL_USERINFO = "https://me-portal.qureo.education/oauth2/userinfo"
 CORS_ALLOWED_ORIGINS = {
@@ -101,6 +107,43 @@ _stop = threading.Event()
 _accounts = []
 _local_queue_sequence = 0
 _tls = threading.local()
+_start_rate_lock = threading.Lock()
+_start_requests = {}
+_browser_settings_lock = threading.Lock()
+
+
+def _load_browser_visible():
+    try:
+        with open(ADMIN_SETTINGS_PATH, encoding="utf-8") as settings_file:
+            settings = json.load(settings_file)
+    except FileNotFoundError:
+        return not HEADLESS
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("تعذّرت قراءة إعدادات لوحة الإدارة المحلية.") from error
+    if not isinstance(settings, dict) or not isinstance(settings.get("browser_visible"), bool):
+        raise RuntimeError("إعداد ظهور المتصفح في لوحة الإدارة غير صالح.")
+    return settings["browser_visible"]
+
+
+_browser_visible = _load_browser_visible()
+
+
+def _get_browser_visible():
+    with _browser_settings_lock:
+        return _browser_visible
+
+
+def _set_browser_visible(visible):
+    global _browser_visible
+    if not isinstance(visible, bool):
+        raise ValueError("browser_visible must be a boolean.")
+    with _browser_settings_lock:
+        os.makedirs(os.path.dirname(ADMIN_SETTINGS_PATH), exist_ok=True)
+        temporary_path = ADMIN_SETTINGS_PATH + ".tmp"
+        with open(temporary_path, "w", encoding="utf-8") as settings_file:
+            json.dump({"browser_visible": visible}, settings_file)
+        os.replace(temporary_path, ADMIN_SETTINGS_PATH)
+        _browser_visible = visible
 
 _concurrency_lock = threading.Condition()
 _current_concurrency = 1
@@ -122,10 +165,15 @@ def _acquire_worker_slot(acct):
         while _active_workers >= _current_concurrency:
             if _stop.is_set() or (stop_evt and stop_evt.is_set()):
                 return False
+            if acct.get("_force_start"):
+                _active_workers += 1
+                acct["_slot_acquired"] = True
+                return True
             _concurrency_lock.wait(timeout=0.3)
         if _stop.is_set() or (stop_evt and stop_evt.is_set()):
             return False
         _active_workers += 1
+        acct["_slot_acquired"] = True
         return True
 
 
@@ -151,7 +199,7 @@ _import_lock = threading.RLock()
 # --------------------------------------------------------------------- حسابات
 def _new_acct(code, mode, detail):
     return {
-        "id": f"{code}_{int(time.time()*1000)}",
+        "id": str(uuid.uuid4()),
         "code": code,
         "mode": mode,
         "detail": detail,
@@ -162,7 +210,11 @@ def _new_acct(code, mode, detail):
         "phase": "في الانتظار...",
         "progress": {"done": 0, "total": 0, "pct": 0, "title": ""},
         "lines": [],
+        "_created_at": time.time(),
+        "_started_at": None,
         "_stop_event": threading.Event(),
+        "_force_start": False,
+        "_slot_acquired": False,
         "_thread": None,
     }
 
@@ -379,15 +431,6 @@ def _make_fast_login(mod, native):
     return _fast
 
 
-def _gfq_results_bank():
-    try:
-        with open(GFQ_RESULTS_PATH, "r", encoding="utf-8") as f:
-            d = json.load(f)
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-
-
 def _install_qureo():
     """يجهّز محرّك Qureo مرة واحدة: بنك مشترك + قفل حفظ آمن + خطّافات + دخول سريع."""
     global _qur_installed
@@ -457,7 +500,7 @@ def _install_qureo():
 
 
 # ------------------------------------------------------------------ التشغيل
-def _run_spx(acct, code, password, subject, turbo=False):
+def _run_spx(acct, code, password, subject, turbo=False, headless=None):
     mod = _load_spx()
     bank = _get_spx_bank()
     stop_evt = acct.get("_stop_event")
@@ -467,22 +510,25 @@ def _run_spx(acct, code, password, subject, turbo=False):
         shared=bank,
         subject_id=subject,
         turbo=turbo,
+        headless=HEADLESS if headless is None else bool(headless),
     )
     sol.on_progress = lambda d, t, title: _set_progress(acct, d, t, title)
     ok, msg = sol.run(code, password, subject=subject)
     return bool(ok), msg
 
 
-IS_CLOUD = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("QUIZORA_REQUIRE_DATABASE"))
-HEADLESS = os.environ.get("HEADLESS", "1" if IS_CLOUD else "0") == "1"
-
-def _run_qureo(acct, code, password, courses, turbo=False, lang=None):
+def _run_qureo(acct, code, password, courses, turbo=False, lang=None, headless=None):
     mod = _install_qureo()
     bank = _load_qureo_bank()
     _tls.acct = acct
     stop_evt = acct.get("_stop_event")
     try:
-        solver = mod.QureoSolver(headless=HEADLESS, courses=courses, turbo=turbo, lang=lang)
+        solver = mod.QureoSolver(
+            headless=HEADLESS if headless is None else bool(headless),
+            courses=courses,
+            turbo=turbo,
+            lang=lang,
+        )
         solver.answers = bank
         completed = solver.run(code, password, courses, close_pause=0)
         if completed is not True:
@@ -535,17 +581,33 @@ def _worker(acct, code, password, mode, opts):
             if is_stopped():
                 _finalize(acct, False, "أُوقف قبل البدء.", "متوقّف")
                 return
+            with _lock:
+                acct["_started_at"] = time.time()
             _set_phase(acct, "جاري التشغيل...")
+            headless = not _get_browser_visible()
             try:
                 turbo = bool(opts.get("turbo", True))
                 if mode == "spx":
-                    ok, msg = _run_spx(acct, code, password, opts.get("subject") or "7", turbo)
+                    ok, msg = _run_spx(
+                        acct,
+                        code,
+                        password,
+                        opts.get("subject") or "7",
+                        turbo,
+                        headless=headless,
+                    )
                 elif mode == "game":
                     ok, msg = _run_gfq(acct, code, password, bool(opts.get("start_new", True)))
                 elif mode == "qureo2":
                     lang = str(opts.get("lang") or "ar").lower()
                     ok, msg = _run_qureo(
-                        acct, code, password, ["JavaScript"], turbo, lang=lang
+                        acct,
+                        code,
+                        password,
+                        ["JavaScript"],
+                        turbo,
+                        lang=lang,
+                        headless=headless,
                     )
                     if ok:
                         lang_name = "عربي" if lang == "ar" else "لغات"
@@ -558,6 +620,7 @@ def _worker(acct, code, password, mode, opts):
                         opts.get("courses") or ["Python", "JavaScript"],
                         turbo,
                         lang=opts.get("lang"),
+                        headless=headless,
                     )
             except Exception as e:
                 m = str(e)
@@ -626,6 +689,27 @@ def _normalize_client_id(value):
         return None
 
 
+def _allow_public_start(client_ip):
+    now = time.monotonic()
+    cutoff = now - START_RATE_WINDOW_SECONDS
+    with _start_rate_lock:
+        recent = [
+            timestamp
+            for timestamp in _start_requests.get(client_ip, [])
+            if timestamp > cutoff
+        ]
+        if len(recent) >= START_RATE_LIMIT:
+            _start_requests[client_ip] = recent
+            retry_after = max(1, int(recent[0] + START_RATE_WINDOW_SECONDS - now))
+            return False, retry_after
+        recent.append(now)
+        _start_requests[client_ip] = recent
+        for address, timestamps in list(_start_requests.items()):
+            if not any(timestamp > cutoff for timestamp in timestamps):
+                del _start_requests[address]
+        return True, 0
+
+
 def _local_queue_metrics(accounts, client_id):
     active = [account for account in accounts if account["running"]]
     client_accounts = [
@@ -660,6 +744,97 @@ def _local_queue_metrics(accounts, client_id):
         "queue_position": queue_position,
         "queue_state": queue_state,
     }
+
+
+def _admin_queue_payload():
+    if _queue_store:
+        return _queue_store.admin_queue_payload()
+
+    with _lock:
+        active = sorted(
+            (account for account in _accounts if account["running"]),
+            key=lambda account: account.get("_queue_order", 0),
+        )
+        solved_count = sum(
+            1 for account in _accounts
+            if account["finished"] and account["success"]
+        )
+
+    current_time = time.time()
+    active_codes = set()
+    running_codes = set()
+    jobs = []
+    for position, account in enumerate(active, start=1):
+        running = account.get("_slot_acquired", False)
+        active_codes.add(account["code"])
+        if running:
+            running_codes.add(account["code"])
+        jobs.append({
+            "id": account["id"],
+            "code": account["code"],
+            "mode": account["mode"],
+            "detail": account["detail"],
+            "phase": account["phase"],
+            "running": running,
+            "position": position,
+            "progress": dict(account["progress"]),
+            "elapsed_seconds": (
+                max(0, int(current_time - account["_started_at"]))
+                if account.get("_started_at") is not None
+                else None
+            ),
+            "queued_seconds": max(
+                0, int(current_time - account.get("_created_at", current_time))
+            ),
+        })
+    return {
+        "ok": True,
+        "queue_count": len(active_codes),
+        "running_count": len(running_codes),
+        "active_job_count": len(active),
+        "solved_count": solved_count,
+        "jobs": jobs,
+    }
+
+
+def _admin_start_now(job_id):
+    if _queue_store:
+        job = _queue_store.claim_job_for_admin(job_id)
+        if job is None:
+            return False, "المهمة لم تعد في الانتظار؛ حدّث القائمة."
+        worker = threading.Thread(
+            target=_run_persisted_job,
+            args=(job, None),
+            name="quizora-admin-" + job["id"],
+            daemon=True,
+        )
+        try:
+            worker.start()
+        except Exception as error:
+            _queue_store.finish_job(
+                job["id"], False, False,
+                "تعذّر إنشاء عامل البدء الفوري: " + str(error)[:200],
+                "فشل",
+            )
+            raise
+        return True, "بدأ الحل فورًا؛ العمليات الحالية مستمرة."
+
+    with _concurrency_lock:
+        with _lock:
+            account = next(
+                (
+                    item for item in _accounts
+                    if item["id"] == job_id and item["running"]
+                ),
+                None,
+            )
+            if account is None:
+                return False, "المهمة لم تعد في الانتظار؛ حدّث القائمة."
+            if account.get("_slot_acquired"):
+                return False, "بدأ الحل بالفعل."
+            account["_force_start"] = True
+        _concurrency_lock.notify_all()
+    return True, "بدأ الحل فورًا؛ العمليات الحالية مستمرة."
 
 
 def _detail_for(job):
@@ -751,7 +926,10 @@ def _run_persisted_job(job, worker_connection):
         failures = 0
         while not watch_stop.wait(1):
             try:
-                if not _queue_store.worker_lock_is_held(worker_connection):
+                if (
+                    worker_connection is not None
+                    and not _queue_store.worker_lock_is_held(worker_connection)
+                ):
                     acct["_stop_event"].set()
                     _ORIG_STDOUT.write("[queue] فُقد قفل العامل؛ أُرسل طلب إيقاف للمهمة.\n")
                     return
@@ -839,11 +1017,14 @@ def make_handler():
 
         def _cors_headers(self):
             origin = (self.headers.get("Origin") or "").rstrip("/")
-            if origin in CORS_ALLOWED_ORIGINS or origin == "null":
+            if origin in CORS_ALLOWED_ORIGINS:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header(
+                    "Access-Control-Allow-Headers",
+                    "Content-Type, ngrok-skip-browser-warning",
+                )
                 self.send_header("Access-Control-Max-Age", "600")
 
         def _file(self, name, ctype):
@@ -859,11 +1040,47 @@ def make_handler():
             if basename == "sw.js":
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Service-Worker-Allowed", "/")
-            elif basename in ("index.html", "manifest.json"):
+            elif basename in ("index.html", "manifest.json", "config.js"):
                 self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(data)
             return True
+
+        def _client_ip(self):
+            remote_ip = self.client_address[0]
+            forwarded = (self.headers.get("CF-Connecting-IP") or "").strip()
+            if remote_ip in ("127.0.0.1", "::1") and forwarded:
+                try:
+                    return str(ipaddress.ip_address(forwarded))
+                except ValueError:
+                    pass
+            return remote_ip
+
+        def _admin_request_allowed(self):
+            try:
+                if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+                    return False
+                if (
+                    self.headers.get("CF-Connecting-IP")
+                    or self.headers.get("X-Forwarded-For")
+                ):
+                    return False
+                host_header = self.headers.get("Host", "")
+                host = urlsplit("//" + host_header).hostname
+                if host != "localhost":
+                    if not host or not ipaddress.ip_address(host).is_loopback:
+                        return False
+                origin = self.headers.get("Origin")
+                if origin:
+                    origin_url = urlsplit(origin)
+                    if (
+                        origin_url.scheme != "http"
+                        or origin_url.netloc.lower() != host_header.lower()
+                    ):
+                        return False
+                return True
+            except ValueError:
+                return False
 
         def _status_payload(self, client_id=None):
             if _queue_store:
@@ -904,6 +1121,38 @@ def make_handler():
             }
 
         def do_GET(self):
+            parsed_path = urlsplit(self.path)
+            if parsed_path.path == "/admin":
+                if not self._admin_request_allowed():
+                    self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
+                    return
+                body = ADMIN_PAGE.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if parsed_path.path == "/api/admin/queue":
+                if not self._admin_request_allowed():
+                    self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
+                    return
+                try:
+                    self._json(200, _admin_queue_payload())
+                except QueueStoreError:
+                    self._json(503, {"ok": False, "error": "تعذّر قراءة طابور الانتظار."})
+                return
+            if parsed_path.path == "/api/admin/settings":
+                if not self._admin_request_allowed():
+                    self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
+                    return
+                self._json(200, {
+                    "ok": True,
+                    "browser_visible": _get_browser_visible(),
+                })
+                return
             if self.path in STATIC_ROUTES:
                 name, ctype = STATIC_ROUTES[self.path]
                 if not self._file(name, ctype):
@@ -925,13 +1174,12 @@ def make_handler():
                 except QueueStoreError:
                     self._json(503, {"ok": False, "error": "قاعدة البيانات غير متاحة."})
                 return
-            parsed_path = urlsplit(self.path)
             if parsed_path.path == "/api/status":
                 query = parse_qs(parsed_path.query)
                 raw_client_id = query.get("client_id", [None])[0]
                 client_id = _normalize_client_id(raw_client_id)
-                if raw_client_id and not client_id:
-                    self._json(400, {"ok": False, "error": "معرّف الجلسة غير صالح."})
+                if not client_id:
+                    self._json(400, {"ok": False, "error": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
                 try:
                     self._json(200, self._status_payload(client_id))
@@ -939,7 +1187,7 @@ def make_handler():
                     self._json(503, {"ok": False, "error": "تعذّر قراءة طابور الانتظار."})
                 return
             if self.path == "/api/game_results":
-                self._json(200, {"ok": True, "data": _gfq_results_bank()})
+                self._json(403, {"ok": False, "error": "هذه البيانات غير متاحة عبر الخدمة العامة."})
                 return
             self._json(404, {"error": "not found"})
 
@@ -951,9 +1199,59 @@ def make_handler():
 
         def _read_json(self):
             length = int(self.headers.get("Content-Length", "0") or 0)
+            if length < 0 or length > MAX_JSON_BODY_BYTES:
+                self.close_connection = True
+                raise ValueError("حجم الطلب أكبر من الحد المسموح.")
             return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
 
         def do_POST(self):
+            if urlsplit(self.path).path == "/api/admin/settings":
+                if not self._admin_request_allowed():
+                    self._json(403, {"ok": False, "message": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
+                    return
+                try:
+                    data = self._read_json()
+                except (ValueError, json.JSONDecodeError):
+                    self._json(400, {"ok": False, "message": "إعدادات غير صالحة."})
+                    return
+                if (
+                    not isinstance(data, dict)
+                    or type(data.get("browser_visible")) is not bool
+                ):
+                    self._json(400, {"ok": False, "message": "اختر حالة ظهور متصفح صحيحة."})
+                    return
+                try:
+                    _set_browser_visible(data["browser_visible"])
+                    self._json(200, {
+                        "ok": True,
+                        "browser_visible": _get_browser_visible(),
+                        "message": (
+                            "سيظهر المتصفح مع العمليات الجديدة."
+                            if data["browser_visible"]
+                            else "سيعمل المتصفح في الخلفية مع العمليات الجديدة."
+                        ),
+                    })
+                except OSError:
+                    self._json(500, {"ok": False, "message": "تعذّر حفظ إعداد المتصفح محليًا."})
+                return
+            if urlsplit(self.path).path == "/api/admin/start-now":
+                if not self._admin_request_allowed():
+                    self._json(403, {"ok": False, "message": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
+                    return
+                try:
+                    data = self._read_json()
+                    job_id = str(uuid.UUID(str(data.get("id") or "")))
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    self._json(400, {"ok": False, "message": "معرّف العملية غير صالح."})
+                    return
+                try:
+                    ok, message = _admin_start_now(job_id)
+                    self._json(200 if ok else 409, {"ok": ok, "message": message})
+                except QueueStoreError:
+                    self._json(503, {"ok": False, "message": "تعذّر بدء العملية من الطابور."})
+                except Exception:
+                    self._json(500, {"ok": False, "message": "تعذّر إنشاء عملية الحل."})
+                return
             if self.path == "/api/start":
                 try:
                     data = self._read_json()
@@ -963,10 +1261,16 @@ def make_handler():
                 mode = str(data.get("mode") or "")
                 raw_client_id = data.get("client_id")
                 client_id = _normalize_client_id(raw_client_id)
-                if raw_client_id and not client_id:
-                    self._json(400, {"ok": False, "message": "معرّف الجلسة غير صالح."})
+                if not client_id:
+                    self._json(400, {"ok": False, "message": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
-                client_id = client_id or str(uuid.uuid4())
+                allowed, retry_after = _allow_public_start(self._client_ip())
+                if not allowed:
+                    self._json(429, {
+                        "ok": False,
+                        "message": "تم تجاوز عدد مرات البدء المسموح؛ حاول بعد %d ثانية." % retry_after,
+                    })
+                    return
                 accounts = _normalize_accounts(data.get("accounts"))
                 if not accounts:
                     self._json(400, {"ok": False, "message": "اكتب كود وكلمة مرور لحساب واحد على الأقل."})
@@ -1023,13 +1327,10 @@ def make_handler():
                     })
                 return
             if self.path == "/api/concurrency":
-                try:
-                    data = self._read_json()
-                    val = int(data.get("concurrency", 4))
-                    new_val = _set_concurrency(val)
-                    self._json(200, {"ok": True, "concurrency": new_val})
-                except Exception as e:
-                    self._json(400, {"ok": False, "error": str(e)})
+                self._json(403, {
+                    "ok": False,
+                    "error": "إعداد التزامن غير متاح عبر الواجهة العامة.",
+                })
                 return
             if self.path == "/api/stop":
                 try:
@@ -1039,8 +1340,8 @@ def make_handler():
                 code_to_stop = data.get("code")
                 raw_client_id = data.get("client_id")
                 client_id = _normalize_client_id(raw_client_id)
-                if raw_client_id and not client_id:
-                    self._json(400, {"ok": False, "message": "معرّف الجلسة غير صالح."})
+                if not client_id:
+                    self._json(400, {"ok": False, "message": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
                 if _queue_store:
                     try:
@@ -1106,8 +1407,8 @@ def make_handler():
                     data = {}
                 raw_client_id = data.get("client_id")
                 client_id = _normalize_client_id(raw_client_id)
-                if raw_client_id and not client_id:
-                    self._json(400, {"ok": False, "message": "معرّف الجلسة غير صالح."})
+                if not client_id:
+                    self._json(400, {"ok": False, "message": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
                 if _queue_store:
                     try:

@@ -1,7 +1,7 @@
 {
   "name": "QUIZORA",
   "short_name": "QUIZORA",
-  "description": "حل الثقافة المالية وQureo من الموبايل — أكواد متعددة، تقدّم وسجل مباشر.",
+  "description": "حل الثقافة المالية وQureo من موبايلك — أكواد كتير، متابعة وسجل مباشر.",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "/",
@@ -12,6 +12,12 @@
   "categories": ["education", "productivity"],
   "prefer_related_applications": false,
   "icons": [
+    {
+      "src": "/assets/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/assets/icon-192.png",
       "sizes": "192x192",

@@ -298,11 +298,10 @@ class BankStore:
                     log(f"تعذر حفظ بنك المادة {sid}: {e}", "warning")
 
 
-IS_CLOUD = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("QUIZORA_REQUIRE_DATABASE"))
-HEADLESS = os.environ.get("HEADLESS", "1" if IS_CLOUD else "0") == "1"
+HEADLESS = os.environ.get("HEADLESS", "1") == "1"
 
 class Solver:
-    def __init__(self, log=None, stop=None, shared=None, subject_id=None, turbo=True):
+    def __init__(self, log=None, stop=None, shared=None, subject_id=None, turbo=True, headless=None):
         self.log = log or (lambda *a: None)
         self.is_stopped = stop or (lambda: False)
         self.shared = shared if shared is not None else BankStore()
@@ -317,6 +316,7 @@ class Solver:
         self.browser = None
         self.context = None
         self.turbo = bool(turbo)  # وضع السرعة القصوى: جلسة HTTP من غير متصفح
+        self.headless = HEADLESS if headless is None else bool(headless)
 
     # ------------------------------------------------------------------
     # البنك
@@ -424,10 +424,12 @@ class Solver:
             try:
                 if channel:
                     self.browser = self.playwright.chromium.launch(
-                        channel=channel, headless=HEADLESS, args=args
+                        channel=channel, headless=self.headless, args=args
                     )
                 else:
-                    self.browser = self.playwright.chromium.launch(headless=HEADLESS, args=args)
+                    self.browser = self.playwright.chromium.launch(
+                        headless=self.headless, args=args
+                    )
                 self.log(f"تم تشغيل المتصفح ({label}).", "info")
                 break
             except Exception as e:

@@ -169,26 +169,6 @@
   .step.locked{opacity:.45;cursor:not-allowed}
   .step.locked:hover{background:transparent}
 
-  /* ===== Live jobs (dark rail) ===== */
-  .live-jobs-container{position:relative;z-index:1}
-  .live-jobs-pill{
-    display:flex;align-items:center;gap:9px;
-    background:rgba(255,255,255,.1);border:1px solid rgba(158,136,223,.55);
-    border-radius:14px;padding:11px 13px;cursor:pointer;
-    font-size:12px;font-weight:700;color:#fff;transition:.18s;
-  }
-  .live-jobs-pill:hover{background:rgba(255,255,255,.16)}
-  .live-pulse{
-    width:9px;height:9px;background:var(--mint);border-radius:50%;
-    box-shadow:0 0 10px var(--mint);animation:pulseLive 1.4s infinite;flex-shrink:0;
-  }
-  @keyframes pulseLive{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.6}}
-  #liveJobsText{flex:1;min-width:0;color:#fff;line-height:1.5}
-  .live-act{
-    background:rgba(94,224,168,.18);padding:4px 10px;border-radius:8px;
-    font-size:11px;color:#A8F0D0;flex-shrink:0;white-space:nowrap;
-  }
-
   /* ===== Rail foot ===== */
   .rail-foot{margin-top:auto;position:relative;z-index:1}
   .rail-credit{font-size:11px;color:var(--rail-muted);text-align:center}
@@ -429,9 +409,6 @@
   }
   .progress-foot{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:11px;color:var(--muted)}
 
-  .results-head{display:flex;align-items:center;gap:8px;margin:22px 0 10px}
-  .results-head h3{font-size:13.5px;margin:0;font-weight:800}
-  .results-head span{font-size:11px;color:var(--muted);margin-inline-start:auto}
   .results{display:grid;gap:10px}
   .result{border:1px solid var(--line);border-radius:15px;background:var(--surface);overflow:hidden}
   .result-head{

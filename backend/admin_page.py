@@ -1,0 +1,479 @@
+"""Local-only queue administration page."""
+
+ADMIN_PAGE = r"""<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>إدارة الطابور | QUIZORA</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: #101e30;
+      --panel-soft: #14243a;
+      --line: rgba(179, 205, 235, .12);
+      --text: #f2f6fc;
+      --muted: #9aacc2;
+      --teal: #54dfc2;
+      --amber: #ffbf69;
+      --red: #ff7d86;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse at 87% 0%, rgba(39, 114, 132, .2), transparent 34rem),
+        radial-gradient(ellipse at 8% 30%, rgba(37, 76, 130, .16), transparent 30rem),
+        var(--bg);
+    }
+    button { font: inherit; }
+    .shell { width: min(1120px, calc(100% - 36px)); margin: 0 auto; padding: 38px 0 56px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 30px; }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand-mark {
+      display: grid; place-items: center; width: 48px; height: 48px; border-radius: 15px;
+      color: #04221f; background: linear-gradient(145deg, #71f0d1, #2bb99e);
+      font-size: 19px; font-weight: 900; box-shadow: 0 10px 28px rgba(62, 220, 186, .18);
+    }
+    .brand-name { margin: 0; font-size: 14px; letter-spacing: .16em; color: var(--teal); font-weight: 800; }
+    .brand-subtitle { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
+    .local-badge {
+      display: flex; align-items: center; gap: 9px; padding: 10px 13px; border: 1px solid var(--line);
+      border-radius: 999px; background: rgba(16, 30, 48, .72); color: #c3d2e3; font-size: 12px;
+    }
+    .local-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 12px var(--teal); }
+    .hero { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 22px; }
+    .eyebrow { margin: 0 0 9px; color: var(--teal); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    h1 { margin: 0; font-size: clamp(25px, 4vw, 36px); letter-spacing: -.035em; }
+    .intro { margin: 9px 0 0; color: var(--muted); font-size: 14px; }
+    .refresh-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .stat {
+      position: relative; overflow: hidden; min-height: 108px; padding: 18px 19px;
+      border: 1px solid var(--line); border-radius: 18px;
+      background: linear-gradient(145deg, rgba(20, 36, 58, .96), rgba(13, 26, 43, .96));
+    }
+    .stat::after {
+      content: ""; position: absolute; width: 100px; height: 100px; left: -34px; bottom: -55px;
+      border-radius: 50%; background: var(--glow, rgba(84, 223, 194, .1)); filter: blur(2px);
+    }
+    .stat-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .stat-value { display: block; margin-top: 12px; font-size: 34px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .stat.queue { --glow: rgba(84, 223, 194, .13); }
+    .stat.running { --glow: rgba(255, 191, 105, .13); }
+    .stat.solved { --glow: rgba(108, 151, 255, .16); }
+    .stat.active { --glow: rgba(151, 196, 255, .12); }
+    .stat.running .stat-value { color: var(--amber); }
+    .stat.solved .stat-value { color: #a9bdff; }
+    .stat.active .stat-value { color: #a9d8ff; }
+    .preferences {
+      display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 20px;
+      padding: 17px 20px; border: 1px solid var(--line); border-radius: 17px;
+      background: linear-gradient(110deg, rgba(20, 36, 58, .92), rgba(13, 26, 43, .9));
+    }
+    .preference-title { margin: 0; font-size: 14px; font-weight: 800; }
+    .preference-hint { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+    .preference-state { flex: none; min-width: 115px; color: var(--muted); font-size: 11px; }
+    .switch { position: relative; flex: none; width: 48px; height: 27px; }
+    .switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .switch-track {
+      position: absolute; inset: 0; border: 1px solid rgba(179,205,235,.2); border-radius: 999px;
+      background: #24344a; cursor: pointer; transition: .2s ease;
+    }
+    .switch-track::after {
+      content: ""; position: absolute; top: 3px; right: 3px; width: 19px; height: 19px;
+      border-radius: 50%; background: #b7c5d5; transition: .2s ease;
+    }
+    .switch input:checked + .switch-track { border-color: rgba(84,223,194,.45); background: rgba(51,178,151,.42); }
+    .switch input:checked + .switch-track::after { transform: translateX(-21px); background: #78f0d1; box-shadow: 0 0 12px rgba(84,223,194,.35); }
+    .switch input:focus-visible + .switch-track { outline: 2px solid var(--teal); outline-offset: 3px; }
+    .switch input:disabled + .switch-track { cursor: wait; opacity: .55; }
+    .board { overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: rgba(13, 26, 43, .88); box-shadow: 0 24px 70px rgba(0, 0, 0, .22); }
+    .board-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+    .board-title { margin: 0; font-size: 17px; }
+    .board-caption { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    .live { display: flex; align-items: center; gap: 8px; color: #b6c8da; font-size: 12px; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal); animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: .4; box-shadow: 0 0 0 5px rgba(84, 223, 194, .08); } }
+    .toolbar {
+      display: flex; align-items: center; gap: 10px; padding: 14px 20px;
+      border-bottom: 1px solid var(--line); background: rgba(255,255,255,.015);
+    }
+    .search { position: relative; flex: 1; min-width: 160px; }
+    .search input, .status-filter {
+      width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 11px;
+      color: var(--text); background: #0b1828; font: inherit; font-size: 12px; outline: none;
+    }
+    .search input { padding: 0 38px 0 12px; }
+    .search::before { content: "⌕"; position: absolute; right: 13px; top: 7px; color: #8fa4bc; font-size: 20px; }
+    .search input:focus, .status-filter:focus { border-color: rgba(84,223,194,.55); box-shadow: 0 0 0 3px rgba(84,223,194,.08); }
+    .status-filter { width: auto; min-width: 140px; padding: 0 11px; }
+    .refresh-button {
+      flex: none; min-height: 40px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px;
+      color: #d7e5f4; background: #14243a; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .refresh-button:hover { border-color: rgba(84,223,194,.35); color: var(--teal); }
+    .list { padding: 8px 14px 14px; }
+    .job {
+      display: grid; grid-template-columns: 48px minmax(130px, 1fr) minmax(140px, 1.1fr) minmax(135px, .9fr) minmax(180px, 1.15fr) auto;
+      align-items: center; gap: 14px; padding: 15px 9px; border-bottom: 1px solid rgba(179, 205, 235, .08);
+    }
+    .job:last-child { border-bottom: 0; }
+    .position {
+      display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(84, 223, 194, .18);
+      border-radius: 13px; color: var(--teal); background: rgba(84, 223, 194, .07); font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+    .position.is-running { border-color: rgba(255, 191, 105, .2); color: var(--amber); background: rgba(255, 191, 105, .07); }
+    .field-label { display: block; margin-bottom: 6px; color: #8196af; font-size: 10px; font-weight: 700; }
+    .code { direction: ltr; text-align: right; overflow-wrap: anywhere; font-size: 14px; font-weight: 750; letter-spacing: .02em; }
+    .detail { color: #d7e2ee; font-size: 13px; line-height: 1.5; }
+    .phase { color: #b8c7d8; font-size: 12px; line-height: 1.5; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 7px; margin-top: 5px; padding: 5px 9px;
+      border: 1px solid var(--line); border-radius: 999px; color: #b8c7d8; background: rgba(255,255,255,.025); font-size: 10px;
+    }
+    .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #90a5bc; }
+    .tag.running { color: #ffd298; border-color: rgba(255,191,105,.18); background: rgba(255,191,105,.06); }
+    .tag.running::before { background: var(--amber); box-shadow: 0 0 8px rgba(255,191,105,.7); }
+    .tag.waiting::before { background: var(--teal); }
+    .elapsed { margin-top: 6px; color: #8297af; font-size: 10px; }
+    .job-progress { min-width: 0; }
+    .progress-info { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 7px; color: #b9c9dc; font-size: 10px; }
+    .progress-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-percent { flex: none; color: var(--teal); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .progress-track { height: 6px; overflow: hidden; border-radius: 99px; background: rgba(179,205,235,.12); }
+    .progress-track > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #39bfa3, #78f0d1); transition: width .3s ease; }
+    .progress-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; color: #8196af; font-size: 9px; }
+    .skip {
+      min-height: 39px; padding: 0 13px; border: 1px solid rgba(84, 223, 194, .24); border-radius: 11px;
+      color: #071b1a; background: linear-gradient(135deg, #72efd1, #38c8aa); font-weight: 800; font-size: 12px;
+      cursor: pointer; transition: transform .16s ease, filter .16s ease;
+    }
+    .skip:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.07); }
+    .skip:disabled { cursor: not-allowed; opacity: .48; }
+    .empty, .error {
+      display: grid; place-items: center; min-height: 190px; padding: 28px; text-align: center; color: var(--muted); line-height: 1.8;
+    }
+    .empty strong { display: block; margin-bottom: 5px; color: var(--text); font-size: 15px; }
+    .error { min-height: 0; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(255,125,134,.22); border-radius: 12px; color: #ffb9be; background: rgba(255,125,134,.07); }
+    .error[hidden] { display: none; }
+    .toast { position: fixed; right: 50%; bottom: 24px; z-index: 3; transform: translate(50%, 20px); opacity: 0; pointer-events: none; padding: 12px 18px; border: 1px solid var(--line); border-radius: 12px; background: #17283e; color: var(--text); box-shadow: 0 12px 35px rgba(0,0,0,.3); transition: .2s ease; }
+    .toast.show { transform: translate(50%, 0); opacity: 1; }
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 24px, 560px); padding-top: 22px; }
+      .topbar { margin-bottom: 25px; }
+      .hero { align-items: start; flex-direction: column; }
+      .stats { grid-template-columns: repeat(2, 1fr); gap: 9px; }
+      .stat { min-height: 100px; padding: 15px 13px; border-radius: 15px; }
+      .stat-label { font-size: 11px; }
+      .stat-value { margin-top: 11px; font-size: 29px; }
+      .preferences { padding: 14px; gap: 12px; }
+      .preference-state { display: none; }
+      .board-head { padding: 17px 15px; }
+      .toolbar { flex-wrap: wrap; padding: 12px; }
+      .search { flex-basis: 100%; }
+      .status-filter { flex: 1; }
+      .list { padding: 5px 12px 10px; }
+      .job { grid-template-columns: 40px minmax(0, 1fr); align-items: start; gap: 10px; padding: 15px 2px; }
+      .position { grid-column: 1; grid-row: 1 / span 5; width: 36px; height: 36px; }
+      .job-code, .job-detail, .job-state, .job-progress, .job-action { grid-column: 2; }
+      .job-action { justify-self: start; }
+      .skip { padding: 0 10px; }
+      .refresh-label { font-size: 11px; }
+    }
+    @media (max-width: 380px) {
+      .local-badge { padding: 8px 10px; font-size: 10px; }
+      .brand-mark { width: 42px; height: 42px; }
+      .job { grid-template-columns: 39px minmax(0, 1fr) auto; gap: 8px; }
+      .skip { max-width: 82px; padding: 0 8px; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">Q</div>
+        <div><p class="brand-name">QUIZORA</p><p class="brand-subtitle">لوحة إدارة التشغيل</p></div>
+      </div>
+      <div class="local-badge"><span class="local-dot"></span>إدارة محلية آمنة</div>
+    </header>
+
+    <section class="hero">
+      <div><p class="eyebrow">مركز المتابعة</p><h1>إدارة الطابور</h1><p class="intro">تابع الحسابات النشطة وابدأ أي حساب منتظر فورًا.</p></div>
+      <div class="refresh-label" id="updated">جارٍ الاتصال بالخادم المحلي...</div>
+    </section>
+
+    <section class="stats" aria-label="ملخص التشغيل">
+      <article class="stat queue"><span class="stat-label">حسابات في الطابور</span><strong class="stat-value" id="queueCount">—</strong></article>
+      <article class="stat running"><span class="stat-label">حسابات قيد الحل الآن</span><strong class="stat-value" id="runningCount">—</strong></article>
+      <article class="stat active"><span class="stat-label">عمليات نشطة</span><strong class="stat-value" id="activeJobCount">—</strong></article>
+      <article class="stat solved"><span class="stat-label">عمليات تم حلها</span><strong class="stat-value" id="solvedCount">—</strong></article>
+    </section>
+
+    <section class="preferences" aria-labelledby="browserPreferenceTitle">
+      <div>
+        <h2 class="preference-title" id="browserPreferenceTitle">عرض متصفح الحل</h2>
+        <p class="preference-hint">عند التفعيل، يفتح Chrome أو Edge أثناء حل العمليات الجديدة. لا يغيّر العمليات التي بدأت بالفعل.</p>
+      </div>
+      <span class="preference-state" id="browserSettingState">جارٍ تحميل الإعداد...</span>
+      <label class="switch" aria-label="عرض متصفح الحل">
+        <input id="browserVisible" type="checkbox" role="switch" disabled>
+        <span class="switch-track"></span>
+      </label>
+    </section>
+
+    <div class="error" id="error" role="alert" hidden></div>
+    <section class="board">
+      <header class="board-head">
+        <div><h2 class="board-title">الحسابات النشطة</h2><p class="board-caption">البدء الفوري لا يوقف الحسابات التي تعمل حاليًا.</p></div>
+        <div class="live"><span class="live-dot"></span>تحديث مباشر</div>
+      </header>
+      <div class="toolbar">
+        <label class="search">
+          <input id="searchJobs" type="search" placeholder="ابحث بالكود أو المسار..." aria-label="بحث في الحسابات النشطة">
+        </label>
+        <select class="status-filter" id="statusFilter" aria-label="تصفية حسب الحالة">
+          <option value="all">كل الحالات</option>
+          <option value="running">قيد الحل</option>
+          <option value="waiting">في الطابور</option>
+        </select>
+        <button class="refresh-button" id="refreshButton" type="button">تحديث الآن</button>
+      </div>
+      <div class="list" id="jobs" aria-live="polite"></div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    const jobsRoot = document.getElementById("jobs");
+    const errorBox = document.getElementById("error");
+    const browserToggle = document.getElementById("browserVisible");
+    let lastPayload = null;
+    let refreshing = false;
+    let toastTimer;
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+    }
+
+    function addText(parent, tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      element.textContent = text == null ? "" : String(text);
+      parent.appendChild(element);
+      return element;
+    }
+
+    function formatDuration(seconds) {
+      const total = Math.max(0, Number(seconds) || 0);
+      if (total < 60) return total + " ث";
+      const minutes = Math.floor(total / 60);
+      const remainingSeconds = total % 60;
+      if (minutes < 60) return minutes + " د " + remainingSeconds + " ث";
+      return Math.floor(minutes / 60) + " س " + (minutes % 60) + " د";
+    }
+
+    function render(data) {
+      document.getElementById("queueCount").textContent = data.queue_count;
+      document.getElementById("runningCount").textContent = data.running_count;
+      document.getElementById("activeJobCount").textContent = data.active_job_count;
+      document.getElementById("solvedCount").textContent = data.solved_count;
+      document.getElementById("updated").textContent = "آخر تحديث " + new Date().toLocaleTimeString("ar-EG");
+      errorBox.hidden = true;
+      jobsRoot.replaceChildren();
+
+      const query = document.getElementById("searchJobs").value.trim().toLocaleLowerCase();
+      const status = document.getElementById("statusFilter").value;
+      const jobs = data.jobs.filter((job) => {
+        const searchable = [job.code, job.detail, job.phase].join(" ").toLocaleLowerCase();
+        return (!query || searchable.includes(query))
+          && (status === "all" || (status === "running" ? job.running : !job.running));
+      });
+
+      if (!jobs.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        const content = document.createElement("div");
+        const hasActiveJobs = data.jobs.length > 0;
+        addText(content, "strong", "", hasActiveJobs ? "لا توجد نتائج مطابقة" : "الطابور فارغ حاليًا");
+        addText(content, "span", "", hasActiveJobs ? "غيّر كلمات البحث أو التصفية لعرض حسابات أخرى." : "ستظهر هنا الحسابات الجديدة فور إضافتها.");
+        empty.appendChild(content);
+        jobsRoot.appendChild(empty);
+        return;
+      }
+
+      jobs.forEach((job) => {
+        const row = document.createElement("article");
+        row.className = "job";
+        const position = addText(row, "div", "position" + (job.running ? " is-running" : ""), job.position);
+        position.setAttribute("aria-label", (job.running ? "قيد الحل، " : "") + "الترتيب " + job.position);
+
+        const code = document.createElement("div");
+        code.className = "job-code";
+        addText(code, "span", "field-label", "كود الحساب");
+        addText(code, "div", "code", job.code);
+        row.appendChild(code);
+
+        const detail = document.createElement("div");
+        detail.className = "job-detail";
+        addText(detail, "span", "field-label", "المسار");
+        addText(detail, "div", "detail", job.detail || job.mode || "حل");
+        row.appendChild(detail);
+
+        const state = document.createElement("div");
+        state.className = "job-state";
+        addText(state, "span", "field-label", "الحالة");
+        addText(state, "div", "phase", job.phase || (job.running ? "جاري الحل..." : "في الانتظار"));
+        addText(state, "span", "tag " + (job.running ? "running" : "waiting"), job.running ? "قيد الحل" : "في الطابور");
+        addText(
+          state,
+          "div",
+          "elapsed",
+          job.running
+            ? "مدة الحل: " + formatDuration(job.elapsed_seconds)
+            : "في الانتظار منذ: " + formatDuration(job.queued_seconds)
+        );
+        row.appendChild(state);
+
+        const progressData = job.progress || {};
+        const total = Math.max(0, Number(progressData.total) || 0);
+        const done = Math.max(0, Number(progressData.done) || 0);
+        const percent = total
+          ? Math.max(0, Math.min(100, Number(progressData.pct) || Math.round(done / total * 100)))
+          : 0;
+        const progress = document.createElement("div");
+        progress.className = "job-progress";
+        const progressInfo = document.createElement("div");
+        progressInfo.className = "progress-info";
+        addText(progressInfo, "span", "progress-title", progressData.title || (job.running ? "جاري تجهيز الحل..." : "بانتظار البدء"));
+        addText(progressInfo, "span", "progress-percent", total ? percent + "%" : "—");
+        progress.appendChild(progressInfo);
+        const progressTrack = document.createElement("div");
+        progressTrack.className = "progress-track";
+        progressTrack.setAttribute("role", "progressbar");
+        progressTrack.setAttribute("aria-valuemin", "0");
+        progressTrack.setAttribute("aria-valuemax", "100");
+        progressTrack.setAttribute("aria-valuenow", String(percent));
+        const progressBar = document.createElement("i");
+        progressBar.style.width = percent + "%";
+        progressTrack.appendChild(progressBar);
+        progress.appendChild(progressTrack);
+        addText(
+          progress,
+          "div",
+          "progress-meta",
+          total ? done + " من " + total : "لا توجد بيانات تقدم بعد"
+        );
+        row.appendChild(progress);
+
+        const action = document.createElement("div");
+        action.className = "job-action";
+        const button = addText(action, "button", "skip", job.running ? "بدأ الحل" : "ابدأ الآن");
+        button.type = "button";
+        button.disabled = job.running;
+        button.dataset.jobId = job.id;
+        button.addEventListener("click", () => startNow(button));
+        row.appendChild(action);
+        jobsRoot.appendChild(row);
+      });
+    }
+
+    async function refresh() {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const response = await fetch("/api/admin/queue", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "تعذّر تحميل الطابور.");
+        lastPayload = data;
+        render(data);
+      } catch (error) {
+        errorBox.textContent = error.message || "تعذّر الاتصال بالخادم المحلي.";
+        errorBox.hidden = false;
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    async function startNow(button) {
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/admin/start-now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: button.dataset.jobId })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "تعذّر بدء العملية.");
+        showToast(data.message);
+        await refresh();
+      } catch (error) {
+        showToast(error.message || "تعذّر بدء العملية.");
+        button.disabled = false;
+      }
+    }
+
+    async function loadBrowserSetting() {
+      try {
+        const response = await fetch("/api/admin/settings", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "تعذّر تحميل إعداد المتصفح.");
+        browserToggle.checked = data.browser_visible;
+        document.getElementById("browserSettingState").textContent =
+          data.browser_visible ? "المتصفح سيظهر" : "المتصفح مخفي";
+        browserToggle.disabled = false;
+      } catch (error) {
+        document.getElementById("browserSettingState").textContent = "تعذّر تحميل الإعداد";
+        errorBox.textContent = error.message || "تعذّر تحميل إعداد المتصفح.";
+        errorBox.hidden = false;
+      }
+    }
+
+    async function saveBrowserSetting() {
+      const nextValue = browserToggle.checked;
+      browserToggle.disabled = true;
+      try {
+        const response = await fetch("/api/admin/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ browser_visible: nextValue })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "تعذّر حفظ إعداد المتصفح.");
+        document.getElementById("browserSettingState").textContent =
+          data.browser_visible ? "المتصفح سيظهر" : "المتصفح مخفي";
+        showToast(data.message);
+      } catch (error) {
+        browserToggle.checked = !nextValue;
+        showToast(error.message || "تعذّر حفظ إعداد المتصفح.");
+      } finally {
+        browserToggle.disabled = false;
+      }
+    }
+
+    document.getElementById("searchJobs").addEventListener("input", () => {
+      if (lastPayload) render(lastPayload);
+    });
+    document.getElementById("statusFilter").addEventListener("change", () => {
+      if (lastPayload) render(lastPayload);
+    });
+    document.getElementById("refreshButton").addEventListener("click", refresh);
+    browserToggle.addEventListener("change", saveBrowserSetting);
+
+    refresh();
+    loadBrowserSetting();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>
+"""

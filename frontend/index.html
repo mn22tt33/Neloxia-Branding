@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#493849">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<link rel="icon" type="image/png" href="/assets/icon-192.png">
-<script src="/config.js"></script>
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+<script src="/config.js?v=1.0.8"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -15,6 +15,14 @@
       matchMedia("(pointer: coarse)").matches &&
       matchMedia("(hover: none)").matches);
   if (window.__IS_PHONE) document.documentElement.classList.add("phone");
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("/sw.js?v=1.0.8").catch(function(error){
+        console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
+      });
+    });
+  }
 </script>
 <title>QUIZORA</title>
 <style>  :root{
@@ -88,54 +96,35 @@
   .app-header{
     max-width:var(--max);
     margin:0 auto;
-    padding:22px 22px 12px;
+    padding:14px 22px;
     display:flex;
     align-items:center;
     gap:12px;
   }
-  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .brand{display:flex;align-items:center;gap:14px;min-width:0}
   .brand-logo{
-    width:112px;height:75px;object-fit:contain;flex:none;
+    width:90px;height:90px;object-fit:contain;flex:none;
+    border:1px solid rgba(255,255,255,.18);border-radius:20px;
+    filter:drop-shadow(0 6px 12px rgba(0,0,0,.2));
+  }
+  .brand-copy{display:grid;align-content:center;justify-items:start;gap:7px;min-width:0}
+  .brand-version{
+    display:inline-flex;align-items:center;gap:6px;margin:0;padding:3px 9px;
+    border:1px solid rgba(112,218,246,.35);border-radius:999px;
+    background:rgba(35,190,228,.1);color:#A8E8F7;
+    font-size:9px;font-weight:800;line-height:1.4;letter-spacing:.3px;
+  }
+  .brand-version::before{
+    width:5px;height:5px;border-radius:50%;background:#48D5F0;
+    box-shadow:0 0 8px rgba(72,213,240,.7);content:"";
   }
   .brand h1{
-    font-size:20px;line-height:1.2;margin:0;font-weight:850;letter-spacing:-.3px;
+    font-size:22px;line-height:1.2;margin:0;font-weight:850;letter-spacing:-.3px;
     background:linear-gradient(120deg,var(--ink) 20%,var(--brand-700));
     -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   }
-  /* ===== Stepper ===== */
-  .stepper{
-    max-width:var(--max);
-    margin:12px auto 0;
-    padding:0 20px;
-    display:flex;
-    gap:6px;
-  }
-  .step{
-    flex:1;min-width:0;
-    display:flex;align-items:center;justify-content:center;gap:9px;
-    background:rgba(255,253,250,.6);
-    border:1px solid var(--line);border-radius:14px;
-    padding:9px 6px;cursor:pointer;
-    color:var(--muted);transition:.18s;
-  }
-  .step .dot{
-    width:28px;height:28px;border-radius:50%;flex:none;
-    display:grid;place-items:center;
-    background:#EFE9F5;color:var(--muted);
-    font-size:12px;font-weight:800;
-    transition:.18s;
-  }
-  .step .lbl{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .step:hover:not(.locked){background:var(--surface);border-color:var(--brand-400)}
-  .step.active{color:var(--brand-700);background:var(--surface);border-color:var(--brand-400);box-shadow:var(--shadow-sm)}
-  .step.active .dot{background:linear-gradient(135deg,var(--brand-600),var(--brand-800));color:#fff;box-shadow:0 0 0 4px var(--brand-100)}
-  .step.done .dot{background:var(--brand-100);color:var(--brand-700)}
-  .step.done .dot::before{content:"✓";font-size:13px}
-  .step.done .dot .num{display:none}
-  .step.locked{opacity:.5;cursor:not-allowed;background:transparent;border-color:transparent}
-
   /* ===== Main ===== */
-  .wrap{max-width:var(--max);margin:0 auto;padding:10px 20px 130px}
+  .wrap{max-width:var(--max);margin:0 auto;padding:10px 20px 24px}
   .panel{
     display:none;
     background:rgba(255,253,250,.94);
@@ -320,13 +309,6 @@
   }
   .divider{height:1px;background:var(--line);margin:20px 0 0}
   /* ===== Accounts ===== */
-  .acc-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px}
-  .count-pill{
-    background:var(--brand-100);color:var(--brand-700);
-    border-radius:999px;padding:4px 12px;font-size:11.5px;font-weight:800;
-    white-space:nowrap;
-  }
-  .acc-toolbar .hint{margin:0;font-size:11px}
   .account{
     display:flex;flex-wrap:wrap;gap:8px;align-items:center;
     border:1px solid var(--line);border-radius:13px;background:var(--surface-2);
@@ -341,21 +323,14 @@
   .account input:focus{outline:2px solid rgba(90,69,172,.28);border-color:var(--brand-600)}
   .acc-code{flex:1 1 150px}
   .pw-wrap{position:relative;flex:1.5 1 200px}
-  .pw-wrap input{padding-left:40px}
+  .pw-wrap input{padding-left:64px}
   .pw-wrap .eye{
     position:absolute;top:50%;left:4px;transform:translateY(-50%);
-    width:32px;height:32px;border:0;background:transparent;color:var(--muted);
-    border-radius:8px;cursor:pointer;display:grid;place-items:center;font-size:14px;
+    width:56px;height:32px;padding:0 4px;border:0;background:transparent;color:var(--muted);
+    border-radius:8px;cursor:pointer;display:grid;place-items:center;
+    font-size:11px;font-weight:600;white-space:nowrap;
   }
   .pw-wrap .eye:hover{background:var(--surface-2);color:var(--brand-700)}
-  .icon-btn{
-    width:40px;height:40px;flex:none;border-radius:10px;
-    border:1px solid var(--line);background:var(--surface);color:var(--muted);
-    display:grid;place-items:center;cursor:pointer;font-size:14px;transition:.16s;
-  }
-  .icon-btn:hover{background:var(--surface-2)}
-  .icon-btn.danger{color:var(--red);border-color:#F0CBD1;background:#FFF7F8}
-  .icon-btn.danger:hover{background:var(--red-bg)}
   /* ===== Alerts ===== */
   .alert{
     display:flex;align-items:flex-start;gap:8px;
@@ -376,7 +351,6 @@
   .summary-title{font-size:15px;font-weight:800}
   .summary-sub{font-size:12px;color:var(--muted);line-height:1.7;margin-top:3px}
   .summary-top .btn{margin-inline-start:auto;flex:none}
-  .summary-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
   .tag{
     display:inline-flex;align-items:center;gap:5px;
     background:var(--surface);border:1px solid var(--line);border-radius:999px;
@@ -398,57 +372,7 @@
   }
   .progress-foot{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:11px;color:var(--muted)}
 
-  .results-head{display:flex;align-items:center;gap:8px;margin:22px 0 10px}
-  .results-head h3{font-size:13.5px;margin:0;font-weight:800}
-  .results-head span{font-size:11px;color:var(--muted);margin-inline-start:auto}
   .results{display:grid;gap:10px}
-  .result{border:1px solid var(--line);border-radius:15px;background:var(--surface);overflow:hidden}
-  .result-head{
-    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-    padding:11px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);
-  }
-  .r-id{min-width:0}
-  .r-code{font-size:13px;font-weight:800;direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
-  .r-meta{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5}
-  .status{
-    margin-inline-start:auto;font-size:11px;font-weight:800;border-radius:999px;
-    padding:4px 11px;white-space:nowrap;
-  }
-  .status.run{background:var(--blue-bg);color:var(--blue)}
-  .status.ok{background:var(--ok-bg);color:var(--ok)}
-  .status.fail{background:var(--red-bg);color:var(--red)}
-  .status.stop{background:#EEEAED;color:#675F6E}
-  .result-body{padding:12px 14px}
-  .r-msg{font-size:12px;line-height:1.7;color:var(--ink-2);margin:0 0 9px}
-  .r-msg.ok{color:var(--ok);font-weight:700}
-  .r-msg.fail{color:var(--red);font-weight:700}
-  .r-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:9px}
-  .r-bar-row .bar{flex:1;height:7px}
-  .r-title{font-size:10.5px;color:var(--muted);white-space:nowrap;max-width:45%;overflow:hidden;text-overflow:ellipsis}
-  .r-count{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .log-toggle{
-    display:inline-flex;align-items:center;gap:6px;
-    border:1px solid var(--line);background:var(--surface);color:var(--ink-2);
-    border-radius:10px;padding:7px 11px;font-size:11.5px;font-weight:700;
-    cursor:pointer;transition:.16s;
-  }
-  .log-toggle:hover{background:var(--surface-2);border-color:var(--brand-400)}
-  .log-toggle .chev{transition:transform .2s;font-size:9px;color:var(--muted)}
-  .log-toggle[aria-expanded="true"] .chev{transform:rotate(180deg)}
-  .log-wrap{display:none;margin-top:8px}
-  .log-wrap.open{display:block}
-  .log{
-    background:#1B1526;color:#D8CFEA;border-radius:11px;
-    padding:10px 12px;font-family:Consolas,"Courier New",monospace;
-    font-size:11px;line-height:1.8;max-height:180px;overflow:auto;
-    direction:rtl;text-align:right;
-  }
-  .log div{white-space:pre-wrap;overflow-wrap:anywhere}
-  .log .t{color:#8F83B8;font-size:10px;margin-inline-end:5px}
-  .log .ok{color:#7FD6B0}
-  .log .err{color:#FF9AA6}
-  .log .wrn{color:#F2C071}
-  .log .sys{color:#A99CD1}
 
   /* ===== Empty / bank ===== */
   .empty{
@@ -456,7 +380,6 @@
     text-align:center;padding:28px 16px;color:var(--muted);font-size:12.5px;line-height:1.8;
     margin-top:12px;
   }
-  .empty .big{display:block;font-size:26px;margin-bottom:6px}
   .empty b{color:var(--ink-2);font-size:13.5px}
   details.bank{
     margin-top:16px;border:1px solid var(--line);border-radius:15px;
@@ -486,25 +409,13 @@
   .bank-row .bk-main small{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}
   .bank-row .bk-score{margin-inline-start:auto;font-weight:800;color:var(--brand-700);white-space:nowrap}
 
-  /* ===== Sticky action bar ===== */
-  .actionbar{
-    position:fixed;left:0;right:0;bottom:0;z-index:60;
-    background:rgba(255,253,250,.9);
-    -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3);
-    border-top:1px solid var(--line);
-    padding-bottom:env(safe-area-inset-bottom);
-    box-shadow:0 -10px 34px rgba(42,36,56,.07);
-  }
+  /* ===== Wizard navigation ===== */
+  .actionbar{margin-top:20px}
   .actionbar-inner{
-    max-width:var(--max);margin:0 auto;padding:13px 20px;
-    display:flex;align-items:center;gap:10px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
   }
   .ab-side{display:flex;align-items:center;gap:8px;flex:none}
-  .ab-meta{
-    flex:1;min-width:0;text-align:center;font-size:11.5px;color:var(--muted);
-    line-height:1.5;
-  }
-  .ab-meta b{color:var(--ink-2)}
+  .actionbar[hidden]{display:none}
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:7px;
     border:0;border-radius:12px;padding:11px 19px;
@@ -525,6 +436,33 @@
   .btn.ghost{background:transparent;color:var(--brand-700);padding:8px 10px}
   .btn.ghost:hover{background:var(--brand-50)}
   .btn[hidden]{display:none}
+  .actionbar .btn{
+    min-width:132px;min-height:52px;padding:13px 22px;border-radius:15px;
+    font-size:14px;font-weight:850;letter-spacing:.1px;
+    transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease;
+  }
+  .actionbar .btn.primary{
+    background:linear-gradient(135deg,#765F78,#4A344C);
+    box-shadow:0 8px 18px rgba(83,61,83,.24);
+  }
+  .actionbar .btn.primary:hover:not(:disabled){
+    filter:none;transform:translateY(-2px);box-shadow:0 12px 23px rgba(83,61,83,.3);
+  }
+  .actionbar .btn.primary:active:not(:disabled){
+    transform:translateY(0) scale(.98);box-shadow:0 4px 10px rgba(83,61,83,.2);
+  }
+  .actionbar .btn.secondary{
+    border-color:#E4D9D3;background:linear-gradient(180deg,#FFFEFC,#F8F3EF);
+    box-shadow:0 5px 13px rgba(48,39,53,.08);
+  }
+  .actionbar .btn.secondary:hover{
+    border-color:#BFA6B9;background:#fff;transform:translateY(-2px);
+    box-shadow:0 9px 18px rgba(48,39,53,.12);
+  }
+  .actionbar .btn:active{transform:translateY(0) scale(.98)}
+  .actionbar .btn:focus-visible{
+    outline:3px solid rgba(189,118,84,.36);outline-offset:3px;
+  }
 
   /* ===== Toast ===== */
   .toast{
@@ -537,52 +475,32 @@
   }
   .toast.show{opacity:1;transform:translate(-50%,0)}
 
-  /* ===== Live Background Jobs Banner ===== */
-  .live-jobs-container{max-width:var(--max);margin:4px auto 8px;padding:0 20px;}
-  .live-jobs-pill{
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-    background:linear-gradient(135deg, rgba(122,99,203,.16), rgba(74,55,144,.3));
-    border:1px solid rgba(156,135,221,.5);
-    border-radius:13px;padding:10px 16px;
-    cursor:pointer;font-size:13px;font-weight:700;color:#5A45AC;
-    box-shadow:0 4px 16px rgba(90,69,172,.16);
-    transition:all .2s ease;
+  .server-offline-overlay{
+    position:fixed;inset:0;z-index:10000;display:grid;place-items:center;
+    padding:20px;background:linear-gradient(145deg,#F3EFE9 0%,#ECE6E8 52%,#E6DFE8 100%);
   }
-  .live-jobs-pill:hover{
-    background:linear-gradient(135deg, rgba(122,99,203,.26), rgba(74,55,144,.42));
-    border-color:rgba(156,135,221,.8);
-    transform:translateY(-1px);
-    box-shadow:0 7px 22px rgba(90,69,172,.26);
+  .server-offline-overlay[hidden]{display:none}
+  .server-offline-card{
+    width:min(440px,100%);padding:28px 24px;text-align:center;
+    background:var(--surface);border:1px solid var(--line);border-radius:24px;
+    box-shadow:var(--shadow);
   }
-  .live-pulse{
-    width:10px;height:10px;background:#5A45AC;border-radius:50%;
-    box-shadow:0 0 10px #7A63CB;animation:pulseLive 1.4s infinite;flex-shrink:0;
+  .server-offline-icon{
+    width:54px;height:54px;margin:0 auto 12px;display:grid;place-items:center;
+    border-radius:50%;background:var(--amber-bg);color:var(--amber);
+    font-size:26px;font-weight:900;
   }
-  @keyframes pulseLive{
-    0%,100%{transform:scale(1);opacity:1}
-    50%{transform:scale(1.35);opacity:.6}
-  }
-  .live-act{
-    background:rgba(90,69,172,.16);padding:4px 12px;
-    border-radius:9px;font-size:12px;color:#3A2A6E;display:flex;align-items:center;gap:4px;
-  }
-  .stop-single-btn{
-    background:rgba(184,70,90,.1);color:var(--red);border:1px solid rgba(184,70,90,.28);
-    border-radius:7px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;transition:.16s;
-    margin-inline-start:auto;
-  }
-  .stop-single-btn:hover{background:rgba(184,70,90,.2);border-color:var(--red);}
+  .server-offline-card h2{margin:0 0 8px;font-size:20px;color:var(--ink)}
+  .server-offline-card p{margin:0 0 18px;color:var(--ink-2);font-size:14px}
+  .server-offline-card .btn{display:flex;width:100%;justify-content:center;text-decoration:none}
+  .server-offline-hint{margin:14px 0 0!important;font-size:12px!important;color:var(--muted)!important}
 
   /* ===== Responsive ===== */
   @media (max-width:720px){
     .app-header{padding:14px 14px 4px}
     .brand-avatar{width:40px;height:40px;border-radius:13px}
     .brand h1{font-size:16.5px}
-    .stepper{padding:0 10px;gap:4px}
-    .step{flex-direction:column;gap:4px;padding:8px 2px;border-radius:12px}
-    .step .lbl{font-size:10px}
-    .step .dot{width:26px;height:26px;font-size:11px}
-    .wrap{padding:8px 12px 140px}
+    .wrap{padding:8px 12px 24px}
     .panel{padding:18px;border-radius:18px}
     .panel-head h2{font-size:18px}
     .panel-head p{font-size:12px}
@@ -594,13 +512,10 @@
     .account{padding:7px}
     .acc-code{flex:1 1 100%}
     .pw-wrap{flex:1 1 100%}
-    .actionbar-inner{padding:10px 12px;gap:8px}
-    .ab-meta{display:none}
+    .actionbar-inner{gap:8px}
     .btn{padding:11px 16px;font-size:12.5px}
     .summary-top{flex-wrap:wrap}
     .summary-top .btn{margin-inline-start:0;padding-inline:0}
-    .r-title{max-width:40%}
-    .live-jobs-container{padding:0 12px}
   }
   @media (max-width:380px){
     .brand p{display:none}
@@ -669,7 +584,7 @@
 
   .app-header{
     position:relative;isolation:isolate;overflow:hidden;
-    max-width:var(--max);min-height:74px;margin:14px auto 0;padding:11px 18px;
+    max-width:var(--max);min-height:108px;margin:14px auto 0;padding:8px 20px;
     border:1px solid rgba(255,255,255,.13);border-radius:25px;
     background:linear-gradient(112deg,#302735 0%,#463849 58%,#5A4658 100%);
     box-shadow:0 16px 38px rgba(48,39,53,.17);
@@ -692,42 +607,12 @@
   }
   .brand h1{
     color:#FFFCF8;background:none;-webkit-text-fill-color:currentColor;
-    font-size:20px;letter-spacing:0;font-weight:850;
+    font-size:22px;letter-spacing:0;font-weight:850;
   }
   .brand p{display:none}
+  .brand-version{justify-self:start}
 
-  .stepper{
-    max-width:var(--max);margin:15px auto 0;padding:6px;gap:5px;
-    border:1px solid rgba(230,222,217,.9);border-radius:17px;
-    background:rgba(255,252,248,.7);box-shadow:0 5px 18px rgba(48,39,53,.035);
-  }
-  .step{
-    min-height:46px;gap:9px;padding:7px 12px;
-    color:var(--muted);background:transparent;border:1px solid transparent;border-radius:12px;
-  }
-  .step .dot{
-    width:29px;height:29px;background:#EEE8E5;color:#777078;
-    font-size:11px;font-weight:850;
-  }
-  .step .lbl{font-size:12px;font-weight:750}
-  .step:hover:not(.locked){background:#F8F3F7;border-color:#E4D9E4}
-  .step.active{
-    color:var(--brand-800);background:#F1EAF1;border-color:#E3D6E4;box-shadow:none;
-  }
-  .step.active .dot{background:var(--brand-800);color:#fff;box-shadow:0 0 0 3px rgba(121,100,123,.13)}
-  .step.done .dot{background:#E4EEE8;color:var(--ok)}
-  .step.locked{opacity:.55}
-
-  .live-jobs-container{max-width:var(--max);margin:10px auto 0;padding:0 20px}
-  .live-jobs-pill{
-    min-height:48px;color:#684B3C;background:linear-gradient(105deg,#F3E4D8,#F7EEE6);
-    border:1px solid #E8D3C5;border-radius:14px;box-shadow:0 6px 20px rgba(112,76,56,.08);
-  }
-  .live-jobs-pill:hover{background:#F0DFD1;border-color:#D7B9A5;box-shadow:0 9px 22px rgba(112,76,56,.12)}
-  .live-pulse{background:var(--accent);box-shadow:0 0 9px rgba(189,118,84,.7)}
-  .live-act{color:#684B3C;background:rgba(189,118,84,.13)}
-
-  .wrap{max-width:var(--max);padding:17px 20px 145px}
+  .wrap{max-width:var(--max);padding:17px 20px 24px}
   .panel{
     position:relative;overflow:hidden;padding:32px;
     background:rgba(255,252,248,.96);border:1px solid rgba(230,222,217,.9);
@@ -822,8 +707,6 @@
   .hint.info,.alert.info{color:#4E6679;background:var(--blue-bg);border-color:#D6E0E5}
   .hint.warn,.alert.warn{color:#805832;background:var(--amber-bg);border-color:#E9D4B8}
 
-  .acc-toolbar{margin-bottom:13px}
-  .count-pill{color:var(--brand-800);background:#EFE7EE;border:1px solid #E2D6E1}
   .account{
     gap:12px;padding:12px;margin-bottom:12px;border-color:#E8DFD9;
     border-radius:16px;background:linear-gradient(145deg,#FFFCF8,#F8F3EF);
@@ -833,17 +716,14 @@
     border-color:#E2DAD5;border-radius:12px;background:#FFFDFA;
     box-shadow:0 2px 6px rgba(42,36,56,.04);
   }
-  .pw-wrap input{padding-left:48px}
+  .pw-wrap input{padding-left:64px}
   .account input::placeholder{color:#9A9299}
   .account input:focus{
     outline:3px solid rgba(189,118,84,.17);border-color:var(--accent);
     box-shadow:0 0 0 3px rgba(189,118,84,.08);
   }
-  .pw-wrap .eye{width:38px;height:38px}
+  .pw-wrap .eye{width:56px;height:38px}
   .pw-wrap .eye:hover{color:var(--brand-700);background:#F4EEF3}
-  .icon-btn{width:46px;height:46px;border-radius:12px}
-  .icon-btn.danger{color:var(--red);border-color:#EBD0D3;background:#FCF4F4}
-  .icon-btn.danger:hover{background:var(--red-bg)}
   .alert{border-radius:12px;padding:11px 14px}
   .alert.error{color:var(--red);background:var(--red-bg);border-color:#EBD0D3}
   .alert[hidden]{display:none}
@@ -857,41 +737,12 @@
   .progress-top .pct{color:var(--brand-700)}
   .bar{background:#ECE5E2}
   .bar>i{background:linear-gradient(90deg,#765F78 0%,#9A7F97 68%,#BD7654 100%)}
-  .results-head{margin:24px 0 11px}
-  .results-head h3{font-size:14px}
-  .result{border-color:var(--line);border-radius:15px;background:#FFFCF8}
-  .result-head{padding:13px 15px;background:#F8F4EE;border-color:var(--line)}
-  .r-code{font-size:13px}
-  .status{padding:5px 11px}
-  .status.run{color:#4F6A85;background:#EAF0F4}
-  .status.ok{color:#39786A;background:#E6F1EC}
-  .status.fail{color:#A64F5D;background:#F8E9EB}
-  .status.stop{color:#665E66;background:#ECE8E7}
-  .result-body{padding:13px 15px}
-  .r-msg{color:var(--ink-2)}
-  .log-toggle{min-height:38px;border-color:var(--line);border-radius:10px}
-  .log-toggle:hover{background:#F7F0F6;border-color:#C4A9BC}
-  .log{
-    color:#EEE7ED;background:#29242D;border:1px solid #403743;border-radius:12px;
-    font-size:11px;line-height:1.85;
-  }
-  .log .t{color:#C1A9BD}
-  .log .ok{color:#92C5AD}
-  .log .err{color:#E79AA2}
-  .log .wrn{color:#E0B57A}
-  .log .sys{color:#C4B5CB}
   .empty{border-color:#C8B2C6;border-radius:15px;background:#FAF6F1}
   .empty b{color:var(--ink-2)}
   .bank-row{border-color:var(--line);background:#FFFCF8}
   .bank-row .bk-score{color:var(--brand-700)}
 
-  .actionbar{
-    background:rgba(255,252,248,.93);border-color:rgba(220,210,205,.9);
-    box-shadow:0 -8px 26px rgba(48,39,53,.08);
-    -webkit-backdrop-filter:blur(18px) saturate(1.2);backdrop-filter:blur(18px) saturate(1.2);
-  }
-  .actionbar-inner{min-height:76px;padding:12px 20px}
-  .ab-meta{font-size:11.5px}
+  .review-actions{margin-top:18px}
   .btn{min-height:44px;border-radius:12px;padding:11px 19px;font-weight:800}
   .btn.primary{
     color:#fff;background:linear-gradient(115deg,#493849 0%,#705A72 75%,#866B7D 100%);
@@ -909,22 +760,14 @@
     top:18px;color:#fff;background:linear-gradient(110deg,#302735,#604B61);
     border:1px solid rgba(255,255,255,.14);border-radius:13px;box-shadow:0 12px 32px rgba(48,39,53,.24);
   }
-  .stop-single-btn{color:#9D4A57;background:#F8E9EB;border-color:#EACBD0}
-  .stop-single-btn:hover{background:#F1DADD;border-color:#C9828B}
-
   @media (max-width:760px){
-    .app-header{min-height:64px;margin:10px 12px 0;padding:9px 13px;border-radius:17px}
-    .brand{gap:10px}
-    .brand-logo{width:90px;height:60px}
+    .app-header{min-height:78px;margin:10px 12px 0;padding:8px 12px;border-radius:17px}
+    .brand{gap:9px}
+    .brand-logo{width:60px;height:60px;border-radius:13px}
     .brand h1{font-size:17px}
-    .stepper{margin:11px 12px 0;padding:4px;gap:3px;border-radius:14px}
-    .step{min-height:58px;flex-direction:column;gap:3px;padding:5px 2px}
-    .step .dot{width:25px;height:25px}
-    .step .lbl{max-width:100%;font-size:9.5px}
-    .live-jobs-container{margin-top:9px;padding:0 12px}
-    .live-jobs-pill{padding:9px 11px;font-size:11px}
-    .live-act{font-size:10px;padding:4px 7px}
-    .wrap{padding:11px 12px 130px}
+    .brand-copy{gap:5px}
+    .brand-version{padding:2px 7px;font-size:8px}
+    .wrap{padding:11px 12px 24px}
     .panel{padding:21px 17px;border-radius:19px}
     .panel-head{margin-bottom:19px}
     .panel-head h2{font-size:21px}
@@ -939,20 +782,12 @@
     .service-heading .tag{font-size:10px}
     .account{padding:10px}
     .acc-code,.pw-wrap{flex:1 1 100%}
-    .actionbar-inner{min-height:67px;padding:9px 12px;gap:7px}
-    .ab-meta{display:none}
+    .actionbar-inner{gap:7px}
     .ab-side{gap:6px}
     .btn{min-height:43px;padding:10px 14px;font-size:12px}
     .summary-top{flex-wrap:wrap}
     .summary-top .btn{margin-inline-start:0;padding-inline:10px}
-    .summary-chips{gap:6px}
     .tag{font-size:10.5px;padding:4px 8px}
-    .results-head{align-items:flex-start}
-    .results-head span{flex-wrap:wrap;justify-content:flex-end}
-    .result-head{gap:7px}
-    .r-title{max-width:34%}
-    .r-count{font-size:10px}
-    .log{max-height:230px}
   }
   @media (max-width:520px){
     .track-grid,.year-grid{grid-template-columns:1fr}
@@ -963,40 +798,56 @@
     .service-heading .tag{display:inline-flex;margin-top:8px}
     .summary{padding:14px}
     .summary-top .btn{margin-inline-start:auto}
-    .results-head{display:block}
-    .results-head span{margin:5px 0 0;justify-content:flex-start!important}
-    .result-head{align-items:flex-start}
-    .r-id{width:100%}
-    .status{margin-inline-start:0}
-    .stop-single-btn{margin-inline-start:auto}
-    .r-bar-row{gap:6px}
-    .r-title{max-width:31%;font-size:10px}
-    .actionbar-inner{justify-content:space-between}
     .actionbar .btn{padding-inline:11px}
   }
   @media (max-width:360px){
-    .app-header{margin-inline:8px;padding:9px 11px}
-    .brand-logo{width:82px;height:55px}
-    .brand h1{font-size:16px}
-    .stepper{margin-inline:8px}
+    .app-header{min-height:66px;margin-inline:8px;padding:7px 10px}
+    .brand-logo{width:50px;height:50px;border-radius:11px}
+    .brand h1{font-size:15px}
     .wrap{padding-inline:8px}
     .panel{padding:17px 13px}
     .btn{font-size:11px;padding-inline:9px}
+  }
+
+  .panel[data-panel="4"].active{
+    display:flex;flex-direction:column;
+    min-height:clamp(420px,calc(100vh - 300px),680px);
+  }
+  .panel[data-panel="4"] #accounts{
+    display:flex;flex:1;flex-direction:column;justify-content:center;gap:10px;
+  }
+  .panel[data-panel="4"] .account{
+    width:100%;max-width:860px;margin:0 auto;padding:16px;
+    border-color:#E4D9D3;border-radius:17px;
+    background:linear-gradient(145deg,#FFFEFC,#F7F1EC);
+    box-shadow:0 10px 24px rgba(48,39,53,.08),inset 0 1px 0 #fff;
+  }
+  .panel[data-panel="4"] .account input{
+    min-height:56px;border-radius:14px;font-size:14px;
+  }
+  .panel[data-panel="4"] .pw-wrap .eye{height:42px}
+  @media (max-width:760px){
+    .panel[data-panel="4"].active{
+      min-height:max(360px,calc(100vh - 194px));
+      min-height:max(360px,calc(100svh - 194px));
+    }
+    .panel[data-panel="4"] .account{padding:12px;gap:12px}
+    .panel[data-panel="4"] .account input{min-height:58px;font-size:15px}
   }
 
   /* Review dashboard */
   .panel[data-panel="5"]{padding:30px}
   #review{
     display:grid;
-    grid-template-columns:minmax(270px,.78fr) minmax(0,1.3fr);
-    grid-template-areas:"summary results" "queue results" "progress results";
+    grid-template-columns:minmax(360px,.9fr) minmax(0,1.25fr);
+    grid-template-areas:"summary results";
     gap:18px;align-items:start;
   }
   #review>.summary{
     grid-area:summary;position:relative;overflow:hidden;
-    border:0;border-radius:22px;padding:24px;
-    background:linear-gradient(145deg,#493849 0%,#705A72 100%);
-    color:#fff;box-shadow:0 18px 38px rgba(73,56,73,.2);
+    border:1px solid rgba(255,255,255,.16);border-radius:22px;padding:24px;
+    background:linear-gradient(145deg,#463448 0%,#5F4A62 58%,#705A72 100%);
+    color:#fff;box-shadow:0 16px 34px rgba(54,39,55,.2),inset 0 1px 0 rgba(255,255,255,.08);
   }
   #review>.summary::before{
     content:"";position:absolute;inset-block-start:-95px;inset-inline-start:-80px;
@@ -1004,144 +855,251 @@
     background:radial-gradient(circle,rgba(189,118,84,.28),transparent 70%);
     pointer-events:none;
   }
-  #review .summary-top,#review .summary-chips,#review .summary>.alert{position:relative}
-  #review .summary-top{align-items:flex-start;gap:14px}
-  #review .summary-kicker,.results-kicker,.progress-eyebrow{
-    display:block;color:#D8C6D6;font-size:10px;font-weight:850;letter-spacing:.5px;
+  #review .summary-top,#review .queue-stats,#review .summary>.alert{position:relative}
+  #review .summary-top{
+    display:grid;grid-template-columns:minmax(0,1fr);gap:15px;
   }
-  #review .summary-title{margin-top:7px;color:#fff;font-size:20px;line-height:1.35}
-  #review .summary-sub{margin-top:7px;color:rgba(255,255,255,.72);font-size:12px}
-  #review .summary-chips{gap:8px;margin-top:20px}
-  #review .summary-chips .tag{
-    min-height:36px;border-color:rgba(255,255,255,.17);
-    background:rgba(255,255,255,.1);color:#F8F1F6;padding:7px 12px;
+  #review .summary-copy{min-width:0}
+  #review .summary-actions{
+    display:flex;align-items:center;justify-content:flex-start;gap:9px;
+    flex-wrap:wrap;margin-inline-start:0;
   }
-  #review .summary-chips .tag b{color:#F0C3A6;font-size:13px}
-  #review .summary>.alert{border-radius:12px}
-  #review>.queue-stats{
-    grid-area:queue;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  #review .summary-actions .btn{
+    min-height:46px;margin-inline-start:0;padding:11px 15px;
+    border-radius:13px;font-size:12.5px;font-weight:850;white-space:nowrap;
+    box-shadow:0 5px 13px rgba(37,26,38,.18);
+  }
+  #review .summary-actions .btn.terminal-back{
+    border-color:rgba(255,255,255,.78);
+    background:linear-gradient(180deg,#fffdfa,#F3ECE7);color:#4D3D50;
+  }
+  #review .summary-actions .btn.terminal-back:hover{
+    transform:translateY(-1px);border-color:#fff;box-shadow:0 8px 17px rgba(37,26,38,.24);
+  }
+  #review .summary-actions .btn.new-operation{
+    color:#fff;background:linear-gradient(135deg,#A45C3C,#77412F);
+    border:1px solid rgba(255,255,255,.18);
+    box-shadow:0 6px 16px rgba(119,65,47,.32);
+  }
+  #review .summary-actions .btn.new-operation:hover{
+    transform:translateY(-1px);box-shadow:0 9px 20px rgba(119,65,47,.38);
+  }
+  #review .summary-actions .btn.new-operation:active{transform:translateY(0)}
+  #review .summary-kicker,#review .progress-eyebrow{
+    display:block;color:#E8DAE7;font-size:10.5px;font-weight:850;letter-spacing:.4px;
+  }
+  #review .summary-title{margin-top:7px;color:#fff;font-size:22px;line-height:1.4}
+  #review .summary-sub{
+    max-width:52ch;margin-top:8px;color:rgba(255,255,255,.82);
+    font-size:12px;line-height:1.75;overflow-wrap:anywhere;
+  }
+  #review .queue-stats{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:16px;
   }
   #review .queue-card{
-    min-width:0;padding:16px;border:1px solid #E8DFD9;border-radius:17px;
-    background:linear-gradient(150deg,#fffdfa,#f8f3ef);
-    box-shadow:0 8px 20px rgba(58,44,55,.05);
+    min-width:0;min-height:94px;padding:12px;
+    border:1px solid rgba(255,255,255,.3);border-radius:14px;
+    background:rgba(255,255,255,.15);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
   }
-  #review .queue-card-label{display:block;color:#9A858F;font-size:11px;font-weight:800}
+  #review .queue-card-label{
+    display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.92);
+    font-size:10px;font-weight:800;line-height:1.5;
+  }
+  #review .queue-card-indicator{
+    width:7px;height:7px;flex:none;border-radius:50%;background:#77E3A4;
+    box-shadow:0 0 6px 2px rgba(119,227,164,.36);
+    animation:queuePulse 1.8s ease-in-out infinite;
+  }
+  @keyframes queuePulse{
+    0%,100%{opacity:.62;box-shadow:0 0 3px 1px rgba(119,227,164,.24)}
+    50%{opacity:1;box-shadow:0 0 9px 3px rgba(119,227,164,.58)}
+  }
   #review .queue-card-value{
-    display:block;margin-top:5px;color:var(--brand-700);
-    font-size:29px;font-weight:900;line-height:1.2;font-variant-numeric:tabular-nums;
+    display:block;margin-top:5px;color:#fff;font-size:24px;font-weight:900;
+    line-height:1.2;font-variant-numeric:tabular-nums;
   }
-  #review .queue-card-note{display:block;margin-top:6px;color:var(--muted);font-size:10px;line-height:1.6}
-  #review>.progress-card{
-    grid-area:progress;margin:0;padding:21px;border:1px solid #E8DFD9;
-    border-radius:20px;background:linear-gradient(150deg,#fffdfa,#f8f3ef);
-    box-shadow:0 10px 24px rgba(58,44,55,.06);
+  #review .queue-card-note{
+    display:block;margin-top:4px;color:rgba(255,255,255,.86);
+    font-size:9.5px;line-height:1.5;
   }
-  #review .progress-top{align-items:center;margin-bottom:16px}
+  #review .summary>.alert{border-radius:12px}
+  #review .summary>.progress-card{
+    position:relative;margin:13px 0 0;padding:12px;border:1px solid #E2D6D1;
+    border-radius:14px;background:linear-gradient(150deg,#fffdfa,#F7F1EC);
+    box-shadow:0 5px 14px rgba(34,24,36,.12),inset 0 1px 0 #fff;
+  }
+  #review .progress-top{align-items:center;margin-bottom:10px}
   #review .progress-copy{display:grid;gap:4px}
-  #review .progress-eyebrow{color:#9A858F}
-  #review .progress-top .lbl{font-size:14px;color:var(--ink)}
+  #review .progress-eyebrow{color:#75636D}
+  #review .progress-top .lbl{font-size:13px;color:var(--ink)}
   #review .progress-top .pct{
-    display:grid;place-items:center;min-width:58px;height:58px;padding:0 8px;
-    border:1px solid #E8DFD9;border-radius:18px;background:#F7F0F6;
-    color:var(--brand-700);font-size:19px;
+    display:grid;place-items:center;min-width:48px;height:48px;padding:0 7px;
+    border:1px solid #E5D8E1;border-radius:14px;background:#F6EEF4;
+    color:var(--brand-700);font-size:16px;
   }
-  #review .progress-card .bar{height:11px;background:#EAE1E7}
+  #review .progress-card .bar{height:8px;background:#EAE1E7}
   #review .progress-card .bar>i{
     background:linear-gradient(90deg,#705A72 0%,#9A7F97 65%,#BD7654 100%);
   }
-  #review .progress-foot{margin-top:12px;font-size:11px;font-weight:700}
+  #review .progress-foot{margin-top:8px;color:#736A73;font-size:10px;font-weight:750}
   #review>.review-results{
     grid-area:results;display:grid;align-content:start;gap:14px;min-width:0;
   }
-  #review .results-head{
-    display:flex;align-items:center;justify-content:space-between;
-    gap:14px;margin:0;padding:16px 19px;border:1px solid #E8DFD9;
-    border-radius:18px;background:#F8F3EF;
-  }
-  #review .results-title{display:grid;gap:3px}
-  #review .results-kicker{color:#9A858F}
-  #review .results-head h3{margin:0;color:var(--ink);font-size:18px}
-  #review .results-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-  #review .results-meta{color:var(--muted);font-size:11px;font-weight:700;white-space:nowrap}
-
   #review .review-results>.results{display:grid;align-content:start;gap:14px}
-  #review .result{
-    border:1px solid #E8DFD9;border-inline-start:5px solid #9A7F97;
-    border-radius:19px;background:#FFFCF8;
-    box-shadow:0 10px 25px rgba(58,44,55,.06);
-    transition:transform .18s,box-shadow .18s;
+  #review .terminal{
+    overflow:hidden;border:1px solid #37333C;border-radius:17px;
+    background:#17151A;color:#E8E5EA;
+    box-shadow:0 14px 30px rgba(39,31,42,.14);
+    font-family:"Cascadia Code",Consolas,"Courier New",monospace;
   }
-  #review .result:hover{transform:translateY(-2px);box-shadow:0 15px 30px rgba(58,44,55,.1)}
-  #review .result-ok{border-inline-start-color:var(--ok)}
-  #review .result-fail{border-inline-start-color:var(--red)}
-  #review .result-stop{border-inline-start-color:#9A858F}
-  #review .result-head{
-    min-height:78px;gap:12px;padding:16px 19px;
-    border-bottom:1px solid #EEE6E0;background:linear-gradient(120deg,#FCF8F4,#FFFCF8);
+  #review .terminal-header{
+    display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
+    gap:13px;min-height:54px;padding:0 17px;
+    border-bottom:1px solid #37333C;background:#211F25;
   }
-  #review .r-id{flex:1;min-width:0}
-  #review .r-code{font-size:16px;letter-spacing:.2px}
-  #review .r-meta{margin-top:4px}
-  #review .status{margin-inline-start:auto;padding:7px 13px;font-size:11px}
-  #review .result-body{padding:17px 19px 19px}
-  #review .r-msg{margin-bottom:14px;font-size:13px;line-height:1.8}
-  #review .r-bar-row{
-    display:grid;grid-template-columns:minmax(0,1fr) auto;
-    gap:9px 12px;margin:0 0 15px;
+  #review .terminal-lights{display:flex;gap:6px;direction:ltr}
+  #review .terminal-light{width:9px;height:9px;border-radius:50%}
+  #review .terminal-light:nth-child(1){background:#E47B75}
+  #review .terminal-light:nth-child(2){background:#E4B66E}
+  #review .terminal-light:nth-child(3){background:#6EB995}
+  #review .terminal-heading{
+    overflow:hidden;color:#C8C2CC;font-size:11px;font-weight:700;
+    direction:ltr;text-align:center;text-overflow:ellipsis;white-space:nowrap;
   }
-  #review .r-title{grid-column:1/-1;max-width:100%;font-size:11px}
-  #review .r-bar-row .bar{height:9px}
-  #review .r-count{
-    padding:2px 8px;border-radius:999px;background:#F3ECEF;
-    color:#796775;font-size:10px;font-weight:800;
+  #review .terminal-heading strong{color:#F5F2F6;letter-spacing:.5px}
+  #review .terminal-state{
+    display:inline-flex;align-items:center;gap:7px;padding:5px 9px;
+    border:1px solid #45404A;border-radius:999px;
+    color:#D8D3DB;font-family:inherit;font-size:10px;font-weight:700;
+    white-space:nowrap;
   }
-  #review .log-toggle{
-    min-height:40px;padding:8px 12px;border-color:#E6DCE2;
-    border-radius:11px;background:#FAF6F1;
+  #review .terminal-state::before{
+    width:7px;height:7px;border-radius:50%;background:#A49BA9;content:"";
   }
-  #review .log-wrap{margin-top:12px}
-  #review .log{max-height:300px;border-radius:13px}
+  #review .terminal-state.run::before{background:#75A9D2;box-shadow:0 0 9px rgba(117,169,210,.55)}
+  #review .terminal-state.ok::before{background:#74C39E}
+  #review .terminal-state.fail::before{background:#E48791}
+  #review .terminal-state.stop::before{background:#B2A8B5}
+  #review .terminal-context{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    min-height:51px;padding:9px 17px;border-bottom:1px solid #302C34;
+    background:#1C1A20;
+  }
+  #review .terminal-account{display:flex;align-items:center;gap:9px;min-width:0}
+  #review .terminal-label{color:#88818D;font-size:9px;letter-spacing:.8px}
+  #review .terminal-account code{
+    overflow:hidden;color:#E9E4EC;font-size:12px;font-weight:700;
+    text-overflow:ellipsis;white-space:nowrap;direction:ltr;
+  }
+  #review .terminal-service{
+    overflow:hidden;color:#9E96A4;font-family:inherit;font-size:10px;
+    text-overflow:ellipsis;white-space:nowrap;
+  }
+  #review .terminal-output{
+    min-height:110px;max-height:340px;overflow:auto;padding:15px 18px;
+    background:linear-gradient(180deg,#17151A,#19171C);
+    direction:rtl;text-align:right;font-size:11px;line-height:1.9;
+    scrollbar-color:#514A56 #1B191E;scrollbar-width:thin;
+  }
+  #review .terminal-line{
+    display:flex;align-items:baseline;gap:10px;min-width:0;
+    color:#DDD9E0;white-space:pre-wrap;overflow-wrap:anywhere;
+  }
+  #review .terminal-time{
+    flex:none;color:#77717D;font-size:9px;direction:ltr;
+    font-variant-numeric:tabular-nums;
+  }
+  #review .terminal-marker{flex:none;color:#9A91A0;direction:ltr}
+  #review .terminal-line.sys .terminal-marker{color:#93B8D5}
+  #review .terminal-line.ok .terminal-marker{color:#7CC8A3}
+  #review .terminal-line.ok .terminal-message{color:#BCE4D0}
+  #review .terminal-line.err .terminal-marker{color:#E78B95}
+  #review .terminal-line.err .terminal-message{color:#F0B0B5}
+  #review .terminal-line.wrn .terminal-marker{color:#E7BD78}
+  #review .terminal-message{min-width:0}
+  #review .terminal-placeholder{color:#9A929E}
+  #review .terminal-prompt{color:#8BCBA8;font-weight:700}
+  #review .terminal-success{
+    display:flex;align-items:center;gap:12px;padding:13px 17px;
+    border-top:1px solid rgba(124,200,163,.16);
+    border-bottom:1px solid rgba(124,200,163,.16);
+    background:linear-gradient(100deg,#1B3028,#20372D);
+  }
+  #review .terminal-success-icon{
+    display:grid;place-items:center;width:34px;height:34px;flex:none;
+    border:1px solid rgba(124,200,163,.34);border-radius:11px;
+    background:rgba(124,200,163,.12);color:#8BD3AB;font-size:17px;font-weight:900;
+  }
+  #review .terminal-success-copy{display:grid;gap:2px;min-width:0}
+  #review .terminal-success-copy strong{color:#A8E0BD;font-size:12px}
+  #review .terminal-success-copy span{color:#A7B9AE;font-size:10px;line-height:1.6}
+  #review .terminal-progress{padding:12px 17px 14px;border-top:1px solid #302C34;background:#1C1A20}
+  #review .terminal-progress-info{
+    display:flex;justify-content:space-between;gap:12px;margin-bottom:8px;
+    color:#AAA3AF;font-size:10px;
+  }
+  #review .terminal-progress-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #review .terminal-progress-count{flex:none;color:#D2CCD6;direction:ltr;font-variant-numeric:tabular-nums}
+  #review .terminal-progress-track{
+    height:5px;overflow:hidden;border-radius:999px;background:#39343E;
+  }
+  #review .terminal-progress-track i{
+    display:block;height:100%;border-radius:inherit;
+    background:linear-gradient(90deg,#6EA88A,#8BCBA8);
+    transition:width .35s ease;
+  }
   #review #results>.empty{
     min-height:210px;display:grid;place-content:center;
     border:1px dashed #C8B2C6;border-radius:19px;
   }
-  @media (max-width:850px){
+  @media (max-width:900px){
     .panel[data-panel="5"]{padding:22px}
     #review{
       grid-template-columns:minmax(0,1fr);
-      grid-template-areas:"summary" "queue" "progress" "results";
+      grid-template-areas:"summary" "results";
       gap:13px;
     }
   }
   @media (max-width:520px){
     .panel[data-panel="5"]{padding:18px 14px}
-    #review{gap:11px}
-    #review>.summary{padding:19px;border-radius:19px}
+    #review{gap:10px}
+    #review>.summary{padding:15px 14px;border-radius:17px}
     #review .summary-title{font-size:18px}
-    #review>.queue-stats{gap:8px}
-    #review .queue-card{padding:14px}
-    #review .queue-card-value{font-size:25px}
-    #review>.progress-card{padding:17px;border-radius:17px}
-    #review .progress-top .pct{min-width:52px;height:52px;border-radius:16px;font-size:17px}
-    #review .results-head{align-items:flex-start;padding:14px;border-radius:16px}
-    #review .results-head h3{font-size:16px}
-    #review .results-actions{justify-content:flex-start;gap:7px}
-    #review .results-meta{white-space:normal}
-    #review .result{border-radius:16px}
-    #review .result-head{min-height:0;padding:14px;gap:9px}
-    #review .r-id{width:auto;flex:1 1 100%}
-    #review .status{margin-inline-start:0}
-    #review .result-body{padding:14px}
+    #review .summary-actions{width:100%;justify-content:flex-start;margin-inline-start:0}
+    #review .summary-actions .btn{flex:1}
+    #review .queue-stats{gap:6px;margin-top:10px}
+    #review .queue-card{min-height:0;padding:7px;border-radius:11px}
+    #review .queue-card-label{gap:5px;font-size:9.5px;line-height:1.4}
+    #review .queue-card-indicator{width:6px;height:6px}
+    #review .queue-card-value{margin-top:3px;font-size:19px;line-height:1.1}
+    #review .queue-card-note{margin-top:3px;font-size:9px;line-height:1.4}
+    #review .summary>.progress-card{margin-top:10px;padding:9px 10px;border-radius:12px}
+    #review .progress-top{margin-bottom:6px}
+    #review .progress-copy{gap:1px}
+    #review .progress-eyebrow{font-size:9.5px}
+    #review .progress-top .lbl{font-size:11.5px}
+    #review .progress-top .pct{min-width:36px;height:36px;padding:0 5px;border-radius:10px;font-size:12.5px}
+    #review .progress-card .bar{height:5px}
+    #review .progress-foot{margin-top:5px;font-size:9.5px}
+    #review .terminal-header{grid-template-columns:auto minmax(0,1fr);gap:10px;padding-inline:13px}
+    #review .terminal-state{grid-column:2;justify-self:end}
+    #review .terminal-context{align-items:flex-start;flex-direction:column;gap:5px;padding:10px 13px}
+    #review .terminal-output{max-height:300px;padding:13px 12px;font-size:10px}
+    #review .terminal-line{gap:7px}
+    #review .terminal-success{gap:9px;padding:12px 13px}
+    #review .terminal-success-copy strong{font-size:11px}
+    #review .terminal-success-copy span{font-size:9px}
+    #review .terminal-progress{padding:11px 13px 13px}
     #review #results>.empty{min-height:170px;padding:22px 14px}
   }
   @media (max-width:360px){
     .panel[data-panel="5"]{padding:16px 11px}
-    #review .summary-top{flex-wrap:wrap}
-    #review .results-head{flex-direction:column}
+    #review .summary-top{gap:12px}
   }
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;transition-duration:.001ms!important}
+    #review .queue-card-indicator{animation:none;box-shadow:0 0 7px 2px rgba(119,227,164,.48)}
   }
 </style>
 </head>
@@ -1149,43 +1107,20 @@
 
 <header class="app-header">
   <div class="brand">
-    <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار منصة QUIZORA">
-    <h1>QUIZORA</h1>
+    <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
+    <div class="brand-copy">
+      <h1>QUIZORA</h1>
+      <span class="brand-version" aria-label="الإصدار 1.0.8">v1.0.8</span>
+    </div>
   </div>
 </header>
-
-<nav class="stepper" aria-label="خطوات الاستخدام">
-  <button class="step active" type="button" data-step="1" aria-current="step">
-    <span class="dot"><span class="num">1</span></span><span class="lbl">النظام</span>
-  </button>
-  <button class="step" type="button" data-step="2">
-    <span class="dot"><span class="num">2</span></span><span class="lbl">الصف</span>
-  </button>
-  <button class="step" type="button" data-step="3">
-    <span class="dot"><span class="num">3</span></span><span class="lbl">الخدمة</span>
-  </button>
-  <button class="step" type="button" data-step="4">
-    <span class="dot"><span class="num">4</span></span><span class="lbl">الحسابات</span>
-  </button>
-  <button class="step" type="button" data-step="5">
-    <span class="dot"><span class="num">5</span></span><span class="lbl">التشغيل</span>
-  </button>
-</nav>
-
-<div class="live-jobs-container">
-  <div id="liveJobsPill" class="live-jobs-pill" style="display:none;" onclick="showLiveJobs()">
-    <span class="live-pulse"></span>
-    <span id="liveJobsText">⚡ يوجد (1) حساب قيد الحل في الخلفية حالياً</span>
-    <span class="live-act">👁️ عرض الشاشة والتقدم ←</span>
-  </div>
-</div>
 
 <main class="wrap">
 
   <!-- STEP 1: school system -->
   <section class="panel active" data-panel="1" aria-labelledby="p1title">
     <div class="panel-head">
-      <span class="kicker">الخطوة 1</span>
+      <span class="kicker">1</span>
       <h2 id="p1title">اختار نظام الدراسة</h2>
       <p>اختار حكومي أو لغات، وبعدها اضغط التالي لاختيار الصف الدراسي.</p>
     </div>
@@ -1194,7 +1129,7 @@
       <section class="selection-group" aria-labelledby="trackTitle">
         <div class="selection-heading">
           <span class="selection-step">01</span>
-          <div><h3 id="trackTitle">نظام الدراسة</h3><p>اختار النظام المسجل في حسابك</p></div>
+          <div><h3 id="trackTitle">نظام الدراسة</h3><p>اختار النظام المسجل بيه حسابك</p></div>
         </div>
         <div class="track-grid">
           <button type="button" class="track-card" data-track="general" aria-pressed="false">
@@ -1215,15 +1150,15 @@
   <!-- STEP 2: grade -->
   <section class="panel" data-panel="2" aria-labelledby="p2title">
     <div class="panel-head">
-      <span class="kicker">الخطوة 2</span>
+      <span class="kicker">2</span>
       <h2 id="p2title">اختار الصف الدراسي</h2>
-      <p>حدد الصف المناسب لحسابك.</p>
+      <p>اختار الصف المناسب لحسابك.</p>
     </div>
     <div class="selection-layout selection-single" id="gradeSelection">
       <section class="selection-group" aria-labelledby="yearTitle">
         <div class="selection-heading">
           <span class="selection-step">02</span>
-          <div><h3 id="yearTitle">السنة الدراسية</h3><p>الخدمات ستتغير حسب السنة</p></div>
+          <div><h3 id="yearTitle">السنة الدراسية</h3><p>الخدمات هتختلف حسب السنة</p></div>
         </div>
         <div class="year-grid">
           <button type="button" class="year-card" data-year="first" aria-pressed="false">
@@ -1240,7 +1175,7 @@
       </section>
       <div class="selection-note" id="selectionNote" role="status">
         <span class="note-icon" aria-hidden="true">✦</span>
-        <span>اختار النظام الدراسي أولاً، ثم حدد الصف للمتابعة.</span>
+        <span>اختار نظام الدراسة الأول، وبعدها اختار الصف عشان تكمل.</span>
       </div>
     </div>
   </section>
@@ -1248,9 +1183,9 @@
   <!-- STEP 3: service -->
   <section class="panel" data-panel="3" aria-labelledby="p3title">
     <div class="panel-head">
-      <span class="kicker">الخطوة 3</span>
+      <span class="kicker">3</span>
       <h2 id="p3title">اختار خدمة واحدة</h2>
-      <p>تقدر تختار الثقافة المالية أو مسار برمجة واحد فقط.</p>
+      <p>تقدر تختار الثقافة المالية أو مسار برمجة واحد بس.</p>
     </div>
     <div id="step3"></div>
     <div class="alert error" id="step3Alert" role="alert" hidden></div>
@@ -1259,42 +1194,47 @@
   <!-- STEP 4 -->
   <section class="panel" data-panel="4" aria-labelledby="p4title">
     <div class="panel-head">
-      <span class="kicker">الخطوة 4</span>
-      <h2 id="p4title">الحسابات</h2>
-      <p>أضف كود وكلمة مرور لكل حساب. تقدر تلصق قائمة كاملة بصيغة <b dir="ltr">كود : باسورد</b> في أول خانة.</p>
-    </div>
-
-    <div class="acc-toolbar">
-      <span class="count-pill" id="accCountPill">0 أكواد</span>
-      <span class="hint">كل حساب بيتشغّل لوحده — والأكواد مش بتتحفظ في المتصفح.</span>
+      <span class="kicker">4</span>
+      <h2 id="p4title">دخل حسابك</h2>
+      <p id="accountHint">اختار الخدمة الأول، وبعدها اكتب الكود وكلمة السر.</p>
     </div>
 
     <div id="accounts"></div>
     <div class="alert error" id="accAlert" role="alert" hidden></div>
+    <div class="alert error" id="runAlert" role="alert" hidden></div>
   </section>
 
   <!-- STEP 5 -->
   <section class="panel" data-panel="5" aria-labelledby="p5title">
     <div class="panel-head">
-      <span class="kicker">الخطوة 5</span>
-      <h2 id="p5title">المراجعة والتشغيل</h2>
-      <p>راجع الاختيارات، وبعدين ابدأ من الشريط السفلي. السجل مطوي جوه كل حساب — اضغط عليه عشان يفتح.</p>
+      <span class="kicker">5</span>
+      <h2 id="p5title">متابعة الحل</h2>
+      <p>طلبك دخل الدور، وتقدر تتابع ترتيبه وتقدمه من هنا.</p>
     </div>
     <div id="review"></div>
   </section>
-</main>
 
-<div class="actionbar">
-  <div class="actionbar-inner">
-    <div class="ab-side" id="abPrimary"></div>
-    <div class="ab-meta" id="abMeta">الخطوة 1 من 5</div>
-    <div class="ab-side">
-      <button class="btn secondary" type="button" id="backBtn" data-action="back" hidden>→ السابق</button>
+  <div class="actionbar" id="wizardNav">
+    <div class="actionbar-inner">
+      <div class="ab-side" id="abPrimary"></div>
+      <div class="ab-side">
+        <button class="btn secondary" type="button" id="backBtn" data-action="back" hidden>→ اللي فات</button>
+      </div>
     </div>
   </div>
-</div>
+</main>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="server-offline-overlay" id="serverOfflineNotice" role="alertdialog" aria-modal="true" aria-labelledby="serverOfflineTitle" hidden>
+  <section class="server-offline-card">
+    <div class="server-offline-icon" aria-hidden="true">!</div>
+    <h2 id="serverOfflineTitle">الموقع مش متاح حاليًا</h2>
+    <p>ممكن الرابط اتغيّر أو الموقع مقفول مؤقتًا. تابع قناة QUIZORA على تيليجرام عشان تعرف الرابط الجديد، وهنعلن هناك أول ما الموقع يرجع.</p>
+    <a class="btn primary" href="https://t.me/sprxui77" target="_blank" rel="noopener noreferrer">تابع قناة تيليجرام</a>
+    <p class="server-offline-hint">فعّل إشعارات القناة عشان تكون من أول الناس اللي تعرف أول ما الموقع يفتح.</p>
+  </section>
+</div>
 
 <script>
 (function(){
@@ -1305,8 +1245,35 @@
     : "";
   var API_BASE_URL = (configuredApiBase || location.origin).replace(/\/+$/, "");
 
+  function setBackendUnavailable(unavailable){
+    if (!window.APP_CONFIG || window.APP_CONFIG.backendMode !== "local") return;
+    var notice = document.getElementById("serverOfflineNotice");
+    if (notice) notice.hidden = !unavailable;
+  }
+
   function apiFetch(path, options){
-    return fetch(API_BASE_URL + path, options);
+    options = options || {};
+    if (
+      API_BASE_URL !== location.origin &&
+      window.APP_CONFIG &&
+      window.APP_CONFIG.backendMode === "local"
+    ) {
+      options = Object.assign({}, options);
+      var headers = new Headers(options.headers || {});
+      headers.set("ngrok-skip-browser-warning", "true");
+      options.headers = headers;
+    }
+    return fetch(API_BASE_URL + path, options).then(function(response){
+      var contentType = response.headers.get("Content-Type") || "";
+      var unavailable = !/application\/json/i.test(contentType) ||
+        response.status === 404 ||
+        response.status >= 500;
+      setBackendUnavailable(unavailable);
+      return response;
+    }).catch(function(error){
+      setBackendUnavailable(true);
+      throw error;
+    });
   }
 
   var CLIENT_ID_KEY = "quizora-client-id";
@@ -1330,7 +1297,7 @@
       sessionStorage.setItem(CLIENT_ID_KEY, generated);
       return generated;
     } catch (error) {
-      console.warn("تعذّر حفظ معرّف الجلسة في المتصفح.", error);
+      console.warn("مش قادرين نحفظ معرّف الجلسة في المتصفح.", error);
       return createClientId();
     }
   }
@@ -1340,7 +1307,6 @@
   var state = {
     clientId: loadClientId(),
     step: 1,
-    maxStep: 1,
     type: null,
     track: null,
     year: null,
@@ -1356,16 +1322,20 @@
     queuePosition: null,
     queueState: "none",
     finished: false,
+    starting: false,
     results: [],
-    openLogs: {},
     timer: null
   };
 
   var $ = function(sel, root){ return (root || document).querySelector(sel); };
   var $$ = function(sel, root){ return Array.prototype.slice.call((root || document).querySelectorAll(sel)); };
 
+  var EMOJI_PATTERN = /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\uFE0E\uFE0F\u200D\u20E3]/gu;
+  function stripEmoji(v){
+    return String(v == null ? "" : v).replace(EMOJI_PATTERN, "");
+  }
   function esc(v){
-    return String(v == null ? "" : v)
+    return stripEmoji(v)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
@@ -1393,7 +1363,7 @@
 
   function coursesLabel(){
     var c = sortedCourses();
-    return c.length ? c.join(" + ") : "لم يتم اختيار خدمة";
+    return c.length ? c.join(" + ") : "لسه ما اخترتش خدمة";
   }
 
   function langLabel(){
@@ -1403,13 +1373,13 @@
   }
 
   function trackLabel(){
-    return state.track === "languages" ? "لغات" : state.track === "general" ? "حكومي" : "لم يُحدد";
+    return state.track === "languages" ? "لغات" : state.track === "general" ? "حكومي" : "لسه ما اتحددش";
   }
 
   function yearLabel(){
     return state.year === "first"
       ? "أولى بكالوريا"
-      : state.year === "second" ? "ثانية بكالوريا" : "لم تُحدد";
+      : state.year === "second" ? "ثانية بكالوريا" : "لسه ما اتحددتش";
   }
 
   function syncServiceSelection(){
@@ -1437,10 +1407,13 @@
         step: state.step,
         track: state.track,
         year: state.year,
-        services: state.services
+        services: state.services,
+        accounts: state.accounts.map(function(account){
+          return { code: account.code, password: account.password };
+        })
       }));
     } catch (error) {
-      console.warn("تعذّر حفظ تقدم الجلسة.", error);
+      console.warn("مش قادرين نحفظ تقدم الجلسة.", error);
     }
   }
 
@@ -1451,7 +1424,7 @@
       if (!serialized) return;
       saved = JSON.parse(serialized);
     } catch (error) {
-      console.warn("تعذّرت استعادة تقدم الجلسة.", error);
+      console.warn("مش قادرين نسترجع تقدم الجلسة.", error);
       return;
     }
 
@@ -1461,7 +1434,7 @@
       try {
         sessionStorage.setItem(CLIENT_ID_KEY, state.clientId);
       } catch (error) {
-        console.warn("تعذّر استعادة معرّف الجلسة.", error);
+        console.warn("مش قادرين نسترجع معرّف الجلسة.", error);
       }
     }
     if (saved.track !== "general" && saved.track !== "languages") return;
@@ -1484,11 +1457,23 @@
 
     if (state.year) syncServiceSelection();
 
-    state.maxStep = state.year ? (state.type ? 4 : 3) : 2;
+    if (Array.isArray(saved.accounts)){
+      state.accounts = saved.accounts.filter(function(account){
+        return account && typeof account === "object";
+      }).map(function(account){
+        return {
+          code: typeof account.code === "string" ? account.code : "",
+          password: typeof account.password === "string" ? account.password : ""
+        };
+      });
+      if (!state.accounts.length) state.accounts = [{ code: "", password: "" }];
+    }
+
+    var maxRestorableStep = state.year ? (state.type ? 4 : 3) : 2;
     var requestedStep = Number(saved.step);
     if (!Number.isInteger(requestedStep) || requestedStep < 1) requestedStep = 1;
-    if (state.type && requestedStep === 5) state.maxStep = 5;
-    state.step = Math.min(requestedStep, state.maxStep);
+    if (state.type && requestedStep === 5) maxRestorableStep = 5;
+    state.step = Math.min(requestedStep, maxRestorableStep);
   }
 
   function jobsPerAccount(){
@@ -1515,27 +1500,12 @@
 
   /* ===== Rendering ===== */
   function showLiveJobs(){
-    state.maxStep = 5;
     go(5);
   }
   window.showLiveJobs = showLiveJobs;
 
-  function renderLiveBanner(){
-    var pill = $("#liveJobsPill");
-    var txt = $("#liveJobsText");
-    if (!pill) return;
-    var cnt = state.serverRunningCount || 0;
-    if (cnt > 0 && state.step !== 4){
-      pill.style.display = "flex";
-      if (txt) txt.textContent = "⚡ يوجد (" + cnt + ") حساب قيد الحل في الخلفية حالياً";
-    } else {
-      pill.style.display = "none";
-    }
-  }
-
   function renderAll(){
     persistWizardState();
-    renderStepper();
     renderPanels();
     renderStep1();
     renderStep2();
@@ -1543,20 +1513,6 @@
     renderAccounts();
     renderReview();
     renderActionBar();
-    renderLiveBanner();
-  }
-
-  function renderStepper(){
-    $$(".step").forEach(function(btn){
-      var n = Number(btn.getAttribute("data-step"));
-      var locked = n > state.maxStep;
-      btn.classList.toggle("active", n === state.step);
-      btn.classList.toggle("done", n < state.step);
-      btn.classList.toggle("locked", locked && n !== state.step);
-      btn.disabled = locked && n !== state.step;
-      if (n === state.step) btn.setAttribute("aria-current", "step");
-      else btn.removeAttribute("aria-current");
-    });
   }
 
   function renderPanels(){
@@ -1583,10 +1539,10 @@
     var note = $("#selectionNote");
     if (note){
       var text = !state.track
-        ? "ارجع واختار نظام الدراسة أولاً."
+        ? "ارجع واختار نظام الدراسة الأول."
         : !state.year
-          ? "تم اختيار " + trackLabel() + ". اختار الصف للمتابعة."
-          : "المسار المحدد: " + trackLabel() + " · " + yearLabel() + ".";
+          ? "اخترت " + trackLabel() + ". اختار الصف عشان تكمل."
+          : "اختيارك: " + trackLabel() + " · " + yearLabel() + ".";
       note.querySelector("span:last-child").textContent = text;
     }
   }
@@ -1594,21 +1550,21 @@
   function renderStep3(){
     var host = $("#step3");
     if (!state.track || !state.year){
-      host.innerHTML = '<div class="empty"><span class="big">☝️</span><b>أكمل اختيار المسار والصف</b><br>ارجع للخطوتين السابقتين وحدد اختياراتك.</div>';
+      host.innerHTML = '<div class="empty"><b>كمّل اختيار المسار والصف</b><br>ارجع للخطوتين اللي فاتوا واختار اللي يناسبك.</div>';
       return;
     }
 
     var html = '<div class="service-heading"><div><h3>خدمات ' + esc(yearLabel()) + '</h3>' +
       '<p>' + (state.year === "first"
-        ? "أولى بكالوريا مخصصة لمسار JavaScript فقط."
-        : "اختار خدمة واحدة فقط للمتابعة.") +
+        ? "أولى بكالوريا متاح فيها مسار JavaScript بس."
+        : "اختار خدمة واحدة بس عشان تكمل.") +
       '</p></div><span class="tag">' + esc(trackLabel()) + '</span></div>';
 
-    html += '<div class="service-grid" role="group" aria-label="اختر خدمة واحدة فقط">';
+    html += '<div class="service-grid" role="group" aria-label="اختار خدمة واحدة بس">';
     if (state.year === "first"){
-      html += '<div class="service-card fixed selected wide" aria-label="JavaScript فقط، محدد تلقائيًا">' +
+      html += '<div class="service-card fixed selected wide" aria-label="JavaScript بس، متحدد لوحده">' +
         '<span class="service-icon">JS</span><span class="service-copy"><b>JavaScript</b>' +
-        '<small>المسار الوحيد المتاح في أولى بكالوريا · ' + esc(langLabel()) + '</small></span>' +
+        '<small>ده المسار الوحيد المتاح في أولى بكالوريا · ' + esc(langLabel()) + '</small></span>' +
         '<span class="service-check" aria-hidden="true">✓</span></div>';
     } else {
       html += serviceCard(
@@ -1640,31 +1596,34 @@
   function renderAccounts(){
     var host = $("#accounts");
     if (!host) return;
+    var accountHint = $("#accountHint");
+    var platform = state.type === "spx"
+      ? "الثقافة المالية"
+      : state.type === "qureo" || state.type === "qureo2" ? "Qureo" : "";
+    var codeLabel = platform ? "كود " + platform : "كود الخدمة";
+    if (accountHint){
+      accountHint.textContent = state.type === "spx"
+        ? "دخل كود حسابك على منصة الثقافة المالية وكلمة السر الخاصة بيه."
+        : state.type === "qureo" || state.type === "qureo2"
+          ? "اكتب الكود بتاعك الخاص بمنصة Qureo وكلمة السر الخاصة بيه."
+        : "اختار الخدمة الأول، وبعدها اكتب الكود وكلمة السر.";
+    }
     host.innerHTML = state.accounts.map(function(a, i){
       return '<div class="account" data-i="' + i + '">' +
         '<input class="acc-code" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" ' +
-          'value="' + esc(a.code) + '" placeholder="كود الطالب" aria-label="كود الطالب ' + (i + 1) + '" dir="ltr">' +
+          'value="' + esc(a.code) + '" placeholder="' + esc(codeLabel) + '" aria-label="' + esc(codeLabel) + '" dir="ltr">' +
         '<div class="pw-wrap">' +
           '<input class="acc-pw" type="password" autocomplete="off" spellcheck="false" ' +
-            'value="' + esc(a.password) + '" placeholder="كلمة المرور" aria-label="كلمة المرور ' + (i + 1) + '" dir="ltr">' +
-          '<button type="button" class="eye" data-action="eye" aria-label="إظهار كلمة المرور" aria-pressed="false">👁</button>' +
+            'value="' + esc(a.password) + '" placeholder="كلمة السر" aria-label="كلمة السر ' + (i + 1) + '" dir="ltr">' +
+          '<button type="button" class="eye" data-action="eye" aria-label="إظهار كلمة السر" aria-pressed="false">إظهار</button>' +
         '</div>' +
-        '<button type="button" class="icon-btn danger" data-action="del-account" aria-label="حذف الحساب">✕</button>' +
       '</div>';
     }).join("");
-
-    updateAccountCount();
-  }
-
-  function updateAccountCount(){
-    var count = state.accounts.filter(function(a){ return a.code.trim(); }).length;
-    var pill = $("#accCountPill");
-    if (pill) pill.textContent = count + (count === 1 ? " كود" : " أكواد");
   }
 
   function progressSnapshot(){
     if (!state.results.length){
-      return { pct: 0, done: 0, total: 0, running: 0, label: "لم تبدأ العملية بعد", foot: "جاهز للبدء" };
+      return { pct: 0, done: 0, total: 0, running: 0, label: "لسه ما بدأناش", foot: "جاهز نبدأ" };
     }
     var done = 0, total = 0, running = 0;
     state.results.forEach(function(r){
@@ -1674,30 +1633,35 @@
     });
     var pct = total ? Math.round(done / total * 100) : 0;
     if (state.running){
-      return { pct: pct, done: done, total: total, running: running, label: "جاري التشغيل…", foot: running + " عملية شغالة" };
+      return { pct: pct, done: done, total: total, running: running, label: "شغالين دلوقتي…", foot: running + " عملية شغالة" };
     }
     var ok = state.results.filter(function(r){ return r.status === "ok"; }).length;
     var failed = state.results.filter(function(r){ return r.status === "fail"; }).length;
     var stopped = state.results.filter(function(r){ return r.status === "stop"; }).length;
-    var label = "انتهت العملية";
-    if (stopped) label = "تم الإيقاف";
-    var foot = ok + " ناجحة";
-    if (failed) foot += " · " + failed + " فاشلة";
-    if (stopped) foot += " · " + stopped + " متوقفة";
+    var label = "العملية خلصت";
+    if (stopped) label = "العملية وقفت";
+    var foot = ok + " نجحت";
+    if (failed) foot += " · " + failed + " فشلت";
+    if (stopped) foot += " · " + stopped + " وقفت";
     return { pct: pct, done: done, total: total, running: 0, label: label, foot: foot };
   }
 
   function statusInfo(r){
-    if (r.status === "ok") return { cls: "ok", txt: "اكتمل" };
-    if (r.status === "fail") return { cls: "fail", txt: "فشل" };
-    if (r.status === "stop") return { cls: "stop", txt: "متوقف" };
-    return { cls: "run", txt: "جاري الحل" };
+    if (r.status === "ok") return { cls: "ok", txt: "خلص" };
+    if (r.status === "fail") return { cls: "fail", txt: "ماكملش" };
+    if (r.status === "stop") return { cls: "stop", txt: "وقف" };
+    return { cls: "run", txt: "بيتحل" };
   }
 
   function logHtml(lines){
     return lines.map(function(l){
       var cls = l.level === "ok" ? "ok" : l.level === "err" ? "err" : l.level === "wrn" ? "wrn" : l.level === "sys" ? "sys" : "";
-      return '<div class="' + cls + '"><span class="t">' + esc(l.t) + '</span>' + esc(l.msg) + '</div>';
+      var marker = l.level === "ok" ? "+" : l.level === "err" || l.level === "wrn" ? "!" : ">";
+      return '<div class="terminal-line ' + cls + '">' +
+        '<span class="terminal-time">' + esc(l.t) + '</span>' +
+        '<span class="terminal-marker" aria-hidden="true">' + marker + '</span>' +
+        '<span class="terminal-message">' + esc(l.msg) + '</span>' +
+      '</div>';
     }).join("");
   }
 
@@ -1705,16 +1669,13 @@
     var host = $("#results");
     if (!host) return;
     if (!state.results.length){
-      host.innerHTML = '<div class="empty"><span class="big">🚀</span><b>جاهز للبدء</b><br>اضغط «ابدأ الحل» من الشريط السفلي، وهتلاقي كل حساب هنا ببطاقته وسجله.</div>';
+      host.innerHTML = '<div class="empty"><b>طلبك اتسجل</b><br>أول ما ييجي دورك هتظهر متابعة حسابك هنا.</div>';
       return;
     }
 
-    var keepScroll = {};
-    Object.keys(state.openLogs).forEach(function(k){
-      if (!state.openLogs[k]) return;
-      var box = host.querySelector('[data-log="' + k + '"] .log');
-      if (!box) return;
-      keepScroll[k] = {
+    var keepScroll = [];
+    host.querySelectorAll(".terminal-output").forEach(function(box, i){
+      keepScroll[i] = {
         top: box.scrollTop,
         atBottom: box.scrollHeight - box.scrollTop - box.clientHeight < 24
       };
@@ -1723,37 +1684,45 @@
     host.innerHTML = state.results.map(function(r, i){
       var st = statusInfo(r);
       var pct = r.total ? Math.round(r.done / r.total * 100) : 0;
-      var open = !!state.openLogs[i];
-      var msgCls = r.status === "ok" ? "ok" : r.status === "fail" ? "fail" : "";
-      var singleStop = r.status === "run" ? '<button type="button" class="stop-single-btn" data-action="stop-single" data-code="' + esc(r.code) + '">إيقاف ✕</button>' : '';
-      return '<article class="result result-' + st.cls + '">' +
-        '<div class="result-head">' +
-          '<div class="r-id"><div class="r-code">' + esc(r.code) + '</div><div class="r-meta">' + esc(r.detail) + '</div></div>' +
-          singleStop +
-          '<span class="status ' + st.cls + '">' + st.txt + '</span>' +
+      var lines = Array.isArray(r.lines) ? r.lines : [];
+      var output = lines.length
+        ? logHtml(lines)
+        : '<div class="terminal-line"><span class="terminal-prompt">$</span><span class="terminal-placeholder">' +
+          esc(r.message || r.phase || "مستني بدء التنفيذ…") + '</span></div>';
+      var completionDetail = r.detail ? "خلصنا " + r.detail : "خلصنا المهمة المطلوبة";
+      if (r.total) completionDetail += " — " + r.done + " من " + r.total + " خطوة.";
+      var completion = r.status === "ok"
+        ? '<div class="terminal-success" role="status">' +
+          '<span class="terminal-success-icon" aria-hidden="true">✓</span>' +
+          '<div class="terminal-success-copy"><strong>كده المنصة اتحلت يا بطل!</strong><span>' +
+            esc(completionDetail) + '</span></div></div>'
+        : "";
+      return '<article class="terminal">' +
+        '<div class="terminal-header">' +
+          '<div class="terminal-lights" aria-hidden="true"><span class="terminal-light"></span><span class="terminal-light"></span><span class="terminal-light"></span></div>' +
+          '<div class="terminal-heading"><strong>QUIZORA</strong><span> / </span>سجل التنفيذ</div>' +
+          '<span class="terminal-state ' + st.cls + '">' + esc(st.txt) + '</span>' +
         '</div>' +
-        '<div class="result-body">' +
-          '<p class="r-msg ' + msgCls + '">' + esc(r.message || r.phase || "في الانتظار…") + '</p>' +
-          '<div class="r-bar-row">' +
-            '<span class="r-title">' + esc(r.title || "—") + '</span>' +
-            '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
-            '<span class="r-count">' + r.done + '/' + r.total + '</span>' +
-          '</div>' +
-          '<button type="button" class="log-toggle" data-action="toggle-log" data-i="' + i + '" aria-expanded="' + open + '">' +
-            (open ? "إخفاء السجل" : "عرض السجل") + ' <span class="chev">▼</span>' +
-          '</button>' +
-          '<div class="log-wrap ' + (open ? "open" : "") + '" data-log="' + i + '">' +
-            '<div class="log">' + logHtml(r.lines) + '</div>' +
+        '<div class="terminal-context">' +
+          '<div class="terminal-account"><span class="terminal-label">الحساب</span><code>' + esc(r.code) + '</code></div>' +
+          '<div class="terminal-service">' + esc(r.detail) + '</div>' +
+        '</div>' +
+        '<div class="terminal-output" data-terminal="' + i + '" role="log" aria-live="polite" aria-label="سجل تنفيذ الحساب">' +
+          output +
+        '</div>' +
+        completion +
+        '<div class="terminal-progress">' +
+          '<div class="terminal-progress-info"><span class="terminal-progress-title">' + esc(r.title || r.phase || "في انتظار التنفيذ") + '</span>' +
+            '<span class="terminal-progress-count">' + (r.total ? r.done + "/" + r.total : "—") + '</span></div>' +
+          '<div class="terminal-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '" aria-label="تقدّم التنفيذ">' +
+            '<i style="width:' + pct + '%"></i>' +
           '</div>' +
         '</div>' +
       '</article>';
     }).join("");
 
-    Object.keys(state.openLogs).forEach(function(k){
-      if (!state.openLogs[k]) return;
-      var box = host.querySelector('[data-log="' + k + '"] .log');
-      if (!box) return;
-      var keep = keepScroll[k];
+    host.querySelectorAll(".terminal-output").forEach(function(box, i){
+      var keep = keepScroll[i];
       if (keep && !keep.atBottom) box.scrollTop = keep.top;
       else box.scrollTop = box.scrollHeight;
     });
@@ -1763,68 +1732,59 @@
     var host = $("#review");
     if (!host) return;
     if (!state.type){
-      host.innerHTML = '<div class="empty"><span class="big">☝️</span><b>لسه مفيش خدمة</b><br>ارجع للخطوة 3 واختار خدمة واحدة.</div>';
+      host.innerHTML = '<div class="empty"><b>لسه ما اخترتش خدمة</b><br>ارجع للخطوة 3 واختار خدمة واحدة.</div>';
       return;
     }
 
-    var prog = progressSnapshot();
-    var n = completeAccounts().length;
     var jobs = totalJobs();
     var over = jobs > 20;
+    var prog = progressSnapshot();
+    var summaryAction = state.serverRunningCount > 0
+      ? '<button class="btn secondary" type="button" data-action="new-job">إضافة حساب</button>'
+      : state.finished
+        ? '<button class="btn new-operation" type="button" data-action="restart">↻ عملية جديدة</button>'
+        : '';
 
     var html = '<div class="summary">' +
       '<div class="summary-top">' +
-        '<div class="summary-copy"><span class="summary-kicker">ملخص المهمة</span><div class="summary-title">' + esc(typeLabel(state.type)) + '</div>' +
+        '<div class="summary-copy"><span class="summary-kicker">ملخص العملية</span><div class="summary-title">' + esc(typeLabel(state.type)) + '</div>' +
         '<div class="summary-sub">' + esc(selectionDetail()) + '</div></div>' +
-      '</div>' +
-      '<div class="summary-chips">' +
-        '<span class="tag">👤 <b>' + n + '</b> حساب</span>' +
-        '<span class="tag">⚙️ <b>' + jobs + '</b> عملية</span>' +
-      '</div>';
-
-    if (over){
-      html += '<div class="alert warn">⚠️ الحد الأقصى 20 عملية في المرة. قلّل الحسابات أو غيّر النوع قبل البدء.</div>';
-    }
-    if (!n){
-      html += '<div class="alert info">أعد إدخال الحسابات من الخطوة 4 بعد إعادة التحميل؛ بيانات الحسابات لا تُحفظ في المتصفح.</div>';
-    }
-    html += '<div class="alert error" id="runAlert" role="alert" hidden></div>';
-    html += '</div>';
-
-    var queueTotal = Math.max(0, Number(state.queueTotal) || 0);
-    var queueAheadValue = "—";
-    var queueNote = "ابدأ العملية لمعرفة دورك.";
-    if (state.queueState === "waiting"){
-      queueAheadValue = Math.max(0, Number(state.queueAhead) || 0);
-      queueNote = "دورك رقم " + Math.max(1, Number(state.queuePosition) || 1) + " في الطابور.";
-    } else if (state.queueState === "running"){
-      queueAheadValue = "0";
-      queueNote = "بدأ تنفيذ مهام جلستك.";
-    } else if (state.queueState === "finished"){
-      queueAheadValue = "0";
-      queueNote = "اكتملت مهام جلستك.";
-    }
-    html += '<div class="queue-stats" aria-label="إحصاءات الطابور">' +
-      '<div class="queue-card"><span class="queue-card-label">المهام في الطابور</span><strong class="queue-card-value">' + queueTotal + '</strong><span class="queue-card-note">تشمل المهام الجارية والمنتظرة.</span></div>' +
-      '<div class="queue-card"><span class="queue-card-label">المهام قبلك</span><strong class="queue-card-value">' + queueAheadValue + '</strong><span class="queue-card-note">' + esc(queueNote) + '</span></div>' +
+        '<div class="summary-actions">' +
+          '<button class="btn secondary terminal-back" type="button" data-action="back-to-start">العودة للخطوة الأولى</button>' +
+          summaryAction +
+        '</div>' +
       '</div>';
 
     html += '<div class="progress-card">' +
-      '<div class="progress-top"><div class="progress-copy"><span class="progress-eyebrow">حالة المهمة</span><span class="lbl">' + esc(prog.label) + '</span></div><span class="pct">' + prog.pct + '%</span></div>' +
+      '<div class="progress-top"><div class="progress-copy"><span class="progress-eyebrow">حالة العملية</span><span class="lbl">' + esc(prog.label) + '</span></div><span class="pct">' + prog.pct + '%</span></div>' +
       '<div class="bar"><i style="width:' + prog.pct + '%"></i></div>' +
       '<div class="progress-foot"><span>' + (prog.total ? prog.done + " من " + prog.total : "—") + '</span><span>' + esc(prog.foot) + '</span></div>' +
     '</div>';
 
-    var ok = state.results.filter(function(r){ return r.status === "ok"; }).length;
-    var resultsMeta = state.results.length
-      ? state.results.length + ' عملية · ' + ok + ' ناجحة'
-      : 'سيظهر هنا تقدم الحسابات';
-    html += '<div class="review-results">';
-    html += '<div class="results-head">' +
-      '<div class="results-title"><span class="results-kicker">المتابعة المباشرة</span><h3>نتائج التشغيل</h3></div>' +
-      '<div class="results-actions"><span class="results-meta">' + esc(resultsMeta) + '</span></div>' +
-      '</div>';
+    if (over){
+      html += '<div class="alert warn">الطلب أكبر من الحد المسموح للخدمة. قلّل اختيارك وحاول تاني.</div>';
+    }
 
+    var queueTotal = Math.max(0, Number(state.queueTotal) || 0);
+    var queueAheadValue = "—";
+    var queueNote = "ابدأ الحل عشان تعرف ترتيبك.";
+    if (state.queueState === "waiting"){
+      queueAheadValue = Math.max(0, Number(state.queueAhead) || 0);
+      queueNote = "ترتيب طلبك رقم " + Math.max(1, Number(state.queuePosition) || 1) + ".";
+    } else if (state.queueState === "running"){
+      queueAheadValue = "0";
+      queueNote = "طلبك بيتنفذ دلوقتي.";
+    } else if (state.queueState === "finished"){
+      queueAheadValue = "0";
+      queueNote = "كل المهام خلصت.";
+    }
+    html += '<div class="queue-stats" aria-label="حالة الدور">' +
+      '<div class="queue-card"><span class="queue-card-label"><span class="queue-card-indicator" aria-hidden="true"></span>إجمالي المهام في الدور</span><strong class="queue-card-value">' + queueTotal + '</strong><span class="queue-card-note">المهام الشغالة واللي مستنية.</span></div>' +
+      '<div class="queue-card"><span class="queue-card-label"><span class="queue-card-indicator" aria-hidden="true"></span>المهام اللي قبلك</span><strong class="queue-card-value">' + queueAheadValue + '</strong><span class="queue-card-note">' + esc(queueNote) + '</span></div>' +
+      '</div>';
+    html += '</div>';
+
+    html += '<div class="review-results">';
     html += '<div id="results" class="results"></div>';
     html += '</div>';
 
@@ -1834,38 +1794,19 @@
 
   function renderActionBar(){
     var primary = $("#abPrimary");
-    var meta = $("#abMeta");
     var back = $("#backBtn");
-    if (!primary) return;
-
-    var prog = progressSnapshot();
-    var over = totalJobs() > 20;
-
-    if (state.step === 5){
-      var html = "";
-      if (state.serverRunningCount > 0){
-        html += '<button class="btn danger" type="button" data-action="stop">■ إيقاف الكل</button>';
-        html += '<button class="btn primary" type="button" data-action="new-job" style="margin-inline-start:8px">＋ إضافة حسابات أخرى</button>';
-        meta.innerHTML = 'جاري التشغيل (' + state.serverRunningCount + ') — <b>' + prog.done + ' / ' + prog.total + '</b>';
-      } else if (state.finished){
-        html += '<button class="btn primary" type="button" data-action="restart">↻ عملية جديدة</button>';
-        meta.innerHTML = "انتهت — <b>" + prog.foot + "</b>";
-      } else {
-        html += '<button class="btn primary" type="button" data-action="start" ' + (!state.type || !totalJobs() || over ? "disabled" : "") + '>▶ ابدأ الحل</button>';
-        meta.innerHTML = 'جاهز للبدء · <b>' + totalJobs() + '</b> عملية';
-      }
-      primary.innerHTML = html;
-      back.hidden = false;
-      return;
-    }
-
+    var nav = $("#wizardNav");
+    if (!primary || !back || !nav) return;
+    nav.hidden = state.step === 5;
+    if (nav.hidden) return;
     var nextDisabled = ((state.step === 1 && !state.track) || (state.step === 2 && !state.year)) ? "disabled" : "";
-    var phtml = '<button class="btn primary" type="button" data-action="next" ' + nextDisabled + '>التالي ←</button>';
+    var nextLabel = state.step === 4 ? "حل دلوقتي" : "كمّل ←";
+    var phtml = '<button class="btn primary" type="button" data-action="next" ' + nextDisabled + (state.starting ? " disabled" : "") + '>' +
+      (state.starting ? "جاري إرسال طلبك..." : nextLabel) + '</button>';
     if (state.serverRunningCount > 0){
-      phtml += '<button class="btn secondary" type="button" onclick="showLiveJobs()" style="margin-inline-start:8px">👁️ العمليات الجارية (' + state.serverRunningCount + ')</button>';
+      phtml += '<button class="btn secondary" type="button" onclick="showLiveJobs()" style="margin-inline-start:8px">العمليات اللي شغالة (' + state.serverRunningCount + ')</button>';
     }
     primary.innerHTML = phtml;
-    meta.innerHTML = 'الخطوة <b>' + state.step + '</b> من 5';
     back.hidden = state.step === 1;
   }
 
@@ -1874,7 +1815,7 @@
     var el = $("#" + id);
     if (!el) return;
     el.className = "alert " + (kind || "error");
-    el.textContent = msg;
+    el.textContent = stripEmoji(msg);
     el.hidden = false;
   }
   function clearAlert(id){
@@ -1887,7 +1828,7 @@
   function toast(msg){
     var el = $("#toast");
     if (!el) return;
-    el.textContent = msg;
+    el.textContent = stripEmoji(msg);
     el.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function(){ el.classList.remove("show"); }, 2200);
@@ -1897,9 +1838,8 @@
   function go(n){
     n = Math.max(1, Math.min(5, n));
     state.step = n;
-    if (n > state.maxStep) state.maxStep = n;
     renderAll();
-    var top = $(".stepper");
+    var top = $(".panel.active");
     if (top) top.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 
@@ -1907,7 +1847,6 @@
     if (state.serverRunningCount > 0) return;
     if (!state.results.length && !state.finished) return;
     state.results = [];
-    state.openLogs = {};
     state.finished = false;
     state.running = false;
     if (state.timer){ clearInterval(state.timer); state.timer = null; }
@@ -1919,20 +1858,20 @@
     clearAlert("runAlert");
 
     if (state.step === 1){
-      if (!state.track){ toast("اختار نظام الدراسة أولاً"); return; }
+      if (!state.track){ toast("اختار نظام الدراسة الأول"); return; }
       go(2);
       return;
     }
 
     if (state.step === 2){
-      if (!state.year){ toast("اختار الصف الدراسي أولاً"); return; }
+      if (!state.year){ toast("اختار الصف الدراسي الأول"); return; }
       go(3);
       return;
     }
 
     if (state.step === 3){
       if (!state.type){
-        showAlert("step3Alert", "اختار خدمة واحدة فقط للمتابعة.");
+        showAlert("step3Alert", "اختار خدمة واحدة بس عشان تكمل.");
         return;
       }
       go(4);
@@ -1944,52 +1883,49 @@
       var missingPw = withCode.filter(function(a){ return !a.password; });
       var complete = withCode.filter(function(a){ return a.password; });
       if (missingPw.length){
-        showAlert("accAlert", "فيه " + missingPw.length + " كود بدون كلمة مرور — أكمله أو احذفه.");
+        showAlert("accAlert", "اكتب كلمة السر للحساب أو امسحه قبل ما تكمل.");
         return;
       }
       if (!complete.length){
-        showAlert("accAlert", "اكتب كود وكلمة مرور لحساب واحد على الأقل.");
+        showAlert("accAlert", "اكتب كود الخدمة وكلمة السر قبل ما تكمل.");
         return;
       }
       var codes = complete.map(function(a){ return a.code.trim(); });
       var dup = codes.filter(function(c, i){ return codes.indexOf(c) !== i; });
       if (dup.length){
-        showAlert("accAlert", "فيه كود مكرر: " + dup[0] + " — شيل التكرار الأول.");
+        showAlert("accAlert", "الكود مكرر. راجعه قبل ما تكمل.");
         return;
       }
       state.accounts = complete.map(function(a){ return { code: a.code.trim(), password: a.password }; });
       renderAccounts();
-      go(5);
+      startRun();
       return;
     }
 
-    if (state.step === 5 && !state.finished){
-      startRun();
-    }
   }
 
   /* ===== Simulation ===== */
   var LOGS = {
     qureo: [
-      ["🔑 جاري تسجيل الدخول تلقائيًا...", "sys"],
-      ["✅ تم تسجيل الدخول.", "ok"],
-      ["📚 القسم الحالي: 511001 — عدد الفصول: 8", "sys"],
-      ["▶️ الفصل 1: المتغيرات — أسئلة: 6 [review]", "sys"],
-      ["   📗 محاضرة 1: مقدمة — تم", "ok"],
-      ["   ✔️ الاختبار: 6/6", "ok"],
-      ["▶️ الفصل 2: الشروط — أسئلة: 5 [review]", "sys"],
-      ["   📗 محاضرة 2: if / else — تم", "ok"],
-      ["   ✔️ الاختبار: 5/5", "ok"],
-      ["✨ اكتمل مسار Python!", "ok"]
+      ["بنسجل الدخول تلقائيًا...", "sys"],
+      ["سجلنا الدخول.", "ok"],
+      ["القسم الحالي: 511001 — عدد الفصول: 8", "sys"],
+      ["الفصل 1: المتغيرات — أسئلة: 6 [review]", "sys"],
+      ["   محاضرة 1: مقدمة — خلصت", "ok"],
+      ["   الاختبار: 6/6", "ok"],
+      ["الفصل 2: الشروط — أسئلة: 5 [review]", "sys"],
+      ["   محاضرة 2: if / else — خلصت", "ok"],
+      ["   الاختبار: 5/5", "ok"],
+      ["مسار Python خلص!", "ok"]
     ],
     spx: [
-      ["بدء وضع الحل المباشر عبر API...", "sys"],
-      ["تم تسجيل الدخول بنجاح.", "ok"],
-      ["جاري حل: الوحدة الأولى", "sys"],
-      ["درس اكتمل: #6485 (نجوم 3).", "ok"],
-      ["اختبار اجتاز بنجاح بدرجة 100 في محاولة 1.", "ok"],
-      ["درس اكتمل: #6486 (نجوم 3).", "ok"],
-      ["تم الانتهاء من كل البنود المفتوحة.", "ok"]
+      ["بدأ الحل المباشر من خلال API...", "sys"],
+      ["سجلنا الدخول بنجاح.", "ok"],
+      ["بنحل: الوحدة الأولى", "sys"],
+      ["الدرس #6485 خلص (3 نجوم).", "ok"],
+      ["الاختبار نجح بدرجة 100 من أول محاولة.", "ok"],
+      ["الدرس #6486 خلص (3 نجوم).", "ok"],
+      ["خلصنا كل البنود المفتوحة.", "ok"]
     ]
   };
 
@@ -2008,12 +1944,12 @@
       kind: kind,
       detail: detailFor(kind),
       status: "run",
-      phase: "في الانتظار…",
+      phase: "مستني…",
       message: "",
-      title: "تهيئة…",
+      title: "بنجهّز…",
       done: 0,
       total: kind === "spx" ? 24 : 8,
-      lines: [{ t: now(), msg: "بدء العملية…", level: "sys" }]
+      lines: [{ t: now(), msg: "بدأنا العملية…", level: "sys" }]
     };
   }
 
@@ -2035,8 +1971,8 @@
   }
 
   function phaseFor(r){
-    if (r.kind === "qureo") return r.done < 2 ? "تسجيل الدخول…" : "جاري حل الفصل " + Math.min(8, Math.max(1, r.done - 1)) + " من 8";
-    if (r.kind === "spx") return r.done < 2 ? "تسجيل الدخول…" : "جاري حل البند " + Math.min(24, r.done) + " من 24";
+    if (r.kind === "qureo") return r.done < 2 ? "بنسجل الدخول…" : "بنحل الفصل " + Math.min(8, Math.max(1, r.done - 1)) + " من 8";
+    if (r.kind === "spx") return r.done < 2 ? "بنسجل الدخول…" : "بنحل البند " + Math.min(24, r.done) + " من 24";
     return "—";
   }
 
@@ -2066,44 +2002,49 @@
   }
 
   async function startRun(){
+    if (state.starting) return;
     if (!state.type){
-      toast("اختار خدمة واحدة قبل بدء الحل.");
+      toast("اختار خدمة واحدة قبل ما تبدأ الحل.");
       return;
     }
     var complete = completeAccounts();
     if (!complete.length){
-      showAlert("runAlert", "مفيش حسابات كاملة. ارجع للخطوة 4.");
+      showAlert("runAlert", "بيانات الدخول ناقصة. راجع الكود وكلمة السر.");
       return;
     }
     if (totalJobs() > 20){
-      showAlert("runAlert", "الحد الأقصى 20 عملية في المرة. قلّل الحسابات أو غيّر النوع.");
+      showAlert("runAlert", "الطلب أكبر من الحد المسموح للخدمة. قلّل اختيارك وحاول تاني.");
       return;
     }
 
     clearAlert("runAlert");
+    state.starting = true;
+    renderActionBar();
     var payload = collectPayload();
     try {
       const res = await apiFetch("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const r = await res.json();
-      if (!r || !r.ok) { showAlert("runAlert", (r && r.message) || "تعذّر البدء."); return; }
+      if (!r || !r.ok) { showAlert("runAlert", (r && r.message) || "مش قادرين نبدأ."); return; }
       if (r.client_id && CLIENT_ID_PATTERN.test(r.client_id)){
         state.clientId = r.client_id;
         try {
           sessionStorage.setItem(CLIENT_ID_KEY, state.clientId);
         } catch (error) {
-          console.warn("تعذّر حفظ معرّف الجلسة بعد بدء العملية.", error);
+          console.warn("مش قادرين نحفظ معرّف الجلسة بعد ما بدأت العملية.", error);
         }
       }
-      toast(r.message || "بدأت العملية بنجاح!");
+      toast(r.message || "بدأنا العملية بنجاح!");
       clearAlert("runAlert");
-      state.maxStep = 5;
       state.step = 5;
       state.running = true;
       state.finished = false;
       renderAll();
       poll();
     } catch (e) {
-      showAlert("runAlert", "تعذّر الاتصال بالخادم — تأكد أن الأداة شغالة.");
+      showAlert("runAlert", "مش قادرين نوصل للسيرفر — اتأكد إنه شغال.");
+    } finally {
+      state.starting = false;
+      renderActionBar();
     }
   }
 
@@ -2134,11 +2075,9 @@
       };
     });
 
-    renderLiveBanner();
     if (state.step === 5) {
       renderReview();
       renderActionBar();
-      renderStepper();
     }
   }
 
@@ -2153,32 +2092,6 @@
     pollTimer = setTimeout(poll, interval);
   }
 
-  async function stopRun(){
-    try {
-      await apiFetch("/api/stop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: state.clientId })
-      });
-      toast("تم طلب إيقاف جميع العمليات...");
-      poll();
-    } catch (e) {}
-  }
-
-  async function stopSingle(code){
-    if (!code) return;
-    try {
-      const res = await apiFetch("/api/stop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: code, client_id: state.clientId })
-      });
-      const r = await res.json();
-      toast((r && r.message) || ("تم طلب إيقاف الحساب: " + code));
-      poll();
-    } catch (e) {}
-  }
-
   async function clearFinished(){
     try {
       const res = await apiFetch("/api/clear_finished", {
@@ -2187,19 +2100,18 @@
         body: JSON.stringify({ client_id: state.clientId })
       });
       const r = await res.json();
-      if (!res.ok || !r || !r.ok) throw new Error((r && r.message) || "تعذّر مسح النتائج السابقة.");
-      toast((r && r.message) || "تم تجهيز عملية جديدة.");
+      if (!res.ok || !r || !r.ok) throw new Error((r && r.message) || "مش قادرين نمسح النتايج القديمة.");
+      toast((r && r.message) || "جهزنا عملية جديدة.");
       poll();
     } catch (e) {
-      console.error("تعذّر مسح نتائج العملية السابقة.", e);
-      toast("تعذّر مسح النتائج السابقة من الخادم.");
+      console.error("مش قادرين نمسح نتايج العملية اللي فاتت.", e);
+      toast("مش قادرين نمسح النتايج القديمة من السيرفر.");
       poll();
     }
   }
 
   function restart(){
     state.step = 1;
-    state.maxStep = 1;
     state.track = null;
     state.year = null;
     state.type = null;
@@ -2211,25 +2123,17 @@
     state.running = false;
     state.serverRunningCount = 0;
     state.results = [];
-    state.openLogs = {};
     state.finished = false;
     if (state.timer){ clearInterval(state.timer); state.timer = null; }
     if (pollTimer){ clearTimeout(pollTimer); pollTimer = null; }
     renderAll();
-    var top = $(".stepper");
+    var top = $(".panel.active");
     if (top) top.scrollIntoView({ block: "start", behavior: "smooth" });
     clearFinished();
   }
 
   /* ===== Events ===== */
   document.addEventListener("click", function(e){
-    var stepBtn = e.target.closest(".step");
-    if (stepBtn){
-      var n = Number(stepBtn.getAttribute("data-step"));
-      if (!stepBtn.disabled && n <= state.maxStep) go(n);
-      return;
-    }
-
     var trackCard = e.target.closest(".track-card");
     if (trackCard){
       var selectedTrack = trackCard.getAttribute("data-track");
@@ -2249,7 +2153,6 @@
       if (state.year !== selectedYear){
         invalidateResults();
         state.services = { culture: false, python: false, javascript: selectedYear === "first" };
-        state.maxStep = Math.min(state.maxStep, 2);
       }
       state.year = selectedYear;
       syncServiceSelection();
@@ -2279,39 +2182,21 @@
 
       if (a === "next"){ next(); return; }
       if (a === "back"){ go(state.step - 1); return; }
+      if (a === "back-to-start"){ go(1); return; }
       if (a === "start"){ startRun(); return; }
-      if (a === "stop"){ stopRun(); return; }
       if (a === "restart"){ restart(); return; }
       if (a === "new-job"){ go(1); return; }
-      if (a === "stop-single"){ stopSingle(action.getAttribute("data-code")); return; }
-      if (a === "del-account"){
-        var row = action.closest(".account");
-        var idx = Number(row.getAttribute("data-i"));
-        invalidateResults();
-        state.accounts.splice(idx, 1);
-        if (!state.accounts.length) state.accounts.push({ code: "", password: "" });
-        renderAccounts();
-        clearAlert("accAlert");
-        return;
-      }
-
       if (a === "eye"){
         var wrap = action.closest(".pw-wrap");
         var input = wrap.querySelector("input");
         var showing = input.type === "text";
         input.type = showing ? "password" : "text";
-        action.textContent = showing ? "👁" : "🙈";
-        action.setAttribute("aria-label", showing ? "إظهار كلمة المرور" : "إخفاء كلمة المرور");
+        action.textContent = showing ? "إظهار" : "إخفاء";
+        action.setAttribute("aria-label", showing ? "إظهار كلمة السر" : "إخفاء كلمة السر");
         action.setAttribute("aria-pressed", String(!showing));
         return;
       }
 
-      if (a === "toggle-log"){
-        var ri = Number(action.getAttribute("data-i"));
-        state.openLogs[ri] = !state.openLogs[ri];
-        renderResults();
-        return;
-      }
     }
   });
 
@@ -2322,7 +2207,6 @@
     if (!state.accounts[i]) return;
     if (e.target.classList.contains("acc-code")){
       state.accounts[i].code = e.target.value;
-      updateAccountCount();
       invalidateResults();
       clearAlert("accAlert");
     } else if (e.target.classList.contains("acc-pw")){
@@ -2330,6 +2214,7 @@
       invalidateResults();
       clearAlert("accAlert");
     }
+    persistWizardState();
   });
 
   // Paste a whole list into the first code field: "code : password" per line
@@ -2350,7 +2235,7 @@
     }).filter(Boolean);
 
     if (!parsed.length){
-      toast("الصيغة غير مفهومة — استخدم: كود : باسورد");
+      toast("راجع الكود وكلمة السر وحاول تاني.");
       return;
     }
 
@@ -2371,15 +2256,22 @@
     state.accounts = state.accounts.concat(toAdd);
     if (!state.accounts.length) state.accounts.push({ code: "", password: "" });
     renderAccounts();
-    toast("تمت إضافة " + toAdd.length + " حساب");
+    persistWizardState();
+    toast("تم إدخال البيانات.");
   });
 
   // Boot
-  restoreWizardState();
+  var navigationEntry = performance.getEntriesByType("navigation")[0];
+  var isFreshVisit = !!navigationEntry && navigationEntry.type === "navigate";
+  if (!isFreshVisit) restoreWizardState();
+  history.pushState({ quizoraBackGuard: true }, "", location.href);
+  window.addEventListener("popstate", function(){
+    if (state.step > 1) go(state.step - 1);
+    history.pushState({ quizoraBackGuard: true }, "", location.href);
+  });
   renderAll();
   poll().then(function(){
-    if (state.serverRunningCount > 0){
-      state.maxStep = 5;
+    if (state.serverRunningCount > 0 && !isFreshVisit){
       state.step = 5;
       renderAll();
     }

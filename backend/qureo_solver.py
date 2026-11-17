@@ -191,7 +191,7 @@ def stop_requested():
 
 
 class QureoSolver:
-    def __init__(self, headless=False, courses=None, turbo=False, lang=None, answer_file=None):
+    def __init__(self, headless=True, courses=None, turbo=False, lang=None, answer_file=None):
         self.headless = headless
         self.courses = courses or COURSES
         self.turbo = bool(turbo)  # وضع السرعة القصوى: جلسة HTTP من غير متصفح
@@ -1223,4 +1223,4 @@ class QureoSolver:
 
 
 if __name__ == "__main__":
-    QureoSolver(headless=False).run()
+    QureoSolver(headless=True).run()
