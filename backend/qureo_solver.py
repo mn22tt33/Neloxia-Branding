@@ -50,6 +50,11 @@ class LoginError(RuntimeError):
     pass
 
 
+class AccessDeniedError(RuntimeError):
+    """الخدمة رفضت الطلب؛ لا تعاود المسار تلقائيًا عبر واجهة بديلة."""
+    pass
+
+
 class _HttpSession:
     """يغلّف جلسة Playwright API (من غير متصفح) ويعيد واجهة context.request المألوفة."""
     def __init__(self, api):
@@ -202,6 +207,8 @@ class QureoSolver:
         self.page = None
         self.answers = self._load_answers()
         self.current_course = ""
+        self._authenticated = False
+        self._browser_auth_cookie_confirmed = False
         self._opener_cache = None
         self._turbo_courses = set()
         self._course_code = ""
@@ -279,12 +286,15 @@ class QureoSolver:
             raise RuntimeError("لازم تدخل اسم المستخدم وكلمة المرور.")
         if self.turbo:
             self._turbo_login(student_id, password)
+            self._authenticated = True
             print("✅ تم تسجيل الدخول.", flush=True)
             return
         self._native_login(student_id, password)
 
     def _native_login(self, student_id, password):
         """دخول عادي عبر صفحات البوابة (بيستخدم في الوضع العادي أو بعد التحويل للمتصفح)."""
+        self._authenticated = False
+        self._browser_auth_cookie_confirmed = False
         print("🔑 جاري تسجيل الدخول تلقائيًا...", flush=True)
         try:
             self.page.goto(PORTAL_URL, wait_until="networkidle", timeout=45000)
@@ -310,6 +320,10 @@ class QureoSolver:
         self.page.wait_for_selector("#student_id", timeout=20000)
         self.page.fill("#student_id", student_id)
         self.page.fill("#password", password)
+        cookies_before = {
+            (cookie.get("domain"), cookie.get("name"), cookie.get("value"))
+            for cookie in (self.context.storage_state() or {}).get("cookies", [])
+        }
         self.page.locator("button.login-button, button[type='submit']").first.click()
 
         # التحقق من ظهور رسائل خطأ فورية
@@ -328,8 +342,28 @@ class QureoSolver:
             self.page.wait_for_selector("#student_id", state="detached", timeout=30000)
         except Exception:
             raise RuntimeError("فشل تسجيل الدخول — تأكد من اسم المستخدم وكلمة المرور.")
+        page_path = urllib.parse.urlsplit(self.page.url).path.rstrip("/").lower()
+        cookies_after = (
+            (self.context.storage_state() or {}).get("cookies", [])
+        )
+        self._browser_auth_cookie_confirmed = any(
+            (cookie.get("domain"), cookie.get("name"), cookie.get("value"))
+            not in cookies_before
+            and "qureo.education" in str(cookie.get("domain") or "")
+            for cookie in cookies_after
+        )
+        token_confirmed = bool(self._id_token())
+        if (
+            page_path.endswith("/login")
+            and not token_confirmed
+            and not self._browser_auth_cookie_confirmed
+        ):
+            raise RuntimeError(
+                "لم يتأكد تسجيل الدخول: ما زالت البوابة على صفحة الدخول ولم يظهر رمز جلسة."
+            )
+        self._authenticated = True
         time.sleep(0.4)
-        print("✅ تم تسجيل الدخول.", flush=True)
+        print("✅ تم تسجيل الدخول بنجاح وتأكيد الجلسة.", flush=True)
 
     def _turbo_login(self, student_id, password):
         """دخول سريع مباشرة لمنصة me-tp (نفس بيانات بوابة المدرسة — من غير متصفح)."""
@@ -342,6 +376,11 @@ class QureoSolver:
         except Exception:
             r = None
         if r is None or r.status not in (200, 201, 204, 302):
+            if r is not None and r.status == 403:
+                raise AccessDeniedError(
+                    "منصة Qureo رفضت طلب تسجيل الدخول (HTTP 403). "
+                    "تحقق من حالة المنصة أو اطلب من مزود الخدمة مراجعة الوصول."
+                )
             if r is not None and r.status in (400, 401, 422):
                 # بيانات غلط — التحويل لمتصفح مش هيفيد وهيكلّف وقت
                 raise LoginError("فشل تسجيل الدخول — تحقق من الكود وكلمة المرور.")
@@ -349,6 +388,30 @@ class QureoSolver:
         # التأكد إن التوكينات فعلاً اتسجّلت وكوكي الهوية وصل
         if not self._id_token():
             raise RuntimeError("تعذّر تأكيد جلسة المنصة السريعة — جرّب الوضع العادي.")
+
+    def _require_authenticated(self):
+        if not self._authenticated:
+            raise RuntimeError("لم يتم تأكيد تسجيل الدخول؛ لن يبدأ اختيار المسار.")
+        if self.page is None:
+            return
+        token_confirmed = bool(self._id_token())
+        page_path = urllib.parse.urlsplit(self.page.url).path.rstrip("/").lower()
+        try:
+            login_form_visible = self.page.locator("#student_id").is_visible()
+        except Exception as error:
+            raise RuntimeError(
+                "تعذّر التحقق من حالة تسجيل الدخول في المتصفح: %s"
+                % type(error).__name__
+            ) from error
+        if login_form_visible or (
+            page_path.endswith("/login")
+            and not token_confirmed
+            and not self._browser_auth_cookie_confirmed
+        ):
+            self._authenticated = False
+            raise RuntimeError(
+                "انتهت الجلسة أو لم يكتمل تسجيل الدخول؛ ما زالت صفحة الدخول ظاهرة."
+            )
 
     def _id_token(self):
         """يفكّ كوكيegy_student_id_token ويعيد محتوى الـ JWT (متاح للقراءة والتوجيه)."""
@@ -428,6 +491,11 @@ class QureoSolver:
     def _select_course(self, content_id):
         """يحدد المسار المطلوب في المنصة عبر زيارة /?content_id=... (يكتب كوكي الاختيار)."""
         r = self.context.request.get(BASE + "/?content_id=" + urllib.parse.quote(content_id))
+        if r.status == 403:
+            raise AccessDeniedError(
+                "منصة Qureo رفضت طلب اختيار المسار (HTTP 403). "
+                "اطلب من منصة Qureo أو مزود الخدمة مراجعة الوصول."
+            )
         try:
             cookies = (self.context.storage_state() or {}).get("cookies") or []
         except Exception:
@@ -440,6 +508,7 @@ class QureoSolver:
 
     def enter_course(self, name):
         """اختيار مسار معيّن (سريع عبر API المنصة، أو عادي عبر صفحات البوابة)."""
+        self._require_authenticated()
         print(f"📥 جاري الدخول إلى مسار {name}...", flush=True)
         self._section_id = 0  # القسم خاص بالمسار — لازم يتعاد اكتشافه لكل مسار جديد
         self._course_code = ""
@@ -474,38 +543,75 @@ class QureoSolver:
 
     def _enter_course_native(self, name):
         """دخول عادي عبر صفحات البوابة (اختيار المادة بالضغط عليها)."""
-        self.page.goto(PORTAL_HOME, wait_until="domcontentloaded")
+        self._require_authenticated()
         labels = {
             "python": ("Python", "بايثون"),
             "javascript": ("JavaScript", "جافاسكريبت"),
             "js": ("JavaScript", "جافاسكريبت"),
         }.get(self._norm_name(name), (name,))
-        deadline = time.monotonic() + 30
-        course_locator = None
-        while time.monotonic() < deadline and course_locator is None:
-            for frame in self.page.frames:
-                for label in labels:
-                    matches = frame.get_by_text(label, exact=False)
-                    for index in range(matches.count()):
-                        candidate = matches.nth(index)
-                        if candidate.is_visible():
-                            course_locator = candidate
+        blocked_responses = []
+
+        def capture_forbidden_response(response):
+            response_url = urllib.parse.urlsplit(response.url)
+            if (
+                response.status == 403
+                and response_url.hostname == urllib.parse.urlsplit(BASE).hostname
+            ):
+                blocked_responses.append(response.url)
+                print(
+                    "⚠️ استجابة HTTP 403 من منصة Qureo: " + response.url,
+                    flush=True,
+                )
+
+        self.page.on("response", capture_forbidden_response)
+        try:
+            self.page.goto(PORTAL_HOME, wait_until="domcontentloaded")
+            deadline = time.monotonic() + 30
+            course_locator = None
+            while time.monotonic() < deadline and course_locator is None:
+                for frame in self.page.frames:
+                    for label in labels:
+                        matches = frame.get_by_text(label, exact=False)
+                        for index in range(matches.count()):
+                            candidate = matches.nth(index)
+                            if candidate.is_visible():
+                                course_locator = candidate
+                                break
+                        if course_locator is not None:
                             break
                     if course_locator is not None:
                         break
-                if course_locator is not None:
-                    break
+                if course_locator is None:
+                    time.sleep(0.25)
             if course_locator is None:
-                time.sleep(0.25)
-        if course_locator is None:
-            raise RuntimeError(
-                f"بوابة Qureo لم تعرض مسار {name} بعد الانتظار. "
-                "تأكد أن المسار متاح لهذا الحساب، ثم أعد المحاولة."
-            )
-        course_locator.click()
-        self.page.wait_for_url("**/me-tp.qureo.education/**", timeout=30000)
-        time.sleep(0.8)
-        print(f"✅ تم الدخول إلى مسار {name}: {self.page.url}", flush=True)
+                page_url = self.page.url
+                try:
+                    page_title = self.page.title()
+                except Exception as error:
+                    page_title = "[تعذّر قراءة العنوان: %s]" % type(error).__name__
+                try:
+                    body = self.page.locator("body").inner_text(timeout=3000)
+                    body_snippet = re.sub(r"\s+", " ", body).strip()[:300]
+                except Exception as error:
+                    body_snippet = "[تعذّر قراءة نص الصفحة: %s]" % type(error).__name__
+                print("❌ تعذّر العثور على مسار %s." % name, flush=True)
+                print("تشخيص الصفحة: URL=%s | العنوان=%s" % (page_url, page_title), flush=True)
+                print("مقتطف الصفحة: %s" % body_snippet, flush=True)
+                if blocked_responses:
+                    raise AccessDeniedError(
+                        "استقبلت منصة Qureo استجابة HTTP 403 أثناء تحميل المسارات؛ "
+                        "اطلب من منصة Qureo أو مزود الخدمة مراجعة الوصول."
+                    )
+                raise RuntimeError(
+                    f"بوابة Qureo لم تعرض مسار {name} بعد الانتظار. "
+                    "راجع تشخيص الصفحة أعلاه وتأكد من توفر المسار لهذا الحساب."
+                )
+            course_locator.click()
+            self.page.wait_for_url("**/me-tp.qureo.education/**", timeout=30000)
+            time.sleep(0.8)
+            print(f"✅ تم الدخول إلى مسار {name}: {self.page.url}", flush=True)
+        finally:
+            self.page.remove_listener("response", capture_forbidden_response)
 
     # ------------------------------------------------------- المسار السريع
     @staticmethod
@@ -1065,7 +1171,7 @@ class QureoSolver:
                 self.login(student_id, password)
             except RuntimeError as e:
                 # بيانات غلط: مفيش فايدة من المتصفح — نرجّع الخطأ فورًا.
-                if isinstance(e, LoginError):
+                if isinstance(e, (LoginError, AccessDeniedError)):
                     raise
                 # فشل الدخول السريع → محاولة بمتصفح حقيقي قبل إعلان الفشل
                 if not self.turbo or not self._enter_browser_mode(student_id, password):
@@ -1073,6 +1179,8 @@ class QureoSolver:
             for name in self.courses:
                 try:
                     self.enter_course(name)
+                except AccessDeniedError:
+                    raise
                 except RuntimeError:
                     # المسار السريع معرفش يحدّد/يختار المادة → ندخل عبر المتصفح.
                     # لكن لو محددين لغة (الخيار الثاني) منقدرش نضمن إن بوابة Qureo

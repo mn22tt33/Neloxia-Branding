@@ -342,10 +342,21 @@ def _make_fast_login(mod, native):
                     cookies = (self_.context.storage_state() or {}).get("cookies") or []
                 except Exception:
                     cookies = []
-                if any(c.get("name") == "egy_student_id_token" for c in cookies):
+                if (
+                    any(c.get("name") == "egy_student_id_token" for c in cookies)
+                    and bool(self_._id_token())
+                ):
+                    self_._authenticated = True
                     print("✅ تم تأكيد تسجيل الدخول والجلسة.", flush=True)
                     return
                 raise RuntimeError("تعذّر تأكيد جلسة المنصة السريعة — جرّب الوضع العادي.")
+            if r is not None and r.status == 403:
+                print("❌ رفضت منصة Qureo تسجيل الدخول برمز HTTP 403.", flush=True)
+                denied_error = getattr(mod, "AccessDeniedError", RuntimeError)
+                raise denied_error(
+                    "منصة Qureo رفضت طلب تسجيل الدخول (HTTP 403). "
+                    "اطلب من منصة Qureo أو مزود الخدمة مراجعة الوصول."
+                )
             if r is not None and r.status in (400, 401, 422):
                 raise login_err("فشل تسجيل الدخول — تحقق من الكود وكلمة المرور.")
             raise RuntimeError("فشل تسجيل الدخول السريع — تحقق من الكود وكلمة المرور (أو جرّب الوضع العادي).")
@@ -358,6 +369,7 @@ def _make_fast_login(mod, native):
             if r.status in (200, 201, 204):
                 ru = self_.context.request.get(PORTAL_USERINFO)
                 if ru.status in (200, 201, 204):
+                    self_._authenticated = True
                     print("✅ تم تأكيد تسجيل الدخول والجلسة.", flush=True)
                     return
         except Exception:

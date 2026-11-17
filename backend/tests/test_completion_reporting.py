@@ -16,7 +16,11 @@ class CompletionReportingTests(unittest.TestCase):
                 "cookies": [{"name": "egy_student_id_token", "value": "token"}]
             },
         )
-        solver = SimpleNamespace(turbo=True, context=context)
+        solver = SimpleNamespace(
+            turbo=True,
+            context=context,
+            _id_token=lambda: {"available_courses": []},
+        )
         module = SimpleNamespace(TP_LOGIN="https://example.test/login")
         login = server._make_fast_login(module, Mock())
         output = io.StringIO()
@@ -26,6 +30,44 @@ class CompletionReportingTests(unittest.TestCase):
 
         self.assertIn("جاري التحقق من تسجيل الدخول", output.getvalue())
         self.assertIn("تم تأكيد تسجيل الدخول", output.getvalue())
+        self.assertTrue(solver._authenticated)
+
+    def test_qureo_fast_login_stops_on_forbidden_response(self):
+        response = SimpleNamespace(status=403)
+        context = SimpleNamespace(
+            request=SimpleNamespace(post=Mock(return_value=response)),
+            storage_state=lambda: {"cookies": []},
+        )
+        solver = SimpleNamespace(turbo=True, context=context, _id_token=lambda: {})
+        module = SimpleNamespace(
+            TP_LOGIN="https://example.test/login",
+            AccessDeniedError=qureo_solver.AccessDeniedError,
+        )
+        login = server._make_fast_login(module, Mock())
+
+        with self.assertRaisesRegex(qureo_solver.AccessDeniedError, "HTTP 403"):
+            login(solver, "student", "password")
+
+    def test_qureo_run_does_not_fallback_after_access_denied(self):
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.courses = ["Python"]
+        solver.browser = None
+        solver.context = None
+        solver.start = Mock()
+        solver.login = Mock(side_effect=qureo_solver.AccessDeniedError("HTTP 403"))
+        solver._enter_browser_mode = Mock(return_value=True)
+
+        with self.assertRaisesRegex(qureo_solver.AccessDeniedError, "HTTP 403"):
+            solver.run("student", "password")
+
+        solver._enter_browser_mode.assert_not_called()
+
+    def test_qureo_course_selection_is_blocked_without_confirmed_login(self):
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver._authenticated = False
+
+        with self.assertRaisesRegex(RuntimeError, "لم يتم تأكيد تسجيل الدخول"):
+            solver._enter_course_native("Python")
 
     def test_qureo_course_match_uses_course_name_metadata(self):
         solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
@@ -76,21 +118,94 @@ class CompletionReportingTests(unittest.TestCase):
             def __init__(self):
                 self.frames = [Frame()]
                 self.url = "https://me-portal.qureo.education/"
+                self.response_handler = None
 
             def goto(self, *_args, **_kwargs):
                 pass
+
+            def locator(self, selector):
+                if selector == "#student_id":
+                    return SimpleNamespace(is_visible=lambda: False)
+                return SimpleNamespace(inner_text=lambda **_kwargs: "")
+
+            def on(self, _event, handler):
+                self.response_handler = handler
+
+            def remove_listener(self, _event, _handler):
+                self.response_handler = None
 
             def wait_for_url(self, *_args, **_kwargs):
                 pass
 
         solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
         solver.page = Page()
+        solver._authenticated = True
+        solver._browser_auth_cookie_confirmed = False
+        solver._id_token = lambda: {}
 
         with patch.object(qureo_solver.time, "sleep"):
             solver._enter_course_native("Python")
 
         self.assertTrue(solver.page.frames[0].locator.clicked)
         self.assertIn(("بايثون", False), solver.page.frames[0].labels)
+
+    def test_qureo_native_course_failure_reports_cloudfront_403_and_page_details(self):
+        class NoMatchLocator:
+            def count(self):
+                return 0
+
+        class Frame:
+            def get_by_text(self, _label, exact=False):
+                return NoMatchLocator()
+
+        class Page:
+            def __init__(self):
+                self.frames = [Frame()]
+                self.url = "https://me-portal.qureo.education/"
+                self.response_handler = None
+
+            def on(self, _event, handler):
+                self.response_handler = handler
+
+            def remove_listener(self, _event, _handler):
+                self.response_handler = None
+
+            def goto(self, *_args, **_kwargs):
+                self.response_handler(SimpleNamespace(
+                    status=403,
+                    url=qureo_solver.BASE + "/api/study/courses",
+                ))
+
+            def locator(self, selector):
+                if selector == "#student_id":
+                    return SimpleNamespace(is_visible=lambda: False)
+                return SimpleNamespace(
+                    inner_text=lambda **_kwargs: "Access denied by CloudFront"
+                )
+
+            def title(self):
+                return "403 ERROR"
+
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.page = Page()
+        solver._authenticated = True
+        solver._browser_auth_cookie_confirmed = False
+        solver._id_token = lambda: {}
+        output = io.StringIO()
+
+        with (
+            patch.object(qureo_solver.time, "monotonic", side_effect=[0, 31]),
+            patch.object(qureo_solver.time, "sleep"),
+            patch("sys.stdout", output),
+        ):
+            with self.assertRaisesRegex(
+                qureo_solver.AccessDeniedError, "HTTP 403"
+            ):
+                solver._enter_course_native("Python")
+
+        self.assertIn("URL=https://me-portal.qureo.education/", output.getvalue())
+        self.assertIn("العنوان=403 ERROR", output.getvalue())
+        self.assertIn("Access denied by CloudFront", output.getvalue())
 
     def test_qureo_server_rejects_missing_completion_confirmation(self):
         class FakeSolver:
