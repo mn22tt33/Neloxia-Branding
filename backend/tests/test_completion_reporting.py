@@ -8,6 +8,56 @@ from backend import qureo_solver, server, spx_solver
 
 
 class CompletionReportingTests(unittest.TestCase):
+    def test_spx_run_does_not_create_a_progress_tab(self):
+        captured = {}
+
+        class FakeSolver:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def run(self, *_args, **_kwargs):
+                return True, "completed"
+
+        with (
+            patch.object(server, "_load_spx", return_value=SimpleNamespace(Solver=FakeSolver)),
+            patch.object(server, "_get_spx_bank", return_value={}),
+        ):
+            result = server._run_spx(
+                {"_stop_event": threading.Event()},
+                "student",
+                "password",
+                "7",
+                headless=False,
+            )
+
+        self.assertTrue(result[0])
+        self.assertNotIn("monitor_url", captured)
+
+    def test_qureo_run_does_not_create_a_progress_tab(self):
+        captured = {}
+
+        class FakeSolver:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def run(self, *_args, **_kwargs):
+                return True
+
+        with (
+            patch.object(server, "_install_qureo", return_value=SimpleNamespace(QureoSolver=FakeSolver)),
+            patch.object(server, "_load_qureo_bank", return_value={}),
+        ):
+            result = server._run_qureo(
+                {"_stop_event": threading.Event()},
+                "student",
+                "password",
+                ["JavaScript"],
+                headless=False,
+            )
+
+        self.assertTrue(result[0])
+        self.assertNotIn("monitor_url", captured)
+
     def test_qureo_fast_login_logs_that_authentication_was_confirmed(self):
         response = SimpleNamespace(status=200)
         context = SimpleNamespace(

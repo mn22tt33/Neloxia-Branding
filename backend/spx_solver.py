@@ -301,7 +301,15 @@ class BankStore:
 HEADLESS = os.environ.get("HEADLESS", "1") == "1"
 
 class Solver:
-    def __init__(self, log=None, stop=None, shared=None, subject_id=None, turbo=True, headless=None):
+    def __init__(
+        self,
+        log=None,
+        stop=None,
+        shared=None,
+        subject_id=None,
+        turbo=True,
+        headless=None,
+    ):
         self.log = log or (lambda *a: None)
         self.is_stopped = stop or (lambda: False)
         self.shared = shared if shared is not None else BankStore()

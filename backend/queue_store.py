@@ -10,6 +10,7 @@ import uuid
 
 WORKER_LOCK_ID = 731904221
 SUBMISSION_LOCK_ID = 731904222
+SOLVED_HISTORY_MIGRATION_LOCK_ID = 731904223
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 ACTIVE_STATUSES = ("queued", "running")
 
@@ -100,6 +101,34 @@ class PostgresQueue:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS quizora_solved_accounts (
+                job_id UUID PRIMARY KEY,
+                code_ciphertext TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                duration_seconds INTEGER NOT NULL DEFAULT 0,
+                solved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """,
+            """
+            ALTER TABLE quizora_solved_accounts
+                ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT ''
+            """,
+            """
+            ALTER TABLE quizora_solved_accounts
+                ADD COLUMN IF NOT EXISTS detail TEXT NOT NULL DEFAULT ''
+            """,
+            """
+            ALTER TABLE quizora_solved_accounts
+                ADD COLUMN IF NOT EXISTS duration_seconds INTEGER NOT NULL DEFAULT 0
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS quizora_metadata (
+                key TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
+            )
+            """,
+            """
             ALTER TABLE quizora_jobs
                 ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE
             """,
@@ -151,6 +180,28 @@ class PostgresQueue:
                 with connection.cursor() as cursor:
                     for statement in statements:
                         cursor.execute(statement)
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(%s)",
+                        (SOLVED_HISTORY_MIGRATION_LOCK_ID,),
+                    )
+                    cursor.execute(
+                        "SELECT value FROM quizora_metadata WHERE key = %s",
+                        ("solved_history_version",),
+                    )
+                    history_version = cursor.fetchone()
+                    if history_version is None:
+                        cursor.execute("DELETE FROM quizora_solved_accounts")
+                        cursor.execute(
+                            """
+                            INSERT INTO quizora_metadata (key, value)
+                            VALUES (%s, 1)
+                            """,
+                            ("solved_history_version",),
+                        )
+                    elif history_version["value"] > 1:
+                        raise QueueStoreError(
+                            "The solved-history schema is newer than this server."
+                        )
                     cursor.execute(
                         """
                         SELECT code_ciphertext, password_ciphertext
@@ -493,7 +544,17 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not persist a queue job log line.") from error
 
-    def finish_job(self, job_id, success, cancelled, message, phase):
+    def finish_job(
+        self,
+        job_id,
+        success,
+        cancelled,
+        message,
+        phase,
+        duration_seconds=0,
+        mode="",
+        detail="",
+    ):
         status = "succeeded" if success else ("cancelled" if cancelled else "failed")
         try:
             with self._connect() as connection:
@@ -505,7 +566,7 @@ class PostgresQueue:
                             password_ciphertext = NULL, finished_at = now(),
                             worker_id = NULL
                         WHERE id = %s AND status = 'running'
-                        RETURNING operation_id
+                        RETURNING operation_id, code_ciphertext
                         """,
                         (
                             status,
@@ -517,6 +578,23 @@ class PostgresQueue:
                     )
                     row = cursor.fetchone()
                     if row:
+                        if success:
+                            cursor.execute(
+                                """
+                                INSERT INTO quizora_solved_accounts
+                                    (job_id, code_ciphertext, mode, detail,
+                                     duration_seconds)
+                                VALUES (%s, %s, %s, %s, %s)
+                                ON CONFLICT (job_id) DO NOTHING
+                                """,
+                                (
+                                    self._as_uuid(job_id),
+                                    row["code_ciphertext"],
+                                    str(mode)[:120],
+                                    str(detail)[:500],
+                                    max(0, int(duration_seconds)),
+                                ),
+                            )
                         self._refresh_operations(cursor, {row["operation_id"]})
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not persist the queue job result.") from error
@@ -755,14 +833,24 @@ class PostgresQueue:
                     rows = cursor.fetchall()
                     cursor.execute(
                         """
-                        SELECT count(*) AS solved
-                        FROM quizora_jobs
-                        WHERE status = 'succeeded'
+                        SELECT job_id, code_ciphertext, mode, detail,
+                               duration_seconds, solved_at
+                        FROM quizora_solved_accounts
+                        ORDER BY solved_at DESC, job_id
                         """
                     )
-                    solved_count = cursor.fetchone()["solved"]
+                    solved_rows = cursor.fetchall()
 
             jobs = []
+            solved_events = []
+            for solved_row in solved_rows:
+                solved_events.append({
+                    "code": self._decrypt(solved_row["code_ciphertext"]),
+                    "mode": solved_row["mode"],
+                    "detail": solved_row["detail"],
+                    "duration_seconds": solved_row["duration_seconds"],
+                    "solved_at": solved_row["solved_at"].isoformat(),
+                })
             current_time = time.time()
             active_codes = set()
             running_codes = set()
@@ -796,7 +884,8 @@ class PostgresQueue:
                 "queue_count": len(active_codes),
                 "running_count": len(running_codes),
                 "active_job_count": len(rows),
-                "solved_count": solved_count,
+                "solved_count": len(solved_rows),
+                "solved_events": solved_events,
                 "jobs": jobs,
             }
         except self._psycopg.Error as error:

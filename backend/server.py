@@ -33,6 +33,7 @@ except Exception:
 _ORIG_STDOUT = sys.stdout
 
 PORT_BASE = int(os.environ.get("PORT", "8700"))
+_server_port = PORT_BASE
 VERSION = 2
 MAX_ACCOUNTS = 20
 MAX_LOG_LINES = 800
@@ -43,6 +44,8 @@ START_RATE_WINDOW_SECONDS = 60
 MAX_JSON_BODY_BYTES = 256 * 1024
 HEADLESS = os.environ.get("HEADLESS", "1") == "1"
 ADMIN_SETTINGS_PATH = os.path.join(APP_DIR, ".local-run", "admin_settings.json")
+SOLVED_COUNT_PATH = os.path.join(APP_DIR, ".local-run", "solved_count.json")
+SOLVED_HISTORY_VERSION = 1
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 APP_ENCRYPTION_KEY = os.environ.get("APP_ENCRYPTION_KEY", "").strip()
 if not DATABASE_URL and os.environ.get("QUIZORA_REQUIRE_DATABASE") == "1":
@@ -110,6 +113,7 @@ _tls = threading.local()
 _start_rate_lock = threading.Lock()
 _start_requests = {}
 _browser_settings_lock = threading.Lock()
+_solved_count_lock = threading.Lock()
 
 
 def _load_browser_visible():
@@ -131,6 +135,99 @@ _browser_visible = _load_browser_visible()
 def _get_browser_visible():
     with _browser_settings_lock:
         return _browser_visible
+
+
+def _load_local_solved_history():
+    try:
+        with open(SOLVED_COUNT_PATH, encoding="utf-8") as count_file:
+            data = json.load(count_file)
+    except FileNotFoundError:
+        return [], False
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("تعذّرت قراءة سجل الحسابات التي تم حلها.") from error
+    if not isinstance(data, dict):
+        raise RuntimeError("سجل الحسابات التي تم حلها غير صالح.")
+    version = data.get("history_version")
+    if version is None:
+        return [], True
+    if type(version) is not int or version > SOLVED_HISTORY_VERSION:
+        raise RuntimeError("إصدار سجل الحلول المحفوظ غير مدعوم.")
+    if version < SOLVED_HISTORY_VERSION:
+        return [], True
+
+    events = data.get("solved_events")
+    if not isinstance(events, list) or any(
+        not isinstance(event, dict)
+        or not isinstance(event.get("code"), str)
+        or not event["code"].strip()
+        or not isinstance(event.get("mode"), str)
+        or not isinstance(event.get("detail"), str)
+        or type(event.get("duration_seconds")) is not int
+        or event["duration_seconds"] < 0
+        or not isinstance(event.get("solved_at"), str)
+        or not event["solved_at"]
+        for event in events
+    ):
+        raise RuntimeError("سجل عمليات الحل المحفوظ غير صالح.")
+    if (
+        type(data.get("solved_count")) is not int
+        or data["solved_count"] != len(events)
+    ):
+        raise RuntimeError("عدد عمليات الحل لا يطابق السجل المحفوظ.")
+    events = [
+        {
+            "code": event["code"].strip(),
+            "mode": event["mode"],
+            "detail": event["detail"],
+            "duration_seconds": event["duration_seconds"],
+            "solved_at": event["solved_at"],
+        }
+        for event in events
+    ]
+    return events, False
+
+
+def _save_local_solved_history(events):
+    os.makedirs(os.path.dirname(SOLVED_COUNT_PATH), exist_ok=True)
+    temporary_path = SOLVED_COUNT_PATH + ".tmp"
+    with open(temporary_path, "w", encoding="utf-8") as history_file:
+        json.dump({
+            "history_version": SOLVED_HISTORY_VERSION,
+            "solved_count": len(events),
+            "solved_events": events,
+        }, history_file, ensure_ascii=False)
+        history_file.flush()
+        os.fsync(history_file.fileno())
+    os.replace(temporary_path, SOLVED_COUNT_PATH)
+
+
+_local_solved_events, _reset_legacy_solved_history = _load_local_solved_history()
+_local_solved_count = len(_local_solved_events)
+if _reset_legacy_solved_history:
+    _save_local_solved_history([])
+
+
+def _record_local_solved_event(acct, completed_at, duration_seconds):
+    global _local_solved_count, _local_solved_events
+    code = acct.get("code")
+    if not isinstance(code, str) or not code.strip():
+        raise ValueError("A solved account must have a code.")
+    event = {
+        "code": code.strip(),
+        "mode": str(acct.get("mode") or ""),
+        "detail": str(acct.get("detail") or ""),
+        "duration_seconds": max(0, int(duration_seconds)),
+        "solved_at": time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(completed_at),
+        ),
+    }
+    with _solved_count_lock:
+        events = list(_local_solved_events)
+        events.append(event)
+        _save_local_solved_history(events)
+        _local_solved_events = events
+        _local_solved_count = len(events)
 
 
 def _set_browser_visible(visible):
@@ -551,11 +648,36 @@ def _run_gfq(acct, code, password, start_new=True):
 
 
 def _finalize(acct, ok, msg, phase):
+    completed_at = time.time()
+    started_at = acct.get("_started_at")
+    duration_seconds = (
+        max(0, int(completed_at - started_at))
+        if isinstance(started_at, (int, float))
+        else 0
+    )
     job_id = acct.get("_queue_job_id")
     if job_id and _queue_store:
         stop_event = acct.get("_stop_event")
         cancelled = bool(not ok and ((stop_event and stop_event.is_set()) or _stop.is_set()))
-        _queue_store.finish_job(job_id, ok, cancelled, msg, phase)
+        _queue_store.finish_job(
+            job_id,
+            ok,
+            cancelled,
+            msg,
+            phase,
+            duration_seconds=duration_seconds,
+            mode=str(acct.get("mode") or ""),
+            detail=str(acct.get("detail") or ""),
+        )
+    elif ok:
+        try:
+            _record_local_solved_event(acct, completed_at, duration_seconds)
+        except (OSError, ValueError) as error:
+            _log(
+                acct,
+                "تم الحل لكن تعذّر حفظ سجل الحسابات: %s" % str(error)[:120],
+                "error",
+            )
     with _lock:
         acct["running"] = False
         acct["finished"] = True
@@ -584,9 +706,10 @@ def _worker(acct, code, password, mode, opts):
             with _lock:
                 acct["_started_at"] = time.time()
             _set_phase(acct, "جاري التشغيل...")
-            headless = not _get_browser_visible()
+            browser_visible = _get_browser_visible()
+            headless = not browser_visible
             try:
-                turbo = bool(opts.get("turbo", True))
+                turbo = bool(opts.get("turbo", True)) and not browser_visible
                 if mode == "spx":
                     ok, msg = _run_spx(
                         acct,
@@ -755,10 +878,9 @@ def _admin_queue_payload():
             (account for account in _accounts if account["running"]),
             key=lambda account: account.get("_queue_order", 0),
         )
-        solved_count = sum(
-            1 for account in _accounts
-            if account["finished"] and account["success"]
-        )
+    with _solved_count_lock:
+        solved_count = _local_solved_count
+        solved_events = [dict(event) for event in _local_solved_events]
 
     current_time = time.time()
     active_codes = set()
@@ -793,6 +915,7 @@ def _admin_queue_payload():
         "running_count": len(running_codes),
         "active_job_count": len(active),
         "solved_count": solved_count,
+        "solved_events": solved_events,
         "jobs": jobs,
     }
 
@@ -1040,6 +1163,10 @@ def make_handler():
             if basename == "sw.js":
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Service-Worker-Allowed", "/")
+            elif basename == "progress.html":
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("X-Content-Type-Options", "nosniff")
             elif basename in ("index.html", "manifest.json", "config.js"):
                 self.send_header("Cache-Control", "no-cache")
             self.end_headers()
@@ -1122,6 +1249,17 @@ def make_handler():
 
         def do_GET(self):
             parsed_path = urlsplit(self.path)
+            if parsed_path.path == "/progress":
+                if not self._admin_request_allowed():
+                    self._json(403, {"ok": False, "error": "صفحة المتابعة متاحة من الجهاز المحلي فقط."})
+                    return
+                query = parse_qs(parsed_path.query)
+                if not _normalize_client_id(query.get("client_id", [None])[0]):
+                    self._json(400, {"ok": False, "error": "معرّف جلسة المتابعة غير صالح."})
+                    return
+                if not self._file("frontend/progress.html", "text/html; charset=utf-8"):
+                    self._json(404, {"error": "resource not found"})
+                return
             if parsed_path.path == "/admin":
                 if not self._admin_request_allowed():
                     self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
@@ -1439,6 +1577,7 @@ def make_handler():
 
 
 def main():
+    global _server_port
     sys.stdout = _StdoutSink()
     if _queue_store:
         try:
@@ -1477,6 +1616,7 @@ def main():
     if server is None:
         _ORIG_STDOUT.write("[app] لا منفذ حر متاح — أغلق النوافذ القديمة ثم أعد المحاولة.\n")
         return
+    _server_port = int(server.server_address[1])
     _ORIG_STDOUT.write("[app] الخادم يعمل الآن بنجاح!\n")
     _ORIG_STDOUT.write("[app] الرابط المحلي: http://localhost:%d\n" % port)
     _ORIG_STDOUT.write("[app] أو: http://127.0.0.1:%d\n" % port)

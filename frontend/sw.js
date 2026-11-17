@@ -1,6 +1,6 @@
 /* Service Worker — يخلي الأداة قابلة للتثبيت كتطبيق ويشتغل كغلاف سريع.
    البيانات الحساسة وطلبات /api لا تُخزَّن أبدًا. */
-const CACHE = "quizora-shell-v15";
+const CACHE = "quizora-shell-v16";
 const ASSETS = [
   "/",
   "/index.html",

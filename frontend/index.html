@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.0.8"></script>
+<script src="/config.js?v=1.0.9"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.0.8").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.0.9").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -480,6 +480,24 @@
     padding:20px;background:linear-gradient(145deg,#F3EFE9 0%,#ECE6E8 52%,#E6DFE8 100%);
   }
   .server-offline-overlay[hidden]{display:none}
+  .server-startup-overlay{
+    position:fixed;inset:0;z-index:11000;display:grid;place-items:center;
+    padding:20px;background:linear-gradient(145deg,#F3EFE9 0%,#ECE6E8 52%,#E6DFE8 100%);
+  }
+  .server-startup-overlay[hidden]{display:none}
+  .server-startup-card{
+    width:min(440px,100%);padding:30px 24px;text-align:center;
+    background:var(--surface);border:1px solid var(--line);border-radius:24px;
+    box-shadow:var(--shadow);
+  }
+  .server-startup-spinner{
+    width:38px;height:38px;margin:0 auto 15px;border:3px solid var(--line);
+    border-top-color:var(--brand-700);border-radius:50%;animation:server-startup-spin .8s linear infinite;
+  }
+  @keyframes server-startup-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.server-startup-spinner{animation:none}}
+  .server-startup-card h2{margin:0 0 7px;font-size:18px;color:var(--ink)}
+  .server-startup-card p{margin:0;color:var(--ink-2);font-size:13px}
   .server-offline-card{
     width:min(440px,100%);padding:28px 24px;text-align:center;
     background:var(--surface);border:1px solid var(--line);border-radius:24px;
@@ -1105,12 +1123,20 @@
 </head>
 <body>
 
+<div class="server-startup-overlay" id="serverStartupGate" role="status" aria-live="polite">
+  <section class="server-startup-card">
+    <div class="server-startup-spinner" aria-hidden="true"></div>
+    <h2>جارٍ التحقق من توفر الخدمة</h2>
+    <p>لحظات وهنعرض الصفحة المناسبة لحالة الموقع.</p>
+  </section>
+</div>
+
 <header class="app-header">
   <div class="brand">
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.0.8">v1.0.8</span>
+      <span class="brand-version" aria-label="الإصدار 1.0.9">v1.0.9</span>
     </div>
   </div>
 </header>
@@ -1246,9 +1272,14 @@
   var API_BASE_URL = (configuredApiBase || location.origin).replace(/\/+$/, "");
 
   function setBackendUnavailable(unavailable){
-    if (!window.APP_CONFIG || window.APP_CONFIG.backendMode !== "local") return;
     var notice = document.getElementById("serverOfflineNotice");
     if (notice) notice.hidden = !unavailable;
+  }
+
+  function finishStartupCheck(available){
+    setBackendUnavailable(!available);
+    var gate = document.getElementById("serverStartupGate");
+    if (gate) gate.hidden = true;
   }
 
   function apiFetch(path, options){
@@ -1274,6 +1305,31 @@
       setBackendUnavailable(true);
       throw error;
     });
+  }
+
+  function checkBackendAtStartup(){
+    var controller = window.AbortController ? new AbortController() : null;
+    var requestOptions = { cache: "no-store" };
+    if (controller) requestOptions.signal = controller.signal;
+    var timeout = window.setTimeout(function(){
+      if (controller) controller.abort();
+    }, 4500);
+
+    return apiFetch("/api/health", requestOptions)
+      .then(function(response){
+        if (!response.ok) throw new Error("الخادم غير متاح.");
+        return response.json();
+      })
+      .then(function(payload){
+        if (!payload || payload.ok !== true) throw new Error("الخادم غير جاهز.");
+        finishStartupCheck(true);
+      })
+      .catch(function(){
+        finishStartupCheck(false);
+      })
+      .then(function(){
+        window.clearTimeout(timeout);
+      });
   }
 
   var CLIENT_ID_KEY = "quizora-client-id";
@@ -2270,7 +2326,9 @@
     history.pushState({ quizoraBackGuard: true }, "", location.href);
   });
   renderAll();
-  poll().then(function(){
+  checkBackendAtStartup().then(function(){
+    return poll();
+  }).then(function(){
     if (state.serverRunningCount > 0 && !isFreshVisit){
       state.step = 5;
       renderAll();

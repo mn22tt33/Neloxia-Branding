@@ -67,6 +67,12 @@ ADMIN_PAGE = r"""<!doctype html>
     .stat.queue { --glow: rgba(84, 223, 194, .13); }
     .stat.running { --glow: rgba(255, 191, 105, .13); }
     .stat.solved { --glow: rgba(108, 151, 255, .16); }
+    .stat.solved {
+      width: 100%; color: inherit; font-family: inherit; text-align: right; cursor: pointer;
+      transition: transform .16s ease, border-color .16s ease;
+    }
+    .stat.solved:hover { transform: translateY(-1px); border-color: rgba(169, 189, 255, .35); }
+    .stat.solved:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
     .stat.active { --glow: rgba(151, 196, 255, .12); }
     .stat.running .stat-value { color: var(--amber); }
     .stat.solved .stat-value { color: #a9bdff; }
@@ -163,6 +169,29 @@ ADMIN_PAGE = r"""<!doctype html>
     .empty strong { display: block; margin-bottom: 5px; color: var(--text); font-size: 15px; }
     .error { min-height: 0; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(255,125,134,.22); border-radius: 12px; color: #ffb9be; background: rgba(255,125,134,.07); }
     .error[hidden] { display: none; }
+    .solved-dialog {
+      width: min(560px, calc(100% - 24px)); max-height: min(80vh, 680px); padding: 0;
+      border: 1px solid var(--line); border-radius: 20px; color: var(--text);
+      background: #101e30; box-shadow: 0 24px 70px rgba(0,0,0,.45);
+    }
+    .solved-dialog::backdrop { background: rgba(1, 8, 16, .78); backdrop-filter: blur(4px); }
+    .solved-dialog-content { padding: 20px; }
+    .solved-dialog-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+    .solved-dialog-title { margin: 0; font-size: 19px; }
+    .solved-dialog-summary { margin: 8px 0 15px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+    .solved-dialog-close {
+      flex: none; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 10px;
+      color: var(--text); background: #14243a; font-size: 20px; cursor: pointer;
+    }
+    .solved-events { display: grid; gap: 9px; max-height: 55vh; overflow: auto; }
+    .solved-event { padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.025); }
+    .solved-event-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+    .solved-event-code { direction: ltr; text-align: left; overflow-wrap: anywhere; color: #dce8f6; font-size: 14px; font-weight: 800; }
+    .solved-event-detail { color: #b8c7d8; font-size: 12px; line-height: 1.6; text-align: left; }
+    .solved-event-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin-top: 9px; color: #91a5bc; font-size: 10px; }
+    .solved-event-duration { color: var(--teal); font-weight: 700;
+    }
+    .solved-empty { padding: 20px 14px; border: 1px dashed var(--line); border-radius: 11px; color: var(--muted); text-align: center; font-size: 13px; line-height: 1.8; }
     .toast { position: fixed; right: 50%; bottom: 24px; z-index: 3; transform: translate(50%, 20px); opacity: 0; pointer-events: none; padding: 12px 18px; border: 1px solid var(--line); border-radius: 12px; background: #17283e; color: var(--text); box-shadow: 0 12px 35px rgba(0,0,0,.3); transition: .2s ease; }
     .toast.show { transform: translate(50%, 0); opacity: 1; }
     @media (max-width: 760px) {
@@ -214,13 +243,15 @@ ADMIN_PAGE = r"""<!doctype html>
       <article class="stat queue"><span class="stat-label">حسابات في الطابور</span><strong class="stat-value" id="queueCount">—</strong></article>
       <article class="stat running"><span class="stat-label">حسابات قيد الحل الآن</span><strong class="stat-value" id="runningCount">—</strong></article>
       <article class="stat active"><span class="stat-label">عمليات نشطة</span><strong class="stat-value" id="activeJobCount">—</strong></article>
-      <article class="stat solved"><span class="stat-label">عمليات تم حلها</span><strong class="stat-value" id="solvedCount">—</strong></article>
+      <button class="stat solved" id="solvedCard" type="button" aria-haspopup="dialog" aria-controls="solvedDialog" title="عرض سجل عمليات الحل الناجحة">
+        <span class="stat-label">عمليات حل ناجحة (تراكمي)</span><strong class="stat-value" id="solvedCount">—</strong>
+      </button>
     </section>
 
     <section class="preferences" aria-labelledby="browserPreferenceTitle">
       <div>
         <h2 class="preference-title" id="browserPreferenceTitle">عرض متصفح الحل</h2>
-        <p class="preference-hint">عند التفعيل، يفتح Chrome أو Edge أثناء حل العمليات الجديدة. لا يغيّر العمليات التي بدأت بالفعل.</p>
+        <p class="preference-hint">عند التفعيل، يظهر متصفح منصة Qureo أو SPX على صفحة المنصة نفسها، دون تبويب متابعة إضافي. وضع اللعبة لا يفتح متصفحًا.</p>
       </div>
       <span class="preference-state" id="browserSettingState">جارٍ تحميل الإعداد...</span>
       <label class="switch" aria-label="عرض متصفح الحل">
@@ -249,11 +280,24 @@ ADMIN_PAGE = r"""<!doctype html>
       <div class="list" id="jobs" aria-live="polite"></div>
     </section>
   </main>
+  <dialog class="solved-dialog" id="solvedDialog" aria-labelledby="solvedDialogTitle">
+    <div class="solved-dialog-content">
+      <header class="solved-dialog-head">
+        <div>
+          <h2 class="solved-dialog-title" id="solvedDialogTitle">سجل عمليات الحل الناجحة</h2>
+          <p class="solved-dialog-summary" id="solvedDialogSummary"></p>
+        </div>
+        <button class="solved-dialog-close" id="closeSolvedDialog" type="button" aria-label="إغلاق">×</button>
+      </header>
+      <div class="solved-events" id="solvedEvents" aria-live="polite"></div>
+    </div>
+  </dialog>
   <div class="toast" id="toast" role="status"></div>
   <script>
     const jobsRoot = document.getElementById("jobs");
     const errorBox = document.getElementById("error");
     const browserToggle = document.getElementById("browserVisible");
+    const solvedDialog = document.getElementById("solvedDialog");
     let lastPayload = null;
     let refreshing = false;
     let toastTimer;
@@ -281,6 +325,48 @@ ADMIN_PAGE = r"""<!doctype html>
       const remainingSeconds = total % 60;
       if (minutes < 60) return minutes + " د " + remainingSeconds + " ث";
       return Math.floor(minutes / 60) + " س " + (minutes % 60) + " د";
+    }
+
+    function formatSolvedDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "وقت غير متاح" : date.toLocaleString("ar-EG");
+    }
+
+    function showSolvedEvents() {
+      if (!lastPayload) {
+        showToast("انتظر حتى يتم تحميل بيانات لوحة الإدارة.");
+        return;
+      }
+      const events = Array.isArray(lastPayload.solved_events) ? lastPayload.solved_events : [];
+      const summary = document.getElementById("solvedDialogSummary");
+      summary.textContent = events.length + " عملية ناجحة محفوظة. يُعرض السجل كاملًا.";
+      const eventsRoot = document.getElementById("solvedEvents");
+      eventsRoot.replaceChildren();
+      if (!events.length) {
+        addText(
+          eventsRoot,
+          "div",
+          "solved-empty",
+          "لا توجد عمليات حل ناجحة مسجلة بعد."
+        );
+      } else {
+        [...events].reverse().forEach((event) => {
+          const entry = document.createElement("article");
+          entry.className = "solved-event";
+          const head = document.createElement("div");
+          head.className = "solved-event-head";
+          addText(head, "span", "solved-event-code", event.code);
+          addText(head, "span", "solved-event-detail", event.detail || event.mode || "حل");
+          entry.appendChild(head);
+          const meta = document.createElement("div");
+          meta.className = "solved-event-meta";
+          addText(meta, "span", "solved-event-duration", "مدة الحل: " + formatDuration(event.duration_seconds));
+          addText(meta, "span", "", "وقت الاكتمال: " + formatSolvedDate(event.solved_at));
+          entry.appendChild(meta);
+          eventsRoot.appendChild(entry);
+        });
+      }
+      solvedDialog.showModal();
     }
 
     function render(data) {
@@ -468,6 +554,8 @@ ADMIN_PAGE = r"""<!doctype html>
       if (lastPayload) render(lastPayload);
     });
     document.getElementById("refreshButton").addEventListener("click", refresh);
+    document.getElementById("solvedCard").addEventListener("click", showSolvedEvents);
+    document.getElementById("closeSolvedDialog").addEventListener("click", () => solvedDialog.close());
     browserToggle.addEventListener("change", saveBrowserSetting);
 
     refresh();

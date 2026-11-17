@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>متابعة الحل | QUIZORA</title>
+  <style>
+    :root{font-family:Tahoma,Arial,sans-serif;color:#292532;background:#f4f1f5;font-synthesis:none}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at 85% 0,#e9e2f1,transparent 35%),#f4f1f5}
+    main{width:min(980px,100%);margin:0 auto;padding:30px 18px 48px}
+    header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+    .brand{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:#57428d;color:#fff;font-weight:900;letter-spacing:.5px}
+    h1{margin:0;font-size:clamp(21px,4vw,30px)}
+    .subtitle{margin:5px 0 0;color:#756e7e;font-size:13px}
+    #connection{margin-inline-start:auto;border:1px solid #dcd5e3;border-radius:999px;padding:8px 12px;background:#fff;color:#5e5868;font-size:12px}
+    #connection[data-state=ok]{border-color:#b8dfc7;background:#effaf2;color:#25613b}
+    #connection[data-state=error]{border-color:#efc2c2;background:#fff2f2;color:#8d3030}
+    #accounts{display:grid;gap:15px}
+    .account{overflow:hidden;border:1px solid #e4dfe8;border-radius:18px;background:#fff;box-shadow:0 10px 26px #30233b0c}
+    .account-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid #eeeaf1}
+    .account-title{font-size:15px;font-weight:800}
+    .phase{color:#6e6677;font-size:12px}
+    .body{padding:16px 18px}
+    .progress-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px;font-size:12px}
+    .progress-title{overflow:hidden;color:#51495c;text-overflow:ellipsis;white-space:nowrap}
+    .percent{flex:none;color:#57428d;font-weight:800;direction:ltr}
+    .track{height:9px;overflow:hidden;border-radius:999px;background:#eeeaf2}
+    .bar{height:100%;border-radius:inherit;background:linear-gradient(90deg,#57428d,#9c77bd);transition:width .35s ease}
+    .count{margin-top:7px;color:#817a89;font-size:11px}
+    .logs{max-height:300px;overflow:auto;margin-top:16px;padding:10px 12px;border-radius:12px;background:#211e26;color:#eeeaf2}
+    .log{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #ffffff12;font-size:12px;line-height:1.55}
+    .log:last-child{border-bottom:0}
+    .time{flex:none;color:#aba2b3;font-size:10px;direction:ltr}
+    .message{overflow-wrap:anywhere;white-space:pre-wrap}
+    .log[data-level=error] .message{color:#ffaaa6}
+    .log[data-level=warning] .message{color:#f3d28a}
+    .log[data-level=success] .message{color:#a7e1b8}
+    #empty{padding:26px;border:1px dashed #d5cedb;border-radius:16px;background:#ffffffa8;color:#6e6677;text-align:center}
+    footer{margin-top:18px;color:#817a89;font-size:11px;text-align:center}
+    @media(max-width:560px){main{padding:20px 12px 32px}.account-head,.body{padding:14px}.logs{max-height:260px}}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand" aria-hidden="true">Q</div>
+      <div>
+        <h1>متابعة الحل</h1>
+        <p class="subtitle">تحديث تلقائي لحالة العملية والسجل</p>
+      </div>
+      <div id="connection" role="status">جارٍ الاتصال...</div>
+    </header>
+    <section id="accounts" aria-live="polite"></section>
+    <div id="empty" hidden>لم تظهر تفاصيل العملية بعد. ستُحدّث هذه الصفحة تلقائيًا.</div>
+    <footer>صفحة عرض فقط؛ لا تغيّر طريقة تنفيذ الحل.</footer>
+  </main>
+  <script>
+    (function(){
+      "use strict";
+      var clientId = new URLSearchParams(window.location.search).get("client_id") || "";
+      var clientIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      var connection = document.getElementById("connection");
+      var accountsRoot = document.getElementById("accounts");
+      var empty = document.getElementById("empty");
+
+      function node(tag, className, text){
+        var element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = text;
+        return element;
+      }
+
+      function render(payload){
+        var accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+        accountsRoot.replaceChildren();
+        empty.hidden = accounts.length > 0;
+        accounts.forEach(function(account){
+          var progress = account.progress || {};
+          var done = Number(progress.done) || 0;
+          var total = Number(progress.total) || 0;
+          var percent = total ? Math.max(0, Math.min(100, Number(progress.pct) || Math.round(done * 100 / total))) : 0;
+          var card = node("article", "account");
+          var head = node("div", "account-head");
+          head.appendChild(node("div", "account-title", account.detail || account.mode || "عملية الحل"));
+          head.appendChild(node("div", "phase", account.running ? (account.phase || "جاري التنفيذ") : (account.success ? "اكتملت" : (account.phase || "انتهت"))));
+          card.appendChild(head);
+
+          var body = node("div", "body");
+          var progressHead = node("div", "progress-head");
+          progressHead.appendChild(node("div", "progress-title", progress.title || account.phase || "جارٍ تجهيز العملية"));
+          progressHead.appendChild(node("div", "percent", percent + "%"));
+          body.appendChild(progressHead);
+          var track = node("div", "track");
+          var bar = node("div", "bar");
+          bar.style.width = percent + "%";
+          track.appendChild(bar);
+          body.appendChild(track);
+          body.appendChild(node("div", "count", total ? done + " من " + total : "بانتظار تحديث التقدم"));
+
+          var logs = node("div", "logs");
+          logs.setAttribute("aria-label", "سجل العملية");
+          (Array.isArray(account.lines) ? account.lines.slice(-40) : []).forEach(function(line){
+            var row = node("div", "log");
+            row.dataset.level = line.level || "info";
+            row.appendChild(node("span", "time", line.t || ""));
+            row.appendChild(node("span", "message", line.msg || ""));
+            logs.appendChild(row);
+          });
+          body.appendChild(logs);
+          card.appendChild(body);
+          accountsRoot.appendChild(card);
+          logs.scrollTop = logs.scrollHeight;
+        });
+        connection.dataset.state = "ok";
+        connection.textContent = payload.running_count ? "جارٍ التنفيذ" : "متصل";
+      }
+
+      async function poll(){
+        try{
+          var response = await fetch("/api/status?client_id=" + encodeURIComponent(clientId), {cache:"no-store"});
+          var payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "تعذّر تحميل حالة العملية.");
+          render(payload);
+        }catch(error){
+          connection.dataset.state = "error";
+          connection.textContent = error.message || "تعذّر الاتصال";
+        }
+        window.setTimeout(poll, 1200);
+      }
+
+      if (!clientIdPattern.test(clientId)){
+        connection.dataset.state = "error";
+        connection.textContent = "معرّف متابعة غير صالح";
+      }else{
+        poll();
+      }
+    })();
+  </script>
+</body>
+</html>
