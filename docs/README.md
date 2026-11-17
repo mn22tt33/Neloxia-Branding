@@ -51,7 +51,7 @@ ww/
 ### `backend/scripts/` و`backend/tests/` و`docs/`
 
 - `backend/scripts/run.sh`: يشغّل الخادم ونفق ngrok بعنوان الـAPI الثابت من Termux.
-- `backend/scripts/setup.sh`: يثبّت Python وأداة فك الضغط وngrok في Termux.
+- `backend/scripts/setup.sh`: يثبّت Python وأداة فك الضغط وPRoot-Distro، ثم يجهّز ngrok داخل Debian على Termux.
 - `backend/tests/`: اختبارات رجوع لاكتمال الحل والطابور والتزامن؛ تُشغّل من الجذر بـ `python -m unittest discover -s backend/tests -v`.
 - `docs/اقرأني_طريقة_التشغيل.txt`: خطوات تشغيل مختصرة للهاتف.
 - `docs/README.md`: هذا الشرح.
@@ -66,10 +66,10 @@ ww/
 bash setup.sh
 ```
 
-أضف رمز حساب ngrok على الهاتف مرة واحدة، واستبدل النص برمزك من لوحة ngrok:
+أضف رمز حساب ngrok على الهاتف مرة واحدة داخل Debian عبر PRoot، واستبدل النص برمزك من لوحة ngrok:
 
 ```bash
-ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+proot-distro login debian -- ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
 ```
 
 لا تشارك الرمز ولا تضفه إلى ملفات المشروع. بعد ذلك شغّل الخادم والنفق معًا:

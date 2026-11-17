@@ -13,9 +13,9 @@
 
    bash setup.sh
 
-4. أضف رمز حساب ngrok مرة واحدة على الهاتف، واستبدل النص برمزك من لوحة ngrok:
+4. أضف رمز حساب ngrok مرة واحدة داخل Debian على الهاتف، واستبدل النص برمزك من لوحة ngrok:
 
-   ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
+   proot-distro login debian -- ngrok config add-authtoken YOUR_NGROK_AUTHTOKEN
 
    لا ترسل الرمز لأي شخص ولا تحفظه داخل ملفات المشروع.
 

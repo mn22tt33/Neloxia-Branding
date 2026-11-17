@@ -15,12 +15,16 @@ if [ -z "$API_URL" ]; then
     echo "❌ تعذر قراءة عنوان ngrok من frontend/config.js." >&2
     exit 1
 fi
-if ! command -v ngrok >/dev/null 2>&1; then
-    echo "❌ ngrok غير مثبت. شغّل bash setup.sh أولًا." >&2
+if ! command -v proot-distro >/dev/null 2>&1; then
+    echo "❌ PRoot-Distro غير مثبت. شغّل bash setup.sh أولًا." >&2
     exit 1
 fi
 if ! command -v curl >/dev/null 2>&1; then
     echo "❌ curl غير مثبت. شغّل bash setup.sh أولًا." >&2
+    exit 1
+fi
+if ! proot-distro login debian -- bash -lc 'command -v ngrok >/dev/null 2>&1'; then
+    echo "❌ ngrok غير مثبت داخل Debian. شغّل bash setup.sh أولًا." >&2
     exit 1
 fi
 
@@ -60,7 +64,7 @@ if [ "$server_ready" -ne 1 ]; then
     exit 1
 fi
 
-ngrok http "$PORT" --url "$API_URL" &
+proot-distro login debian -- ngrok http "$PORT" --url "$API_URL" &
 TUNNEL_PID=$!
 tunnel_ready=0
 for _ in {1..60}; do
