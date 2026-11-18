@@ -149,11 +149,15 @@
   }
 
   function api(path, method, data) {
+    const headers = data ? {"Content-Type": "application/json"} : {};
+    if (base && config.backendMode === "local") {
+      headers["ngrok-skip-browser-warning"] = "true";
+    }
     return fetch(base + path, {
       method: method || "GET",
       credentials: "include",
       cache: "no-store",
-      headers: data ? {"Content-Type": "application/json"} : {},
+      headers: headers,
       body: data ? JSON.stringify(data) : undefined
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
