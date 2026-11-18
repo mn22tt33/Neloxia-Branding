@@ -1349,7 +1349,13 @@
                 return;
               }
               if (!userResponse.ok) throw new Error("تعذّر التحقق من جلسة المستخدم.");
-              finishStartupCheck(true);
+              return userResponse.json().then(function(session){
+                if (!session || !session.user) {
+                  redirectToAccount();
+                  return;
+                }
+                finishStartupCheck(true);
+              });
             });
           });
         });

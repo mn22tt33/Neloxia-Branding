@@ -83,6 +83,8 @@ class QueueStorageTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
                 self.assertEqual(response.status, 200)
                 self.assertIn("إدارة الطابور", page)
+                self.assertIn('data-view="usersView"', page)
+                self.assertIn('id="userRows"', page)
                 self.assertIn('id="solvedCard"', page)
                 self.assertIn('id="solvedDialog"', page)
                 self.assertIn('id="solvedEvents"', page)

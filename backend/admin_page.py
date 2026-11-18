@@ -194,9 +194,66 @@ ADMIN_PAGE = r"""<!doctype html>
     .solved-empty { padding: 20px 14px; border: 1px dashed var(--line); border-radius: 11px; color: var(--muted); text-align: center; font-size: 13px; line-height: 1.8; }
     .toast { position: fixed; right: 50%; bottom: 24px; z-index: 3; transform: translate(50%, 20px); opacity: 0; pointer-events: none; padding: 12px 18px; border: 1px solid var(--line); border-radius: 12px; background: #17283e; color: var(--text); box-shadow: 0 12px 35px rgba(0,0,0,.3); transition: .2s ease; }
     .toast.show { transform: translate(50%, 0); opacity: 1; }
+    .workspace { display: grid; grid-template-columns: 205px minmax(0, 1fr); align-items: start; gap: 18px; }
+    .sidebar { position: sticky; top: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: rgba(13, 26, 43, .9); }
+    .sidebar-label { margin: 3px 8px 10px; color: #8196af; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+    .sidebar-nav { display: grid; gap: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 43px; padding: 0 11px; border: 1px solid transparent; border-radius: 11px; color: #b6c8da; background: transparent; text-align: right; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .nav-item:hover { background: rgba(255,255,255,.035); color: var(--text); }
+    .nav-item.active { border-color: rgba(84,223,194,.18); color: var(--teal); background: rgba(84,223,194,.08); }
+    .nav-icon { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; background: rgba(255,255,255,.05); font-size: 13px; }
+    .sidebar-divider { height: 1px; margin: 15px 3px; background: var(--line); }
+    .sidebar-account { overflow-wrap: anywhere; padding: 0 8px; color: #8297af; font-size: 10px; line-height: 1.8; }
+    .sidebar-account strong { display: block; color: #d7e5f4; font-size: 11px; }
+    .content { min-width: 0; }
+    .view[hidden] { display: none; }
+    .user-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; margin-bottom: 15px; }
+    .user-stat { padding: 16px 18px; border: 1px solid var(--line); border-radius: 15px; background: linear-gradient(145deg, rgba(20,36,58,.96), rgba(13,26,43,.96)); }
+    .user-stat span { display: block; color: var(--muted); font-size: 11px; }
+    .user-stat strong { display: block; margin-top: 8px; color: var(--text); font-size: 26px; font-variant-numeric: tabular-nums; }
+    .user-stat.active strong { color: var(--teal); }
+    .user-stat.blocked strong { color: var(--red); }
+    .user-board { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: rgba(13,26,43,.88); }
+    .users-toolbar { display: flex; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid var(--line); }
+    .users-toolbar .search { flex: 1; }
+    .user-table-wrap { overflow-x: auto; }
+    .user-table { width: 100%; min-width: 700px; border-collapse: collapse; text-align: right; }
+    .user-table th { padding: 12px 15px; color: #8196af; background: rgba(255,255,255,.02); font-size: 10px; font-weight: 800; white-space: nowrap; }
+    .user-table td { padding: 13px 15px; border-top: 1px solid rgba(179,205,235,.08); color: #d7e2ee; font-size: 11px; vertical-align: middle; }
+    .user-primary { color: var(--text); font-size: 12px; font-weight: 750; }
+    .user-email { direction: ltr; text-align: right; color: #9aacc2; overflow-wrap: anywhere; }
+    .user-role, .user-state { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; white-space: nowrap; }
+    .user-role.admin { color: #c6b5ff; border-color: rgba(174,151,255,.2); background: rgba(174,151,255,.07); }
+    .user-state.active { color: var(--teal); border-color: rgba(84,223,194,.18); background: rgba(84,223,194,.06); }
+    .user-state.blocked { color: #ffabb1; border-color: rgba(255,125,134,.2); background: rgba(255,125,134,.07); }
+    .user-actions { display: flex; gap: 6px; }
+    .user-action { min-height: 31px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; color: #d7e5f4; background: #14243a; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .user-action:hover:not(:disabled) { border-color: rgba(84,223,194,.35); color: var(--teal); }
+    .user-action.danger { color: #ffabb1; }
+    .user-action.danger:hover:not(:disabled) { border-color: rgba(255,125,134,.4); color: #ffc1c5; }
+    .user-action:disabled { opacity: .45; cursor: not-allowed; }
+    .users-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; color: var(--muted); font-size: 10px; }
+    .users-pagination { display: flex; align-items: center; gap: 8px; }
+    .users-pagination button { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: #d7e5f4; background: #14243a; font-size: 10px; cursor: pointer; }
+    .users-pagination button:disabled { opacity: .42; cursor: not-allowed; }
+    .users-empty { padding: 36px 16px; color: var(--muted); text-align: center; font-size: 12px; }
+    .users-error { margin: 12px 14px 0; }
+    .users-error[hidden] { display: none; }
     @media (max-width: 760px) {
       .shell { width: min(100% - 24px, 560px); padding-top: 22px; }
       .topbar { margin-bottom: 25px; }
+      .workspace { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+      .sidebar { position: static; padding: 9px; }
+      .sidebar-label, .sidebar-divider, .sidebar-account { display: none; }
+      .sidebar-nav { display: flex; overflow-x: auto; gap: 5px; }
+      .nav-item { flex: 1 0 auto; justify-content: center; width: auto; min-height: 40px; padding: 0 9px; }
+      .nav-icon { display: none; }
+      .user-stat { padding: 13px 11px; }
+      .user-stat strong { font-size: 22px; }
+      .users-toolbar { flex-wrap: wrap; }
+      .users-toolbar .search { flex-basis: 100%; }
+      .users-toolbar .status-filter { flex: 1; }
+      .users-meta { align-items: start; flex-direction: column; }
       .hero { align-items: start; flex-direction: column; }
       .stats { grid-template-columns: repeat(2, 1fr); gap: 9px; }
       .stat { min-height: 100px; padding: 15px 13px; border-radius: 15px; }
@@ -234,6 +291,22 @@ ADMIN_PAGE = r"""<!doctype html>
       <div class="local-badge"><span class="local-dot"></span>إدارة محلية آمنة</div>
     </header>
 
+    <div class="workspace">
+      <aside class="sidebar" aria-label="قائمة الإدارة">
+        <p class="sidebar-label">مساحة العمل</p>
+        <nav class="sidebar-nav">
+          <button class="nav-item active" type="button" data-view="overviewView">
+            <span class="nav-icon" aria-hidden="true">▦</span>نظرة عامة
+          </button>
+          <button class="nav-item" type="button" data-view="usersView">
+            <span class="nav-icon" aria-hidden="true">♙</span>المستخدمون
+          </button>
+        </nav>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-account" id="adminIdentity">جارٍ التحقق من حساب المدير...</div>
+      </aside>
+      <div class="content">
+        <section class="view" id="overviewView">
     <section class="hero">
       <div><p class="eyebrow">مركز المتابعة</p><h1>إدارة الطابور</h1><p class="intro">تابع الحسابات النشطة وابدأ أي حساب منتظر فورًا.</p></div>
       <div class="refresh-label" id="updated">جارٍ الاتصال بالخادم المحلي...</div>
@@ -279,6 +352,54 @@ ADMIN_PAGE = r"""<!doctype html>
       </div>
       <div class="list" id="jobs" aria-live="polite"></div>
     </section>
+        </section>
+
+        <section class="view" id="usersView" hidden>
+          <section class="hero">
+            <div><p class="eyebrow">إدارة الحسابات</p><h1>المستخدمون</h1><p class="intro">راجع بيانات الحسابات، وأدر الحظر والوصول بأمان.</p></div>
+            <div class="refresh-label" id="usersUpdated">لم يتم تحميل المستخدمين بعد</div>
+          </section>
+          <section class="user-stats" aria-label="ملخص المستخدمين">
+            <article class="user-stat"><span>إجمالي المستخدمين</span><strong id="totalUsers">—</strong></article>
+            <article class="user-stat active"><span>حسابات نشطة</span><strong id="activeUsers">—</strong></article>
+            <article class="user-stat blocked"><span>حسابات محظورة</span><strong id="blockedUsers">—</strong></article>
+          </section>
+          <section class="user-board" aria-labelledby="usersTitle">
+            <header class="board-head">
+              <div><h2 class="board-title" id="usersTitle">دليل المستخدمين</h2><p class="board-caption">البريد والاسم والدور وحالة الوصول وتاريخ إنشاء الحساب.</p></div>
+              <div class="live"><span class="live-dot"></span>بيانات مباشرة</div>
+            </header>
+            <div class="users-toolbar">
+              <label class="search">
+                <input id="userSearch" type="search" placeholder="ابحث بالاسم أو البريد..." aria-label="بحث عن مستخدم">
+              </label>
+              <select class="status-filter" id="userStatus" aria-label="تصفية المستخدمين">
+                <option value="all">كل المستخدمين</option>
+                <option value="active">النشطون</option>
+                <option value="blocked">المحظورون</option>
+              </select>
+              <button class="refresh-button" id="usersRefresh" type="button">تحديث</button>
+            </div>
+            <div class="error users-error" id="usersError" role="alert" hidden></div>
+            <div class="user-table-wrap">
+              <table class="user-table">
+                <thead><tr><th scope="col">المستخدم</th><th scope="col">البريد الإلكتروني</th><th scope="col">الدور</th><th scope="col">الحالة</th><th scope="col">تاريخ التسجيل</th><th scope="col">الإجراءات</th></tr></thead>
+                <tbody id="userRows" aria-live="polite"></tbody>
+              </table>
+              <div class="users-empty" id="usersEmpty" hidden>لا توجد حسابات مطابقة لخيارات البحث.</div>
+            </div>
+            <footer class="users-meta">
+              <span id="usersCount">—</span>
+              <div class="users-pagination">
+                <button id="usersPrevious" type="button" disabled>السابق</button>
+                <span id="usersPage">—</span>
+                <button id="usersNext" type="button" disabled>التالي</button>
+              </div>
+            </footer>
+          </section>
+        </section>
+      </div>
+    </div>
   </main>
   <dialog class="solved-dialog" id="solvedDialog" aria-labelledby="solvedDialogTitle">
     <div class="solved-dialog-content">
@@ -298,8 +419,15 @@ ADMIN_PAGE = r"""<!doctype html>
     const errorBox = document.getElementById("error");
     const browserToggle = document.getElementById("browserVisible");
     const solvedDialog = document.getElementById("solvedDialog");
+    const userRows = document.getElementById("userRows");
+    const usersError = document.getElementById("usersError");
+    const userPageSize = 50;
     let lastPayload = null;
     let refreshing = false;
+    let usersOffset = 0;
+    let usersRequestId = 0;
+    let usersLoaded = false;
+    let usersSearchTimer;
     let toastTimer;
 
     function showToast(message) {
@@ -316,6 +444,171 @@ ADMIN_PAGE = r"""<!doctype html>
       element.textContent = text == null ? "" : String(text);
       parent.appendChild(element);
       return element;
+    }
+
+    function formatUserDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime())
+        ? "غير متاح"
+        : date.toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    function renderUsers(data) {
+      document.getElementById("totalUsers").textContent = data.total_users;
+      document.getElementById("activeUsers").textContent = data.active_users;
+      document.getElementById("blockedUsers").textContent = data.blocked_users;
+      document.getElementById("usersUpdated").textContent =
+        "آخر تحديث " + new Date().toLocaleTimeString("ar-EG");
+      document.getElementById("usersCount").textContent =
+        data.total ? "عرض " + (data.offset + 1) + "–" + Math.min(data.offset + data.users.length, data.total) + " من " + data.total : "لا توجد نتائج";
+      document.getElementById("usersPage").textContent =
+        Math.floor(data.offset / userPageSize) + 1 + " / " + Math.max(1, Math.ceil(data.total / userPageSize));
+      document.getElementById("usersPrevious").disabled = data.offset <= 0;
+      document.getElementById("usersNext").disabled = data.offset + userPageSize >= data.total;
+      userRows.replaceChildren();
+      document.getElementById("usersEmpty").hidden = data.users.length > 0;
+
+      data.users.forEach((user) => {
+        const row = document.createElement("tr");
+        const nameCell = document.createElement("td");
+        addText(nameCell, "div", "user-primary", user.full_name);
+        row.appendChild(nameCell);
+
+        const emailCell = document.createElement("td");
+        addText(emailCell, "div", "user-email", user.email || "—");
+        row.appendChild(emailCell);
+
+        const roleCell = document.createElement("td");
+        addText(
+          roleCell,
+          "span",
+          "user-role" + (user.role === "admin" ? " admin" : ""),
+          user.role === "admin" ? "مدير" : "مستخدم"
+        );
+        row.appendChild(roleCell);
+
+        const stateCell = document.createElement("td");
+        addText(
+          stateCell,
+          "span",
+          "user-state " + (user.is_blocked ? "blocked" : "active"),
+          user.is_blocked ? "محظور" : "نشط"
+        );
+        row.appendChild(stateCell);
+
+        const dateCell = document.createElement("td");
+        dateCell.textContent = formatUserDate(user.created_at);
+        row.appendChild(dateCell);
+
+        const actionsCell = document.createElement("td");
+        const actions = document.createElement("div");
+        actions.className = "user-actions";
+        if (user.role === "admin") {
+          addText(actions, "span", "user-role admin", "حساب محمي");
+        } else {
+          const toggleButton = addText(
+            actions,
+            "button",
+            "user-action" + (user.is_blocked ? "" : " danger"),
+            user.is_blocked ? "فك الحظر" : "حظر"
+          );
+          toggleButton.type = "button";
+          toggleButton.addEventListener("click", () => manageUser(
+            user,
+            user.is_blocked ? "unblock" : "block",
+            toggleButton
+          ));
+
+          const deleteButton = addText(actions, "button", "user-action danger", "حذف");
+          deleteButton.type = "button";
+          deleteButton.addEventListener("click", () => manageUser(user, "delete", deleteButton));
+        }
+        actionsCell.appendChild(actions);
+        row.appendChild(actionsCell);
+        userRows.appendChild(row);
+      });
+    }
+
+    async function loadUsers(offset) {
+      const requestId = ++usersRequestId;
+      usersOffset = Math.max(0, offset || 0);
+      usersError.hidden = true;
+      const params = new URLSearchParams({
+        limit: String(userPageSize),
+        offset: String(usersOffset),
+        q: document.getElementById("userSearch").value.trim(),
+        status: document.getElementById("userStatus").value
+      });
+      try {
+        const response = await fetch("/api/admin/users?" + params.toString(), { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || "تعذّر تحميل المستخدمين.");
+        if (requestId !== usersRequestId) return;
+        const lastOffset = Math.max(0, Math.ceil(data.total / userPageSize) - 1) * userPageSize;
+        if (usersOffset > lastOffset) {
+          await loadUsers(lastOffset);
+          return;
+        }
+        usersLoaded = true;
+        renderUsers(data);
+      } catch (error) {
+        if (requestId !== usersRequestId) return;
+        usersError.textContent = error.message || "تعذّر تحميل قائمة المستخدمين.";
+        usersError.hidden = false;
+      }
+    }
+
+    async function manageUser(user, action, button) {
+      const actionLabel = action === "delete"
+        ? "حذف الحساب نهائيًا"
+        : action === "block" ? "حظر المستخدم" : "فك حظر المستخدم";
+      if (!window.confirm(actionLabel + " لـ " + user.full_name + (action === "delete" ? "؟ لا يمكن التراجع عن هذا الإجراء." : "؟"))) {
+        return;
+      }
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: user.id, action })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "تعذّر تحديث المستخدم.");
+        showToast(data.message);
+        await loadUsers(usersOffset);
+      } catch (error) {
+        showToast(error.message || "تعذّر تحديث المستخدم.");
+        button.disabled = false;
+      }
+    }
+
+    async function loadAdminIdentity() {
+      try {
+        const response = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.user || data.user.role !== "admin") {
+          throw new Error("تعذّر التحقق من صلاحية المدير.");
+        }
+        const identity = document.getElementById("adminIdentity");
+        identity.replaceChildren();
+        addText(identity, "strong", "", data.user.full_name);
+        addText(identity, "span", "", data.user.email);
+      } catch (error) {
+        document.getElementById("adminIdentity").textContent =
+          error.message || "تعذّر التحقق من حساب المدير.";
+      }
+    }
+
+    function selectView(viewId) {
+      document.querySelectorAll(".view").forEach((view) => {
+        view.hidden = view.id !== viewId;
+      });
+      document.querySelectorAll(".nav-item").forEach((button) => {
+        const active = button.dataset.view === viewId;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-current", active ? "page" : "false");
+      });
+      if (viewId === "usersView" && !usersLoaded) loadUsers(0);
     }
 
     function formatDuration(seconds) {
@@ -550,6 +843,21 @@ ADMIN_PAGE = r"""<!doctype html>
     document.getElementById("searchJobs").addEventListener("input", () => {
       if (lastPayload) render(lastPayload);
     });
+    document.querySelectorAll(".nav-item").forEach((button) => {
+      button.addEventListener("click", () => selectView(button.dataset.view));
+    });
+    document.getElementById("userSearch").addEventListener("input", () => {
+      clearTimeout(usersSearchTimer);
+      usersSearchTimer = setTimeout(() => loadUsers(0), 250);
+    });
+    document.getElementById("userStatus").addEventListener("change", () => loadUsers(0));
+    document.getElementById("usersRefresh").addEventListener("click", () => loadUsers(usersOffset));
+    document.getElementById("usersPrevious").addEventListener("click", () => {
+      loadUsers(Math.max(0, usersOffset - userPageSize));
+    });
+    document.getElementById("usersNext").addEventListener("click", () => {
+      loadUsers(usersOffset + userPageSize);
+    });
     document.getElementById("statusFilter").addEventListener("change", () => {
       if (lastPayload) render(lastPayload);
     });
@@ -560,6 +868,7 @@ ADMIN_PAGE = r"""<!doctype html>
 
     refresh();
     loadBrowserSetting();
+    loadAdminIdentity();
     setInterval(refresh, 2000);
   </script>
 </body>

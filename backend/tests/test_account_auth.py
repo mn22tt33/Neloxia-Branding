@@ -1,10 +1,10 @@
 import json
-import threading
+import os
 import tempfile
+import threading
 import unittest
 import urllib.error
 import urllib.request
-import os
 from unittest.mock import MagicMock, patch
 
 os.environ["QUIZORA_TEST_MODE"] = "1"
@@ -170,6 +170,88 @@ class FirebaseAuthTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "بين 8 و128"):
             hash_password("short")
 
+    def test_password_login_rejects_blocked_account(self):
+        auth_store = MagicMock()
+        auth_store.allow_password_login.return_value = True
+        auth_store.authenticate_password.side_effect = server.AccountBlockedError(
+            "تم حظر هذا الحساب."
+        )
+        with (
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
+            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "_auth_store", auth_store),
+            patch.object(server, "_queue_store", object()),
+            self._running_api() as base,
+        ):
+            request = urllib.request.Request(
+                base + "/api/auth/password/login",
+                data=json.dumps({
+                    "email": "blocked@example.com",
+                    "password": "correct-password",
+                }).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as rejected:
+                urllib.request.urlopen(request)
+            self.assertEqual(rejected.exception.code, 403)
+            rejected.exception.close()
+        auth_store.create_session.assert_not_called()
+
+    def test_blocking_account_clears_its_persistent_sessions(self):
+        store = object.__new__(server.PostgresAuthStore)
+        user_id = "123e4567-e89b-12d3-a456-426614174000"
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            {"id": user_id, "role": "user"},
+            {
+                "id": user_id,
+                "full_name": "Quizora User",
+                "email": "user@example.com",
+                "role": "user",
+                "is_blocked": True,
+                "created_at": "2026-11-18 00:00:00+00",
+            },
+        ]
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        store._connect = MagicMock(return_value=connection_context)
+
+        updated = store.set_user_blocked(user_id, True, "admin-id")
+
+        self.assertTrue(updated["is_blocked"])
+        self.assertIn(
+            "DELETE FROM quizora_user_sessions",
+            cursor.execute.call_args_list[2].args[0],
+        )
+        self.assertEqual(
+            cursor.execute.call_args_list[2].args[1],
+            (user_id,),
+        )
+
+    def test_blocked_account_cannot_use_an_existing_session(self):
+        store = object.__new__(server.PostgresAuthStore)
+        cursor = MagicMock()
+        cursor.fetchone.return_value = None
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        store._connect = MagicMock(return_value=connection_context)
+
+        self.assertIsNone(store.get_session_user("s" * 43))
+        self.assertIn(
+            "account.is_blocked = FALSE",
+            cursor.execute.call_args.args[0],
+        )
+
     def test_auth_status_disables_login_until_database_and_firebase_are_configured(self):
         with (
             patch.object(server, "AUTH_REQUIRED", False),
@@ -231,8 +313,163 @@ class FirebaseAuthTests(unittest.TestCase):
         self.assertIn("HttpOnly", cookie)
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=None", cookie)
+        self.assertIn("Max-Age=2592000", cookie)
         self.assertNotIn("s" * 43, json.dumps(payload))
         auth_store.find_firebase_user.assert_called_once()
+
+    def test_blocked_firebase_account_cannot_start_a_session(self):
+        auth_store = MagicMock()
+        auth_store.allow_login.return_value = True
+        auth_store.find_firebase_user.side_effect = server.AccountBlockedError(
+            "تم حظر هذا الحساب."
+        )
+        with (
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
+            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "_auth_store", auth_store),
+            patch.object(server, "_queue_store", object()),
+            patch(
+                "backend.server.verify_firebase_credential",
+                return_value={
+                    "firebase_uid": "blocked-user",
+                    "email": "blocked@example.com",
+                    "full_name": "Blocked User",
+                },
+            ),
+            self._running_api() as base,
+        ):
+            request = urllib.request.Request(
+                base + "/api/auth/firebase/login",
+                data=json.dumps({"id_token": "t" * 120}).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as rejected:
+                urllib.request.urlopen(request)
+            self.assertEqual(rejected.exception.code, 403)
+            self.assertIn("تم حظر هذا الحساب", rejected.exception.read().decode("utf-8"))
+            rejected.exception.close()
+        auth_store.create_session.assert_not_called()
+
+    def test_admin_can_list_block_and_delete_users(self):
+        admin = {
+            "id": "admin-id",
+            "full_name": "Site Admin",
+            "email": "admin@example.com",
+            "role": "admin",
+        }
+        auth_store = MagicMock()
+        auth_store.get_session_user.return_value = admin
+        auth_store.list_users.return_value = {
+            "users": [{
+                "id": "user-id",
+                "full_name": "Quizora User",
+                "email": "user@example.com",
+                "role": "user",
+                "is_blocked": False,
+                "created_at": "2026-11-18 00:00:00+00",
+            }],
+            "total": 1,
+            "total_users": 1,
+            "active_users": 1,
+            "blocked_users": 0,
+            "limit": 50,
+            "offset": 0,
+        }
+        with (
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
+            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "_auth_store", auth_store),
+            patch.object(server, "_queue_store", object()),
+            self._running_api() as base,
+        ):
+            headers = {"Cookie": "quizora_session=" + ("s" * 43)}
+            request = urllib.request.Request(
+                base + "/api/admin/users?q=Quizora&status=active",
+                headers=headers,
+            )
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["users"][0]["email"], "user@example.com")
+            auth_store.list_users.assert_called_once_with(
+                search="Quizora",
+                status="active",
+                limit=50,
+                offset=0,
+            )
+
+            for action, expected in (
+                ("block", "تم حظر المستخدم وإنهاء جلساته."),
+                ("unblock", "تم فك حظر المستخدم؛ عليه تسجيل الدخول مجددًا."),
+                ("delete", "تم حذف المستخدم وإنهاء جلساته."),
+            ):
+                status, _, result = self._open_json(
+                    urllib.request.build_opener(),
+                    base + "/api/admin/users",
+                    method="POST",
+                    payload={"id": "123e4567-e89b-12d3-a456-426614174000", "action": action},
+                    headers={
+                        **headers,
+                        "Content-Type": "application/json",
+                    },
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(result["message"], expected)
+
+        auth_store.set_user_blocked.assert_any_call(
+            "123e4567-e89b-12d3-a456-426614174000", True, "admin-id"
+        )
+        auth_store.set_user_blocked.assert_any_call(
+            "123e4567-e89b-12d3-a456-426614174000", False, "admin-id"
+        )
+        auth_store.delete_user.assert_called_once_with(
+            "123e4567-e89b-12d3-a456-426614174000", "admin-id"
+        )
+
+    def test_admin_user_management_rejects_admin_and_missing_targets(self):
+        auth_store = MagicMock()
+        auth_store.get_session_user.return_value = {
+            "id": "admin-id",
+            "role": "admin",
+        }
+        auth_store.set_user_blocked.side_effect = server.AccountManagementConflictError(
+            "لا يمكن حذف حساب مدير أو تعديل حالته."
+        )
+        with (
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
+            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "_auth_store", auth_store),
+            patch.object(server, "_queue_store", object()),
+            self._running_api() as base,
+        ):
+            for method, status_code, error_type in (
+                ("block", 409, server.AccountManagementConflictError),
+                ("delete", 404, server.AccountNotFoundError),
+            ):
+                if method == "block":
+                    auth_store.set_user_blocked.side_effect = error_type("مرفوض")
+                else:
+                    auth_store.delete_user.side_effect = error_type("المستخدم غير موجود.")
+                request = urllib.request.Request(
+                    base + "/api/admin/users",
+                    data=json.dumps({
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "action": method,
+                    }).encode("utf-8"),
+                    method="POST",
+                    headers={
+                        "Cookie": "quizora_session=" + ("s" * 43),
+                        "Content-Type": "application/json",
+                    },
+                )
+                with self.assertRaises(urllib.error.HTTPError) as rejected:
+                    urllib.request.urlopen(request)
+                self.assertEqual(rejected.exception.code, status_code)
+                rejected.exception.close()
 
     def test_firebase_login_does_not_create_an_unregistered_account(self):
         auth_store = MagicMock()

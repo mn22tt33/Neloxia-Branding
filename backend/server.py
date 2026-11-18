@@ -35,8 +35,12 @@ from queue_store import PostgresQueue, QueueCapacityError, QueueStoreError
 from admin_page import ADMIN_PAGE
 from account_auth import (
     AccountExistsError,
+    AccountBlockedError,
+    AccountManagementConflictError,
+    AccountNotFoundError,
     AuthStoreError,
     PostgresAuthStore,
+    SESSION_TTL_SECONDS,
     hash_password,
     verify_firebase_credential,
 )
@@ -1366,15 +1370,16 @@ def make_handler():
                     })
                     return
                 token = _auth_store.create_session(user["id"])
+            except AccountBlockedError as error:
+                self._json(403, {"ok": False, "message": str(error)})
+                return
             except AuthStoreError as error:
                 self._json(503, {
                     "ok": False,
                     "message": str(error) or "تعذّر تسجيل الدخول بحساب Google.",
                 })
                 return
-            self._set_cookie(
-                "quizora_session", token, 60 * 60 * 24 * 30
-            )
+            self._set_cookie("quizora_session", token, SESSION_TTL_SECONDS)
             self._json(200, {
                 "ok": True,
                 "user": self._public_user(user),
@@ -1443,7 +1448,7 @@ def make_handler():
                     "message": str(error) or "تعذّر إنشاء الحساب.",
                 })
                 return
-            self._set_cookie("quizora_session", token, 60 * 60 * 24 * 30)
+            self._set_cookie("quizora_session", token, SESSION_TTL_SECONDS)
             self._json(201, {
                 "ok": True,
                 "user": self._public_user(user),
@@ -1495,13 +1500,16 @@ def make_handler():
                     })
                     return
                 token = _auth_store.create_session(user["id"])
+            except AccountBlockedError as error:
+                self._json(403, {"ok": False, "message": str(error)})
+                return
             except AuthStoreError as error:
                 self._json(503, {
                     "ok": False,
                     "message": str(error) or "تعذّر تسجيل الدخول.",
                 })
                 return
-            self._set_cookie("quizora_session", token, 60 * 60 * 24 * 30)
+            self._set_cookie("quizora_session", token, SESSION_TTL_SECONDS)
             self._json(200, {
                 "ok": True,
                 "user": self._public_user(user),
@@ -1578,6 +1586,99 @@ def make_handler():
             except AuthStoreError:
                 return False
             return bool(user and user.get("role") == "admin")
+
+        def _admin_users_payload(self, query_string):
+            if not _auth_store or not self._auth_enabled():
+                self._json(503, {
+                    "ok": False,
+                    "error": "إدارة المستخدمين تتطلب قاعدة بيانات ومصادقة مفعّلتين.",
+                })
+                return
+            query = parse_qs(query_string, keep_blank_values=True)
+            search = query.get("q", [""])[0].strip()
+            status = query.get("status", ["all"])[0]
+            try:
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                self._json(400, {"ok": False, "error": "خيارات عرض المستخدمين غير صالحة."})
+                return
+            if (
+                len(search) > 120
+                or status not in ("all", "active", "blocked")
+                or not 1 <= limit <= 100
+                or not 0 <= offset <= 2_147_483_647
+            ):
+                self._json(400, {"ok": False, "error": "خيارات البحث أو التصفية غير صالحة."})
+                return
+            try:
+                payload = _auth_store.list_users(
+                    search=search,
+                    status=status,
+                    limit=limit,
+                    offset=offset,
+                )
+            except AuthStoreError:
+                self._json(503, {"ok": False, "error": "تعذّر تحميل قائمة المستخدمين."})
+                return
+            self._json(200, {"ok": True, **payload})
+
+        def _admin_user_action(self):
+            if self.headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+                self._json(403, {
+                    "ok": False,
+                    "message": "مصدر الطلب غير مسموح.",
+                })
+                return
+            if not _auth_store or not self._auth_enabled():
+                self._json(503, {
+                    "ok": False,
+                    "message": "إدارة المستخدمين تتطلب قاعدة بيانات ومصادقة مفعّلتين.",
+                })
+                return
+            try:
+                data = self._read_json()
+                if not isinstance(data, dict):
+                    raise ValueError
+                user_id = str(uuid.UUID(str(data.get("id") or "")))
+                action = data.get("action")
+                if action not in ("block", "unblock", "delete"):
+                    raise ValueError
+            except (ValueError, TypeError, json.JSONDecodeError):
+                self._json(400, {"ok": False, "message": "بيانات إجراء المستخدم غير صالحة."})
+                return
+            try:
+                admin = self._auth_session()
+                if not admin or admin.get("role") != "admin":
+                    self._json(403, {
+                        "ok": False,
+                        "message": "تتطلب إدارة المستخدمين جلسة مدير صالحة.",
+                    })
+                    return
+                if action == "delete":
+                    _auth_store.delete_user(user_id, admin["id"])
+                    message = "تم حذف المستخدم وإنهاء جلساته."
+                else:
+                    _auth_store.set_user_blocked(
+                        user_id,
+                        action == "block",
+                        admin["id"],
+                    )
+                    message = (
+                        "تم حظر المستخدم وإنهاء جلساته."
+                        if action == "block"
+                        else "تم فك حظر المستخدم؛ عليه تسجيل الدخول مجددًا."
+                    )
+            except AccountNotFoundError as error:
+                self._json(404, {"ok": False, "message": str(error)})
+                return
+            except AccountManagementConflictError as error:
+                self._json(409, {"ok": False, "message": str(error)})
+                return
+            except AuthStoreError:
+                self._json(503, {"ok": False, "message": "تعذّر تحديث حساب المستخدم."})
+                return
+            self._json(200, {"ok": True, "message": message})
 
         def _status_payload(self, client_id=None, owner_key=None):
             if _queue_store:
@@ -1677,6 +1778,9 @@ def make_handler():
                     self._json(200, _admin_queue_payload())
                 except QueueStoreError:
                     self._json(503, {"ok": False, "error": "تعذّر قراءة طابور الانتظار."})
+                return
+            if parsed_path.path == "/api/admin/users":
+                self._admin_users_payload(parsed_path.query)
                 return
             if parsed_path.path == "/api/admin/settings":
                 self._json(200, {
@@ -1797,6 +1901,9 @@ def make_handler():
                 return
             if route == "/api/auth/password/login":
                 self._password_login()
+                return
+            if route == "/api/admin/users":
+                self._admin_user_action()
                 return
             if route == "/api/auth/logout":
                 if not self._auth_mutation_allowed():

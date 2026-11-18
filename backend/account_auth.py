@@ -27,6 +27,18 @@ class AccountExistsError(AuthStoreError):
     pass
 
 
+class AccountBlockedError(AuthStoreError):
+    pass
+
+
+class AccountNotFoundError(AuthStoreError):
+    pass
+
+
+class AccountManagementConflictError(AuthStoreError):
+    pass
+
+
 def hash_password(password):
     if (
         not isinstance(password, str)
@@ -142,6 +154,7 @@ class PostgresAuthStore:
                 phone_verified BOOLEAN NOT NULL DEFAULT TRUE,
                 role TEXT NOT NULL DEFAULT 'user'
                     CHECK (role IN ('user', 'admin')),
+                is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
@@ -149,6 +162,7 @@ class PostgresAuthStore:
             "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS email TEXT",
             "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS google_sub TEXT",
             "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS firebase_uid TEXT",
+            "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE quizora_users ALTER COLUMN phone_e164 DROP NOT NULL",
             "ALTER TABLE quizora_users ALTER COLUMN password_hash DROP NOT NULL",
             """
@@ -232,7 +246,7 @@ class PostgresAuthStore:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id FROM quizora_users
+                        SELECT id, is_blocked FROM quizora_users
                         WHERE firebase_uid = %s
                         LIMIT 1
                         FOR UPDATE
@@ -243,7 +257,7 @@ class PostgresAuthStore:
                     if not existing:
                         cursor.execute(
                             """
-                            SELECT id FROM quizora_users
+                            SELECT id, is_blocked FROM quizora_users
                             WHERE lower(email) = %s AND google_sub IS NOT NULL
                             LIMIT 1
                             FOR UPDATE
@@ -254,6 +268,8 @@ class PostgresAuthStore:
 
                     if not existing:
                         return None
+                    if existing["is_blocked"]:
+                        raise AccountBlockedError("تم حظر هذا الحساب؛ تواصل مع الإدارة.")
                     cursor.execute(
                         """
                         UPDATE quizora_users
@@ -273,6 +289,8 @@ class PostgresAuthStore:
             raise AuthStoreError(
                 "هذا البريد مرتبط بحساب آخر؛ تواصل مع المسؤول."
             ) from error
+        except AccountBlockedError:
+            raise
         except self._psycopg.Error as error:
             raise AuthStoreError("Could not read the Firebase account.") from error
 
@@ -345,7 +363,7 @@ class PostgresAuthStore:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, full_name, email, role, password_hash
+                        SELECT id, full_name, email, role, password_hash, is_blocked
                         FROM quizora_users
                         WHERE lower(email) = %s AND password_hash IS NOT NULL
                         LIMIT 1
@@ -359,12 +377,126 @@ class PostgresAuthStore:
         encoded_hash = user["password_hash"] if user else _DUMMY_PASSWORD_HASH
         if not verify_password(password, encoded_hash) or not user:
             return None
+        if user["is_blocked"]:
+            raise AccountBlockedError("تم حظر هذا الحساب؛ تواصل مع الإدارة.")
         return {
             "id": user["id"],
             "full_name": user["full_name"],
             "email": user["email"],
             "role": user["role"],
         }
+
+    def list_users(self, search="", status="all", limit=50, offset=0):
+        limit = min(max(int(limit), 1), 100)
+        offset = max(int(offset), 0)
+        clauses = []
+        params = []
+        if search:
+            clauses.append(
+                "(full_name ILIKE %s OR COALESCE(email, '') ILIKE %s)"
+            )
+            pattern = "%" + search + "%"
+            params.extend((pattern, pattern))
+        if status == "active":
+            clauses.append("is_blocked = FALSE")
+        elif status == "blocked":
+            clauses.append("is_blocked = TRUE")
+        where_sql = " WHERE " + " AND ".join(clauses) if clauses else ""
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT COUNT(*) AS total FROM quizora_users" + where_sql,
+                        tuple(params),
+                    )
+                    filtered_total = cursor.fetchone()["total"]
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*) AS total,
+                               COUNT(*) FILTER (WHERE is_blocked = FALSE) AS active,
+                               COUNT(*) FILTER (WHERE is_blocked = TRUE) AS blocked
+                        FROM quizora_users
+                        """
+                    )
+                    counts = cursor.fetchone()
+                    cursor.execute(
+                        """
+                        SELECT id::text AS id, full_name, email, role, is_blocked,
+                               created_at::text AS created_at
+                        FROM quizora_users
+                        """
+                        + where_sql
+                        + " ORDER BY created_at DESC, id LIMIT %s OFFSET %s",
+                        tuple(params) + (limit, offset),
+                    )
+                    users = cursor.fetchall()
+            return {
+                "users": users,
+                "total": filtered_total,
+                "total_users": counts["total"],
+                "active_users": counts["active"],
+                "blocked_users": counts["blocked"],
+                "limit": limit,
+                "offset": offset,
+            }
+        except self._psycopg.Error as error:
+            raise AuthStoreError("Could not list account users.") from error
+
+    def _managed_user(self, cursor, user_id, actor_id):
+        cursor.execute(
+            "SELECT id, role FROM quizora_users WHERE id = %s FOR UPDATE",
+            (user_id,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            raise AccountNotFoundError("المستخدم غير موجود.")
+        if str(user["id"]) == str(actor_id) or user["role"] == "admin":
+            raise AccountManagementConflictError(
+                "لا يمكن حذف حساب مدير أو تعديل حالته."
+            )
+        return user
+
+    def set_user_blocked(self, user_id, blocked, actor_id):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    user = self._managed_user(cursor, user_id, actor_id)
+                    cursor.execute(
+                        """
+                        UPDATE quizora_users
+                        SET is_blocked = %s, updated_at = now()
+                        WHERE id = %s
+                        RETURNING id::text AS id, full_name, email, role,
+                                  is_blocked, created_at::text AS created_at
+                        """,
+                        (blocked, user["id"]),
+                    )
+                    updated = cursor.fetchone()
+                    if blocked:
+                        cursor.execute(
+                            "DELETE FROM quizora_user_sessions WHERE user_id = %s",
+                            (user["id"],),
+                        )
+                    return updated
+        except (AccountNotFoundError, AccountManagementConflictError):
+            raise
+        except self._psycopg.Error as error:
+            raise AuthStoreError("Could not update the account status.") from error
+
+    def delete_user(self, user_id, actor_id):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    user = self._managed_user(cursor, user_id, actor_id)
+                    cursor.execute(
+                        "DELETE FROM quizora_users WHERE id = %s",
+                        (user["id"],),
+                    )
+            return True
+        except (AccountNotFoundError, AccountManagementConflictError):
+            raise
+        except self._psycopg.Error as error:
+            raise AuthStoreError("Could not delete the account.") from error
 
     def allow_login(self, subject, ip_address):
         try:
@@ -410,7 +542,9 @@ class PostgresAuthStore:
                         SELECT account.id, account.full_name, account.email, account.role
                         FROM quizora_user_sessions AS session
                         JOIN quizora_users AS account ON account.id = session.user_id
-                        WHERE session.token_hash = %s AND session.expires_at > now()
+                        WHERE session.token_hash = %s
+                          AND session.expires_at > now()
+                          AND account.is_blocked = FALSE
                         """,
                         (token_hash,),
                     )
