@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.4.0"></script>
+<script src="/config.js?v=1.1.0"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.4.0").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.1.0").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -498,6 +498,25 @@
   @media (prefers-reduced-motion:reduce){.server-startup-spinner{animation:none}}
   .server-startup-card h2{margin:0 0 7px;font-size:18px;color:var(--ink)}
   .server-startup-card p{margin:0;color:var(--ink-2);font-size:13px}
+  .profile-dialog{
+    width:min(440px,calc(100% - 32px));max-width:440px;padding:0;
+    border:1px solid var(--line);border-radius:24px;
+    background:var(--surface);color:var(--ink);box-shadow:var(--shadow);
+  }
+  .profile-dialog::backdrop{background:rgba(28,22,32,.48);backdrop-filter:blur(4px)}
+  .profile-dialog-content{padding:24px}
+  .profile-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+  .profile-dialog-head h2{margin:0;font-size:21px}
+  .profile-dialog-kicker{margin:0 0 5px;color:var(--brand-700);font-size:11px;font-weight:800}
+  .profile-dialog-close{
+    width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:11px;
+    background:var(--surface-2);color:var(--ink);font-size:22px;cursor:pointer;
+  }
+  .profile-details{display:grid;gap:10px;margin:20px 0}
+  .profile-field{display:grid;gap:4px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+  .profile-field span{color:var(--muted);font-size:11px;font-weight:700}
+  .profile-field strong{overflow-wrap:anywhere;font-size:14px}
+  .profile-field.email strong{direction:ltr;text-align:right}
   .server-offline-card{
     width:min(440px,100%);padding:28px 24px;text-align:center;
     background:var(--surface);border:1px solid var(--line);border-radius:24px;
@@ -1136,11 +1155,34 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.4.0">v1.4.0</span>
+      <span class="brand-version" aria-label="الإصدار 1.1.0">v1.1.0</span>
     </div>
   </div>
-  <a class="btn secondary" href="/account.html">حساب المستخدم</a>
+  <button class="btn secondary" id="profileButton" type="button" hidden>الملف الشخصي</button>
 </header>
+
+<dialog class="profile-dialog" id="profileDialog" aria-labelledby="profileDialogTitle">
+  <div class="profile-dialog-content">
+    <div class="profile-dialog-head">
+      <div>
+        <p class="profile-dialog-kicker">حسابك في QUIZORA</p>
+        <h2 id="profileDialogTitle">الملف الشخصي</h2>
+      </div>
+      <button class="profile-dialog-close" id="closeProfileButton" type="button" aria-label="إغلاق">×</button>
+    </div>
+    <div class="profile-details">
+      <div class="profile-field">
+        <span>الاسم</span>
+        <strong id="profileName">—</strong>
+      </div>
+      <div class="profile-field email">
+        <span>البريد الإلكتروني</span>
+        <strong id="profileEmail">—</strong>
+      </div>
+    </div>
+    <button class="btn secondary" id="closeProfileFooter" type="button">إغلاق</button>
+  </div>
+</dialog>
 
 <main class="wrap">
 
@@ -1284,6 +1326,25 @@
     if (gate) gate.hidden = true;
   }
 
+  var profileButton = document.getElementById("profileButton");
+  var profileDialog = document.getElementById("profileDialog");
+  function showProfile(user){
+    document.getElementById("profileName").textContent = user.full_name || "غير محدد";
+    document.getElementById("profileEmail").textContent = user.email || "غير متوفر";
+    profileButton.hidden = false;
+  }
+  function closeProfile(){
+    if (profileDialog.open) profileDialog.close();
+  }
+  profileButton.addEventListener("click", function(){
+    profileDialog.showModal();
+  });
+  document.getElementById("closeProfileButton").addEventListener("click", closeProfile);
+  document.getElementById("closeProfileFooter").addEventListener("click", closeProfile);
+  profileDialog.addEventListener("click", function(event){
+    if (event.target === profileDialog) closeProfile();
+  });
+
   function redirectToAccount(){
     redirectingToAccount = true;
     var returnTo = location.pathname + location.search + location.hash;
@@ -1354,6 +1415,7 @@
                   redirectToAccount();
                   return;
                 }
+                showProfile(session.user);
                 finishStartupCheck(true);
               });
             });

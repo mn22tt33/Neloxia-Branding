@@ -82,6 +82,14 @@ class PostgresQueue:
                 ADD COLUMN IF NOT EXISTS owner_key TEXT
             """,
             """
+            ALTER TABLE quizora_operations
+                ADD COLUMN IF NOT EXISTS owner_name_ciphertext TEXT
+            """,
+            """
+            ALTER TABLE quizora_operations
+                ADD COLUMN IF NOT EXISTS owner_email_ciphertext TEXT
+            """,
+            """
             CREATE TABLE IF NOT EXISTS quizora_jobs (
                 id UUID PRIMARY KEY,
                 queue_order BIGSERIAL NOT NULL,
@@ -114,6 +122,8 @@ class PostgresQueue:
                 mode TEXT NOT NULL DEFAULT '',
                 detail TEXT NOT NULL DEFAULT '',
                 duration_seconds INTEGER NOT NULL DEFAULT 0,
+                user_name_ciphertext TEXT,
+                user_email_ciphertext TEXT,
                 solved_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """,
@@ -128,6 +138,14 @@ class PostgresQueue:
             """
             ALTER TABLE quizora_solved_accounts
                 ADD COLUMN IF NOT EXISTS duration_seconds INTEGER NOT NULL DEFAULT 0
+            """,
+            """
+            ALTER TABLE quizora_solved_accounts
+                ADD COLUMN IF NOT EXISTS user_name_ciphertext TEXT
+            """,
+            """
+            ALTER TABLE quizora_solved_accounts
+                ADD COLUMN IF NOT EXISTS user_email_ciphertext TEXT
             """,
             """
             CREATE TABLE IF NOT EXISTS quizora_metadata (
@@ -239,6 +257,37 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("PostgreSQL is not reachable.") from error
 
+    def get_site_enabled(self):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT value FROM quizora_metadata WHERE key = %s",
+                        ("site_enabled",),
+                    )
+                    row = cursor.fetchone()
+                    return True if row is None else bool(row["value"])
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not read the site availability setting.") from error
+
+    def set_site_enabled(self, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("Site availability must be a boolean.")
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO quizora_metadata (key, value)
+                        VALUES (%s, %s)
+                        ON CONFLICT (key)
+                        DO UPDATE SET value = EXCLUDED.value
+                        """,
+                        ("site_enabled", int(enabled)),
+                    )
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not save the site availability setting.") from error
+
     def try_acquire_worker_lock(self):
         try:
             connection = self._connect(autocommit=True)
@@ -310,8 +359,21 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not recover interrupted queue jobs.") from error
 
-    def enqueue(self, plan, accounts, max_active, client_id=None, owner_key=None):
+    def enqueue(
+        self,
+        plan,
+        accounts,
+        max_active,
+        client_id=None,
+        owner_key=None,
+        owner_name=None,
+        owner_email=None,
+    ):
         client_uuid = self._as_uuid(client_id) if client_id else uuid.uuid4()
+        owner_name = str(owner_name or "").strip()[:120]
+        owner_email = str(owner_email or "").strip()[:254]
+        owner_name_ciphertext = self._encrypt(owner_name) if owner_name else None
+        owner_email_ciphertext = self._encrypt(owner_email) if owner_email else None
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
@@ -376,10 +438,18 @@ class PostgresQueue:
                     cursor.execute(
                         """
                         INSERT INTO quizora_operations
-                            (id, client_id, owner_key, status, total_jobs)
-                        VALUES (%s, %s, %s, 'queued', %s)
+                            (id, client_id, owner_key, owner_name_ciphertext,
+                             owner_email_ciphertext, status, total_jobs)
+                        VALUES (%s, %s, %s, %s, %s, 'queued', %s)
                         """,
-                        (operation_id, client_uuid, owner_key, len(additions)),
+                        (
+                            operation_id,
+                            client_uuid,
+                            owner_key,
+                            owner_name_ciphertext,
+                            owner_email_ciphertext,
+                            len(additions),
+                        ),
                     )
                     inserted = 0
                     for position, (code, password, fingerprint, item) in enumerate(
@@ -599,10 +669,20 @@ class PostgresQueue:
                         if success:
                             cursor.execute(
                                 """
+                                SELECT owner_name_ciphertext, owner_email_ciphertext
+                                FROM quizora_operations
+                                WHERE id = %s
+                                """,
+                                (row["operation_id"],),
+                            )
+                            owner = cursor.fetchone() or {}
+                            cursor.execute(
+                                """
                                 INSERT INTO quizora_solved_accounts
                                     (job_id, code_ciphertext, mode, detail,
-                                     duration_seconds)
-                                VALUES (%s, %s, %s, %s, %s)
+                                     duration_seconds, user_name_ciphertext,
+                                     user_email_ciphertext)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
                                 ON CONFLICT (job_id) DO NOTHING
                                 """,
                                 (
@@ -611,6 +691,8 @@ class PostgresQueue:
                                     str(mode)[:120],
                                     str(detail)[:500],
                                     max(0, int(duration_seconds)),
+                                    owner.get("owner_name_ciphertext"),
+                                    owner.get("owner_email_ciphertext"),
                                 ),
                             )
                         self._refresh_operations(cursor, {row["operation_id"]})
@@ -875,7 +957,8 @@ class PostgresQueue:
                     cursor.execute(
                         """
                         SELECT job_id, code_ciphertext, mode, detail,
-                               duration_seconds, solved_at
+                               duration_seconds, user_name_ciphertext,
+                               user_email_ciphertext, solved_at
                         FROM quizora_solved_accounts
                         ORDER BY solved_at DESC, job_id
                         """
@@ -889,6 +972,16 @@ class PostgresQueue:
                     "code": self._decrypt(solved_row["code_ciphertext"]),
                     "mode": solved_row["mode"],
                     "detail": solved_row["detail"],
+                    "user_name": (
+                        self._decrypt(solved_row["user_name_ciphertext"])
+                        if solved_row["user_name_ciphertext"]
+                        else ""
+                    ),
+                    "user_email": (
+                        self._decrypt(solved_row["user_email_ciphertext"])
+                        if solved_row["user_email_ciphertext"]
+                        else ""
+                    ),
                     "duration_seconds": solved_row["duration_seconds"],
                     "solved_at": solved_row["solved_at"].isoformat(),
                 })
@@ -964,6 +1057,22 @@ class PostgresQueue:
                     WHERE job.operation_id = operation.id AND job.status = 'cancelled'
                 ) THEN 'cancelled'
                 ELSE 'completed'
+            END,
+            owner_name_ciphertext = CASE
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM quizora_jobs job
+                    WHERE job.operation_id = operation.id
+                      AND job.status IN ('queued', 'running')
+                ) THEN NULL
+                ELSE operation.owner_name_ciphertext
+            END,
+            owner_email_ciphertext = CASE
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM quizora_jobs job
+                    WHERE job.operation_id = operation.id
+                      AND job.status IN ('queued', 'running')
+                ) THEN NULL
+                ELSE operation.owner_email_ciphertext
             END
             WHERE operation.id = ANY(%s)
             """,

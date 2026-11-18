@@ -9,7 +9,7 @@ import secrets
 import uuid
 
 
-SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
+SESSION_TTL_SECONDS = 60 * 60 * 24 * 365 * 10
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 PASSWORD_HASH_ITERATIONS = 600_000
@@ -182,9 +182,14 @@ class PostgresAuthStore:
                 token_hash TEXT PRIMARY KEY,
                 user_id UUID NOT NULL REFERENCES quizora_users(id) ON DELETE CASCADE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                expires_at TIMESTAMPTZ NOT NULL,
+                expires_at TIMESTAMPTZ,
                 last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
+            """,
+            "ALTER TABLE quizora_user_sessions ALTER COLUMN expires_at DROP NOT NULL",
+            """
+            UPDATE quizora_user_sessions SET expires_at = NULL
+            WHERE expires_at > now()
             """,
             """
             CREATE INDEX IF NOT EXISTS quizora_user_sessions_expiry
@@ -522,9 +527,9 @@ class PostgresAuthStore:
                         """
                         INSERT INTO quizora_user_sessions
                             (token_hash, user_id, expires_at)
-                        VALUES (%s, %s, now() + (%s * interval '1 second'))
+                        VALUES (%s, %s, NULL)
                         """,
-                        (token_hash, user_id, SESSION_TTL_SECONDS),
+                        (token_hash, user_id),
                     )
             return token
         except self._psycopg.Error as error:
@@ -543,7 +548,7 @@ class PostgresAuthStore:
                         FROM quizora_user_sessions AS session
                         JOIN quizora_users AS account ON account.id = session.user_id
                         WHERE session.token_hash = %s
-                          AND session.expires_at > now()
+                          AND (session.expires_at IS NULL OR session.expires_at > now())
                           AND account.is_blocked = FALSE
                         """,
                         (token_hash,),
@@ -571,7 +576,10 @@ class PostgresAuthStore:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "DELETE FROM quizora_user_sessions WHERE expires_at <= now()"
+                        """
+                        DELETE FROM quizora_user_sessions
+                        WHERE expires_at IS NOT NULL AND expires_at <= now()
+                        """
                     )
                     cursor.execute(
                         """

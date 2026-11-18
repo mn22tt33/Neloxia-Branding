@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from http.cookiejar import CookieJar
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +19,11 @@ from cryptography.fernet import Fernet
 
 from backend import server
 from backend.queue_store import PostgresQueue
+
+
+class _QueueStoreStub:
+    def get_site_enabled(self):
+        return True
 
 
 class QueueStorageTests(unittest.TestCase):
@@ -40,6 +46,12 @@ class QueueStorageTests(unittest.TestCase):
 
     @contextmanager
     def _running_api(self):
+        original_queue_store = server._queue_store
+        if (
+            original_queue_store is not None
+            and not callable(getattr(original_queue_store, "get_site_enabled", None))
+        ):
+            server._queue_store = _QueueStoreStub()
         httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler())
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -49,6 +61,7 @@ class QueueStorageTests(unittest.TestCase):
             httpd.shutdown()
             httpd.server_close()
             thread.join(timeout=2)
+            server._queue_store = original_queue_store
 
     def test_worker_preflight_allows_ngrok_browser_bypass_header(self):
         with self._running_api() as base:
@@ -88,6 +101,8 @@ class QueueStorageTests(unittest.TestCase):
                 self.assertIn('id="solvedCard"', page)
                 self.assertIn('id="solvedDialog"', page)
                 self.assertIn('id="solvedEvents"', page)
+                self.assertIn('id="siteEnabled"', page)
+                self.assertIn('id="previewSiteButton"', page)
                 self.assertIn("[...events].reverse().forEach", page)
 
             with urllib.request.urlopen(base + "/api/admin/queue") as response:
@@ -105,6 +120,90 @@ class QueueStorageTests(unittest.TestCase):
                 urllib.request.urlopen(request)
             self.assertEqual(denied.exception.code, 403)
             denied.exception.close()
+
+    def test_site_maintenance_blocks_remote_visitors_but_allows_local_preview(self):
+        class FakeQueue:
+            enabled = False
+
+            def get_site_enabled(self):
+                return self.enabled
+
+            def set_site_enabled(self, enabled):
+                self.enabled = enabled
+
+        fake_queue = FakeQueue()
+        with patch.object(server, "_queue_store", fake_queue), self._running_api() as base:
+            with urllib.request.urlopen(base + "/api/admin/site-status") as response:
+                status = json.loads(response.read().decode("utf-8"))
+            self.assertFalse(status["enabled"])
+
+            remote_admin_request = urllib.request.Request(
+                base + "/api/admin/site-status",
+                headers={"CF-Connecting-IP": "203.0.113.7"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as remote_admin:
+                urllib.request.urlopen(remote_admin_request)
+            self.assertEqual(remote_admin.exception.code, 403)
+            remote_admin.exception.close()
+
+            request = urllib.request.Request(
+                base + "/api/admin/site-status",
+                data=b'{"enabled":true}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request) as response:
+                updated = json.loads(response.read().decode("utf-8"))
+            self.assertTrue(updated["enabled"])
+
+            with urllib.request.urlopen(base + "/") as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn("QUIZORA", response.read().decode("utf-8"))
+
+            fake_queue.enabled = False
+            remote_request = urllib.request.Request(
+                base + "/",
+                headers={"CF-Connecting-IP": "203.0.113.7"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as unavailable:
+                urllib.request.urlopen(remote_request)
+            self.assertEqual(unavailable.exception.code, 503)
+            self.assertIn(
+                "الموقع متوقف مؤقتًا",
+                unavailable.exception.read().decode("utf-8"),
+            )
+            unavailable.exception.close()
+
+            api_request = urllib.request.Request(
+                base + "/api/start",
+                data=b"{}",
+                headers={
+                    "Content-Type": "application/json",
+                    "CF-Connecting-IP": "203.0.113.7",
+                },
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as api_unavailable:
+                urllib.request.urlopen(api_request)
+            self.assertEqual(api_unavailable.exception.code, 503)
+            api_payload = json.loads(api_unavailable.exception.read().decode("utf-8"))
+            self.assertTrue(api_payload["maintenance"])
+            api_unavailable.exception.close()
+
+    def test_maintenance_control_is_unavailable_without_database(self):
+        with patch.object(server, "_queue_store", None), self._running_api() as base:
+            request = urllib.request.Request(
+                base + "/api/admin/site-status",
+                data=b'{"enabled":false}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as unavailable:
+                urllib.request.urlopen(request)
+            self.assertEqual(unavailable.exception.code, 503)
+            payload = json.loads(unavailable.exception.read().decode("utf-8"))
+            unavailable.exception.close()
+            self.assertIn("PostgreSQL", payload["message"])
 
     def test_admin_browser_setting_is_saved_and_returned(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -483,8 +582,25 @@ class QueueStorageTests(unittest.TestCase):
 
     def test_database_mode_delegates_enqueuing_without_local_workers(self):
         class FakeQueue:
-            def enqueue(self, plan, accounts, maximum, client_id):
-                self.request = (plan, accounts, maximum, client_id)
+            def enqueue(
+                self,
+                plan,
+                accounts,
+                maximum,
+                client_id,
+                owner_key,
+                owner_name,
+                owner_email,
+            ):
+                self.request = (
+                    plan,
+                    accounts,
+                    maximum,
+                    client_id,
+                    owner_key,
+                    owner_name,
+                    owner_email,
+                )
                 return 2, 0, "operation-id"
 
         fake_queue = FakeQueue()
@@ -496,12 +612,20 @@ class QueueStorageTests(unittest.TestCase):
                 [{"mode": "spx", "subject": "7", "detail": "SPX"}],
                 [("student-1", "password-1")],
                 "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "hashed-owner",
+                "Quizora User",
+                "user@example.test",
             )
 
         self.assertTrue(ok)
         self.assertIn("طابور الانتظار", message)
         self.assertEqual(fake_queue.request[2], server.MAX_ACCOUNTS)
         self.assertEqual(fake_queue.request[3], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        self.assertEqual(fake_queue.request[4:], (
+            "hashed-owner",
+            "Quizora User",
+            "user@example.test",
+        ))
         thread.assert_not_called()
 
     def test_queue_position_and_total_decrease_when_an_earlier_job_finishes(self):
@@ -662,21 +786,87 @@ class QueueStorageTests(unittest.TestCase):
         self.assertEqual(unpadded_queue._decrypt(encrypted), "existing-account-code")
         self.assertEqual(padded_queue._fingerprint_key, unpadded_queue._fingerprint_key)
 
-    def test_successful_database_job_persists_only_encrypted_account_code(self):
+    def test_enqueue_encrypts_owner_details_for_pending_jobs(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        cursor.rowcount = 1
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [{"total": 0}, None]
+
+        with patch.object(queue, "_connect", return_value=connection):
+            added, skipped, _ = queue.enqueue(
+                [{"mode": "spx", "detail": "SPX"}],
+                [("student-code", "platform-password")],
+                10,
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "hashed-owner",
+                "Quizora User",
+                "user@example.test",
+            )
+
+        self.assertEqual((added, skipped), (1, 0))
+        operation_insert = next(
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO quizora_operations" in call.args[0]
+        )
+        values = operation_insert.args[1]
+        self.assertEqual(values[2], "hashed-owner")
+        self.assertNotEqual(values[3], "Quizora User")
+        self.assertNotEqual(values[4], "user@example.test")
+        self.assertEqual(queue._decrypt(values[3]), "Quizora User")
+        self.assertEqual(queue._decrypt(values[4]), "user@example.test")
+
+    def test_site_availability_setting_defaults_to_enabled_and_persists(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [None, {"value": 0}]
+
+        with patch.object(queue, "_connect", return_value=connection):
+            self.assertTrue(queue.get_site_enabled())
+            queue.set_site_enabled(False)
+            self.assertFalse(queue.get_site_enabled())
+
+        save = next(
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO quizora_metadata" in call.args[0]
+            and call.args[1][0] == "site_enabled"
+        )
+        self.assertEqual(save.args[1], ("site_enabled", 0))
+
+    def test_successful_database_job_persists_encrypted_account_and_owner_details(self):
         queue = PostgresQueue(
             "postgresql://unused",
             Fernet.generate_key().decode("ascii"),
         )
         job_id = "123e4567-e89b-12d3-a456-426614174000"
         encrypted_code = queue._encrypt("solved-code")
+        encrypted_name = queue._encrypt("Quizora User")
+        encrypted_email = queue._encrypt("user@example.test")
         connection = MagicMock()
         connection.__enter__.return_value = connection
         cursor = MagicMock()
         connection.cursor.return_value.__enter__.return_value = cursor
-        cursor.fetchone.return_value = {
-            "operation_id": uuid.UUID("123e4567-e89b-12d3-a456-426614174001"),
-            "code_ciphertext": encrypted_code,
-        }
+        cursor.fetchone.side_effect = [
+            {
+                "operation_id": uuid.UUID("123e4567-e89b-12d3-a456-426614174001"),
+                "code_ciphertext": encrypted_code,
+            },
+            {
+                "owner_name_ciphertext": encrypted_name,
+                "owner_email_ciphertext": encrypted_email,
+            },
+        ]
 
         with patch.object(queue, "_connect", return_value=connection):
             queue.finish_job(
@@ -697,13 +887,54 @@ class QueueStorageTests(unittest.TestCase):
         self.assertEqual(len(inserts), 1)
         self.assertEqual(
             inserts[0].args[1],
-            (uuid.UUID(job_id), encrypted_code, "spx", "الثقافة المالية", 42),
+            (
+                uuid.UUID(job_id),
+                encrypted_code,
+                "spx",
+                "الثقافة المالية",
+                42,
+                encrypted_name,
+                encrypted_email,
+            ),
         )
+        self.assertEqual(queue._decrypt(inserts[0].args[1][5]), "Quizora User")
+        self.assertEqual(queue._decrypt(inserts[0].args[1][6]), "user@example.test")
         update = next(
             call for call in cursor.execute.call_args_list
             if "UPDATE quizora_jobs" in call.args[0]
         )
         self.assertIn("password_ciphertext = NULL", update.args[0])
+
+    def test_database_admin_payload_decrypts_solved_owner_details(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchall.side_effect = [
+            [],
+            [{
+                "job_id": uuid.UUID("123e4567-e89b-12d3-a456-426614174000"),
+                "code_ciphertext": queue._encrypt("solved-code"),
+                "mode": "spx",
+                "detail": "الثقافة المالية",
+                "duration_seconds": 42,
+                "user_name_ciphertext": queue._encrypt("Quizora User"),
+                "user_email_ciphertext": queue._encrypt("user@example.test"),
+                "solved_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            }],
+        ]
+
+        with patch.object(queue, "_connect", return_value=connection):
+            payload = queue.admin_queue_payload()
+
+        event = payload["solved_events"][0]
+        self.assertEqual(event["code"], "solved-code")
+        self.assertEqual(event["user_name"], "Quizora User")
+        self.assertEqual(event["user_email"], "user@example.test")
 
     def test_database_solved_history_reset_runs_only_once(self):
         queue = PostgresQueue(

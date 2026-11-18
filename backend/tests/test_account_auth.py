@@ -11,10 +11,16 @@ os.environ["QUIZORA_TEST_MODE"] = "1"
 
 from backend import server
 from backend.account_auth import (
+    SESSION_TTL_SECONDS,
     hash_password,
     verify_firebase_credential,
     verify_password,
 )
+
+
+class _QueueStoreStub:
+    def get_site_enabled(self):
+        return True
 
 
 class FirebaseAuthTests(unittest.TestCase):
@@ -28,10 +34,20 @@ class FirebaseAuthTests(unittest.TestCase):
 
     def test_versioned_config_route_serves_static_file(self):
         with self._running_api() as base:
-            with urllib.request.urlopen(base + "/config.js?v=1.3.0") as response:
+            with urllib.request.urlopen(base + "/config.js?v=1.1.0") as response:
                 body = response.read()
                 self.assertEqual(response.status, 200)
         self.assertIn(b"window.APP_CONFIG", body)
+
+    def test_account_page_shows_the_current_version(self):
+        with self._running_api() as base:
+            with urllib.request.urlopen(base + "/account.html") as response:
+                page = response.read().decode("utf-8")
+
+        self.assertIn('class="version-badge"', page)
+        self.assertIn("v1.1.0", page)
+        self.assertIn('id="continueToSite"', page)
+        self.assertNotIn('id="logout"', page)
 
     def test_app_page_redirects_to_login_without_a_session(self):
         auth_store = MagicMock()
@@ -81,7 +97,14 @@ class FirebaseAuthTests(unittest.TestCase):
             )
             with urllib.request.urlopen(request) as response:
                 self.assertEqual(response.status, 200)
-                self.assertIn(b"<title>QUIZORA</title>", response.read())
+                page = response.read()
+                self.assertIn(b"<title>QUIZORA</title>", page)
+                self.assertIn(b'id="profileButton"', page)
+                self.assertIn(b'id="profileDialog"', page)
+                self.assertIn(
+                    "Max-Age=%d" % SESSION_TTL_SECONDS,
+                    response.headers["Set-Cookie"],
+                )
 
     def test_app_page_fails_closed_when_authentication_is_not_configured(self):
         with (
@@ -313,9 +336,68 @@ class FirebaseAuthTests(unittest.TestCase):
         self.assertIn("HttpOnly", cookie)
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=None", cookie)
-        self.assertIn("Max-Age=2592000", cookie)
+        self.assertIn("Max-Age=%d" % SESSION_TTL_SECONDS, cookie)
         self.assertNotIn("s" * 43, json.dumps(payload))
         auth_store.find_firebase_user.assert_called_once()
+
+    def test_created_sessions_have_no_database_expiration(self):
+        store = object.__new__(server.PostgresAuthStore)
+        cursor = MagicMock()
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        store._connect = MagicMock(return_value=connection_context)
+
+        token = store.create_session("user-1")
+
+        query, parameters = cursor.execute.call_args.args
+        self.assertIn("VALUES (%s, %s, NULL)", query)
+        self.assertEqual(parameters[1], "user-1")
+        self.assertEqual(len(token), 43)
+
+    def test_session_schema_migration_preserves_existing_sessions(self):
+        store = object.__new__(server.PostgresAuthStore)
+        cursor = MagicMock()
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        store._connect = MagicMock(return_value=connection_context)
+
+        store.initialize()
+
+        statements = [call.args[0] for call in cursor.execute.call_args_list]
+        self.assertIn(
+            "ALTER TABLE quizora_user_sessions ALTER COLUMN expires_at DROP NOT NULL",
+            statements,
+        )
+        self.assertTrue(any(
+            "UPDATE quizora_user_sessions SET expires_at = NULL" in statement
+            and "WHERE expires_at > now()" in statement
+            for statement in statements
+        ))
+
+    def test_logout_endpoint_rejects_session_termination(self):
+        with (
+            patch.object(server, "_queue_store", _QueueStoreStub()),
+            self._running_api() as base,
+        ):
+            request = urllib.request.Request(
+                base + "/api/auth/logout",
+                data=b"{}",
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as rejected:
+                urllib.request.urlopen(request)
+            self.assertEqual(rejected.exception.code, 403)
+            self.assertNotIn("Set-Cookie", rejected.exception.headers)
+            rejected.exception.close()
 
     def test_blocked_firebase_account_cannot_start_a_session(self):
         auth_store = MagicMock()
@@ -740,6 +822,12 @@ class FirebaseAuthTests(unittest.TestCase):
 
         @contextmanager
         def running():
+            original_queue_store = server._queue_store
+            if (
+                original_queue_store is not None
+                and not callable(getattr(original_queue_store, "get_site_enabled", None))
+            ):
+                server._queue_store = _QueueStoreStub()
             httpd = server.ThreadingHTTPServer(
                 ("127.0.0.1", 0), server.make_handler()
             )
@@ -751,6 +839,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 httpd.shutdown()
                 httpd.server_close()
                 thread.join(timeout=2)
+                server._queue_store = original_queue_store
 
         return running()
 

@@ -82,6 +82,10 @@ ADMIN_PAGE = r"""<!doctype html>
       padding: 17px 20px; border: 1px solid var(--line); border-radius: 17px;
       background: linear-gradient(110deg, rgba(20, 36, 58, .92), rgba(13, 26, 43, .9));
     }
+    .site-actions { display: flex; align-items: center; gap: 12px; flex: none; }
+    .site-state { color: var(--teal); font-size: 11px; font-weight: 700; }
+    .site-state.is-disabled { color: var(--red); }
+    .site-preview { min-height: 38px; padding: 0 12px; white-space: nowrap; }
     .preference-title { margin: 0; font-size: 14px; font-weight: 800; }
     .preference-hint { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
     .preference-state { flex: none; min-width: 115px; color: var(--muted); font-size: 11px; }
@@ -188,6 +192,8 @@ ADMIN_PAGE = r"""<!doctype html>
     .solved-event-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
     .solved-event-code { direction: ltr; text-align: left; overflow-wrap: anywhere; color: #dce8f6; font-size: 14px; font-weight: 800; }
     .solved-event-detail { color: #b8c7d8; font-size: 12px; line-height: 1.6; text-align: left; }
+    .solved-event-owner { display: grid; gap: 4px; margin-top: 9px; color: #91a5bc; font-size: 11px; }
+    .solved-event-email { direction: ltr; text-align: right; overflow-wrap: anywhere; }
     .solved-event-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin-top: 9px; color: #91a5bc; font-size: 10px; }
     .solved-event-duration { color: var(--teal); font-weight: 700;
     }
@@ -261,6 +267,8 @@ ADMIN_PAGE = r"""<!doctype html>
       .stat-value { margin-top: 11px; font-size: 29px; }
       .preferences { padding: 14px; gap: 12px; }
       .preference-state { display: none; }
+      .site-actions { flex-wrap: wrap; justify-content: flex-start; }
+      .site-state { flex-basis: 100%; }
       .board-head { padding: 17px 15px; }
       .toolbar { flex-wrap: wrap; padding: 12px; }
       .search { flex-basis: 100%; }
@@ -311,6 +319,21 @@ ADMIN_PAGE = r"""<!doctype html>
       <div><p class="eyebrow">مركز المتابعة</p><h1>إدارة الطابور</h1><p class="intro">تابع الحسابات النشطة وابدأ أي حساب منتظر فورًا.</p></div>
       <div class="refresh-label" id="updated">جارٍ الاتصال بالخادم المحلي...</div>
     </section>
+
+      <section class="preferences" aria-labelledby="sitePreferenceTitle">
+        <div>
+          <h2 class="preference-title" id="sitePreferenceTitle">التحكم في إتاحة الموقع</h2>
+          <p class="preference-hint">عند الإيقاف تظهر صفحة الصيانة للزوار، بينما تظل المعاينة المحلية متاحة على هذا الجهاز.</p>
+        </div>
+        <div class="site-actions">
+          <span class="site-state" id="siteSettingState" aria-live="polite">جارٍ تحميل الحالة...</span>
+          <label class="switch" aria-label="إتاحة الموقع للزوار">
+            <input id="siteEnabled" type="checkbox" role="switch" disabled>
+            <span class="switch-track"></span>
+          </label>
+          <button class="refresh-button site-preview" id="previewSiteButton" type="button">عرض الموقع على جهازي</button>
+        </div>
+      </section>
 
     <section class="stats" aria-label="ملخص التشغيل">
       <article class="stat queue"><span class="stat-label">حسابات في الطابور</span><strong class="stat-value" id="queueCount">—</strong></article>
@@ -418,6 +441,7 @@ ADMIN_PAGE = r"""<!doctype html>
     const jobsRoot = document.getElementById("jobs");
     const errorBox = document.getElementById("error");
     const browserToggle = document.getElementById("browserVisible");
+    const siteToggle = document.getElementById("siteEnabled");
     const solvedDialog = document.getElementById("solvedDialog");
     const userRows = document.getElementById("userRows");
     const usersError = document.getElementById("usersError");
@@ -651,6 +675,11 @@ ADMIN_PAGE = r"""<!doctype html>
           addText(head, "span", "solved-event-code", event.code);
           addText(head, "span", "solved-event-detail", event.detail || event.mode || "حل");
           entry.appendChild(head);
+          const owner = document.createElement("div");
+          owner.className = "solved-event-owner";
+          addText(owner, "span", "", "الاسم: " + (event.user_name || "غير مسجل"));
+          addText(owner, "span", "solved-event-email", "البريد: " + (event.user_email || "غير متاح"));
+          entry.appendChild(owner);
           const meta = document.createElement("div");
           meta.className = "solved-event-meta";
           addText(meta, "span", "solved-event-duration", "مدة الحل: " + formatDuration(event.duration_seconds));
@@ -818,6 +847,55 @@ ADMIN_PAGE = r"""<!doctype html>
       }
     }
 
+    function renderSiteSetting(enabled) {
+      siteToggle.checked = enabled;
+      const state = document.getElementById("siteSettingState");
+      state.textContent = enabled
+        ? "الموقع متاح للزوار"
+        : "الموقع متوقف — تظهر صفحة الصيانة";
+      state.classList.toggle("is-disabled", !enabled);
+    }
+
+    async function loadSiteSetting() {
+      siteToggle.disabled = true;
+      try {
+        const response = await fetch("/api/admin/site-status", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر تحميل حالة الموقع.");
+        }
+        renderSiteSetting(data.enabled);
+        siteToggle.disabled = false;
+      } catch (error) {
+        document.getElementById("siteSettingState").textContent =
+          "تعذّر تحميل الحالة من قاعدة البيانات";
+        showToast(error.message || "تعذّر تحميل حالة الموقع.");
+      }
+    }
+
+    async function saveSiteSetting() {
+      const nextValue = siteToggle.checked;
+      siteToggle.disabled = true;
+      try {
+        const response = await fetch("/api/admin/site-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: nextValue })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر حفظ حالة الموقع.");
+        }
+        renderSiteSetting(data.enabled);
+        showToast(data.message);
+      } catch (error) {
+        siteToggle.checked = !nextValue;
+        showToast(error.message || "تعذّر حفظ حالة الموقع.");
+      } finally {
+        siteToggle.disabled = false;
+      }
+    }
+
     async function saveBrowserSetting() {
       const nextValue = browserToggle.checked;
       browserToggle.disabled = true;
@@ -865,9 +943,14 @@ ADMIN_PAGE = r"""<!doctype html>
     document.getElementById("solvedCard").addEventListener("click", showSolvedEvents);
     document.getElementById("closeSolvedDialog").addEventListener("click", () => solvedDialog.close());
     browserToggle.addEventListener("change", saveBrowserSetting);
+    siteToggle.addEventListener("change", saveSiteSetting);
+    document.getElementById("previewSiteButton").addEventListener("click", () => {
+      window.open("/", "_blank", "noopener");
+    });
 
     refresh();
     loadBrowserSetting();
+    loadSiteSetting();
     loadAdminIdentity();
     setInterval(refresh, 2000);
   </script>

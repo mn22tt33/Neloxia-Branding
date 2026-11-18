@@ -1021,18 +1021,26 @@ def _detail_for(job):
     return " + ".join(job.get("courses") or [])
 
 
-def _start(plan, accounts, client_id=None, owner_key=None):
+def _start(
+    plan,
+    accounts,
+    client_id=None,
+    owner_key=None,
+    owner_name=None,
+    owner_email=None,
+):
     global _accounts, _local_queue_sequence
     client_id = _normalize_client_id(client_id) or str(uuid.uuid4())
     if _queue_store:
-        if owner_key is None:
-            added, _, _ = _queue_store.enqueue(
-                plan, accounts, MAX_ACCOUNTS, client_id
-            )
-        else:
-            added, _, _ = _queue_store.enqueue(
-                plan, accounts, MAX_ACCOUNTS, client_id, owner_key
-            )
+        added, _, _ = _queue_store.enqueue(
+            plan,
+            accounts,
+            MAX_ACCOUNTS,
+            client_id,
+            owner_key,
+            owner_name,
+            owner_email,
+        )
         if added == 0:
             return False, "هذه العمليات موجودة بالفعل في طابور الانتظار أو قيد التشغيل."
         return True, "تم تسجيل %d عملية في طابور الانتظار؛ التنفيذ متسلسل." % added
@@ -1278,7 +1286,10 @@ def make_handler():
             session = self._cookie("quizora_session")
             if not _auth_store or not session:
                 return None
-            return _auth_store.get_session_user(session)
+            user = _auth_store.get_session_user(session)
+            if user:
+                self._set_cookie("quizora_session", session, SESSION_TTL_SECONDS)
+            return user
 
         def _require_api_user(self):
             if not AUTH_REQUIRED:
@@ -1515,17 +1526,20 @@ def make_handler():
                 "user": self._public_user(user),
             })
 
-        def _file(self, name, ctype):
+        def _file(self, name, ctype, status=200):
             try:
                 with open(os.path.join(APP_DIR, name), "rb") as f:
                     data = f.read()
             except Exception:
                 return False
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             basename = os.path.basename(name)
-            if basename == "sw.js":
+            if status != 200:
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Retry-After", "300")
+            elif basename == "sw.js":
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Service-Worker-Allowed", "/")
             elif basename == "progress.html":
@@ -1534,6 +1548,9 @@ def make_handler():
                 self.send_header("X-Content-Type-Options", "nosniff")
             elif basename in ("index.html", "manifest.json", "config.js"):
                 self.send_header("Cache-Control", "no-cache")
+            cookie = getattr(self, "_pending_cookie", None)
+            if cookie:
+                self.send_header("Set-Cookie", cookie)
             self.end_headers()
             self.wfile.write(data)
             return True
@@ -1586,6 +1603,42 @@ def make_handler():
             except AuthStoreError:
                 return False
             return bool(user and user.get("role") == "admin")
+
+        def _maintenance_gate(self):
+            if self._local_request_allowed():
+                return False
+            path = urlsplit(self.path).path
+            if path == "/api/health":
+                return False
+            if not _queue_store:
+                return False
+            try:
+                enabled = _queue_store.get_site_enabled()
+            except QueueStoreError as error:
+                _ORIG_STDOUT.write(
+                    "[site] تعذّر التحقق من حالة الإتاحة: %s\n" % error
+                )
+                enabled = False
+            if enabled:
+                return False
+
+            if path.startswith("/api/"):
+                self._json(503, {
+                    "ok": False,
+                    "maintenance": True,
+                    "message": "الموقع متوقف مؤقتًا للصيانة. حاول مرة أخرى لاحقًا.",
+                })
+            elif not self._file(
+                "frontend/maintenance.html",
+                "text/html; charset=utf-8",
+                status=503,
+            ):
+                self._json(503, {
+                    "ok": False,
+                    "maintenance": True,
+                    "message": "الموقع متوقف مؤقتًا للصيانة. حاول مرة أخرى لاحقًا.",
+                })
+            return True
 
         def _admin_users_payload(self, query_string):
             if not _auth_store or not self._auth_enabled():
@@ -1728,6 +1781,18 @@ def make_handler():
 
         def do_GET(self):
             parsed_path = urlsplit(self.path)
+            if (
+                parsed_path.path == "/admin"
+                or parsed_path.path == "/api/admin"
+                or parsed_path.path.startswith("/api/admin/")
+            ) and not self._admin_request_allowed():
+                self._json(403, {
+                    "ok": False,
+                    "error": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
+                })
+                return
+            if self._maintenance_gate():
+                return
             protected_page = {
                 "/": "frontend/index.html",
                 "/index.html": "frontend/index.html",
@@ -1742,16 +1807,6 @@ def make_handler():
                     return_to += "?" + parsed_path.query
                 if not self._require_page_user(return_to):
                     return
-            if (
-                parsed_path.path == "/admin"
-                or parsed_path.path == "/api/admin"
-                or parsed_path.path.startswith("/api/admin/")
-            ) and not self._admin_request_allowed():
-                self._json(403, {
-                    "ok": False,
-                    "error": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
-                })
-                return
             if parsed_path.path == "/progress":
                 if not self._local_request_allowed():
                     self._json(403, {"ok": False, "error": "صفحة المتابعة متاحة من الجهاز المحلي فقط."})
@@ -1787,6 +1842,24 @@ def make_handler():
                     "ok": True,
                     "browser_visible": _get_browser_visible(),
                 })
+                return
+            if parsed_path.path == "/api/admin/site-status":
+                if not _queue_store:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "التحكم في إتاحة الموقع يتطلب قاعدة بيانات PostgreSQL.",
+                    })
+                    return
+                try:
+                    self._json(200, {
+                        "ok": True,
+                        "enabled": _queue_store.get_site_enabled(),
+                    })
+                except QueueStoreError:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "تعذّر قراءة حالة الموقع من قاعدة البيانات.",
+                    })
                 return
             if parsed_path.path in STATIC_ROUTES:
                 name, ctype = STATIC_ROUTES[parsed_path.path]
@@ -1887,6 +1960,8 @@ def make_handler():
                     "message": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
                 })
                 return
+            if self._maintenance_gate():
+                return
             if route == "/api/auth/register":
                 self._json(404, {
                     "ok": False,
@@ -1906,18 +1981,10 @@ def make_handler():
                 self._admin_user_action()
                 return
             if route == "/api/auth/logout":
-                if not self._auth_mutation_allowed():
-                    self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
-                    return
-                token = self._cookie("quizora_session")
-                if _auth_store and token:
-                    try:
-                        _auth_store.revoke_session(token)
-                    except AuthStoreError:
-                        self._json(503, {"ok": False, "message": "تعذّر إنهاء الجلسة."})
-                        return
-                self._set_cookie("quizora_session", "", 0)
-                self._json(200, {"ok": True})
+                self._json(403, {
+                    "ok": False,
+                    "message": "تسجيل الخروج غير متاح؛ تظل جلستك محفوظة.",
+                })
                 return
             if urlsplit(self.path).path == "/api/admin/settings":
                 try:
@@ -1944,6 +2011,38 @@ def make_handler():
                     })
                 except OSError:
                     self._json(500, {"ok": False, "message": "تعذّر حفظ إعداد المتصفح محليًا."})
+                return
+            if route == "/api/admin/site-status":
+                try:
+                    data = self._read_json()
+                except (ValueError, json.JSONDecodeError):
+                    self._json(400, {"ok": False, "message": "حالة الموقع غير صالحة."})
+                    return
+                if not isinstance(data, dict) or type(data.get("enabled")) is not bool:
+                    self._json(400, {"ok": False, "message": "اختر حالة تشغيل صحيحة للموقع."})
+                    return
+                if not _queue_store:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "التحكم في إتاحة الموقع يتطلب قاعدة بيانات PostgreSQL.",
+                    })
+                    return
+                try:
+                    _queue_store.set_site_enabled(data["enabled"])
+                    self._json(200, {
+                        "ok": True,
+                        "enabled": _queue_store.get_site_enabled(),
+                        "message": (
+                            "تم تشغيل الموقع للزوار."
+                            if data["enabled"]
+                            else "تم إيقاف الموقع؛ ستظهر صفحة الصيانة للزوار."
+                        ),
+                    })
+                except QueueStoreError:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "تعذّر حفظ حالة الموقع في قاعدة البيانات.",
+                    })
                 return
             if urlsplit(self.path).path == "/api/admin/start-now":
                 try:
@@ -2024,7 +2123,12 @@ def make_handler():
                     _set_concurrency(data["concurrency"])
                 try:
                     ok, msg = _start(
-                        plan, accounts, client_id, self._owner_key(user)
+                        plan,
+                        accounts,
+                        client_id,
+                        self._owner_key(user),
+                        user.get("full_name") if user else None,
+                        user.get("email") if user else None,
                     )
                     self._json(200 if ok else 409, {
                         "ok": ok,
