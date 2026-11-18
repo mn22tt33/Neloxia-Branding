@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.0.9"></script>
+<script src="/config.js?v=1.1.0"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.0.9").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.1.0").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -1136,9 +1136,10 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.0.9">v1.0.9</span>
+      <span class="brand-version" aria-label="الإصدار 1.1.0">v1.1.0</span>
     </div>
   </div>
+  <a class="btn secondary" href="/account.html">حساب المستخدم</a>
 </header>
 
 <main class="wrap">
@@ -1283,7 +1284,7 @@
   }
 
   function apiFetch(path, options){
-    options = options || {};
+    options = Object.assign({}, options || {}, { credentials: "include" });
     if (
       API_BASE_URL !== location.origin &&
       window.APP_CONFIG &&
@@ -1322,7 +1323,30 @@
       })
       .then(function(payload){
         if (!payload || payload.ok !== true) throw new Error("الخادم غير جاهز.");
-        finishStartupCheck(true);
+        return apiFetch("/api/auth/status").then(function(authResponse){
+          if (authResponse.status === 404) {
+            finishStartupCheck(true);
+            return;
+          }
+          if (!authResponse.ok) throw new Error("تعذّر التحقق من تسجيل الدخول.");
+          return authResponse.json().then(function(authStatus){
+            if (!authStatus.enabled) {
+              finishStartupCheck(true);
+              return;
+            }
+            return apiFetch("/api/auth/me").then(function(userResponse){
+              if (userResponse.status === 401) {
+                var returnTo = location.pathname + location.search + location.hash;
+                location.replace(
+                  "/account.html?next=" + encodeURIComponent(returnTo || "/")
+                );
+                return;
+              }
+              if (!userResponse.ok) throw new Error("تعذّر التحقق من جلسة المستخدم.");
+              finishStartupCheck(true);
+            });
+          });
+        });
       })
       .catch(function(){
         finishStartupCheck(false);

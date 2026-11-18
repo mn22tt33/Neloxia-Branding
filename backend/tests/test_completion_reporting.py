@@ -1,8 +1,11 @@
 import io
+import os
 import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+os.environ["QUIZORA_TEST_MODE"] = "1"
 
 from backend import qureo_solver, server, spx_solver
 

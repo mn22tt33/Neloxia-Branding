@@ -1,6 +1,6 @@
 /* Service Worker — يخلي الأداة قابلة للتثبيت كتطبيق ويشتغل كغلاف سريع.
    البيانات الحساسة وطلبات /api لا تُخزَّن أبدًا. */
-const CACHE = "quizora-shell-v16";
+const CACHE = "quizora-shell-v17";
 const ASSETS = [
   "/",
   "/index.html",
@@ -38,6 +38,7 @@ self.addEventListener("fetch", event => {
 
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname === "/account" || url.pathname === "/account.html") return;
 
   event.respondWith((async () => {
     try {

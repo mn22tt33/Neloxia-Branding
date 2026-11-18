@@ -6,24 +6,38 @@
 من إعداد أحمد نادي.
 """
 import json
+import hashlib
 import ipaddress
 import os
+import re
+import secrets
 import sys
 import threading
 import time
 import uuid
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
+from dotenv import load_dotenv
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(BACKEND_DIR)
 DATA_DIR = os.path.join(BACKEND_DIR, "data")
+
+if os.environ.get("QUIZORA_TEST_MODE") != "1":
+    load_dotenv(os.path.join(APP_DIR, ".env"))
+
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 from queue_store import PostgresQueue, QueueCapacityError, QueueStoreError
 from admin_page import ADMIN_PAGE
+from account_auth import (
+    AuthStoreError,
+    PostgresAuthStore,
+    verify_google_credential,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -57,6 +71,25 @@ if DATABASE_URL and not APP_ENCRYPTION_KEY:
 _queue_store = (
     PostgresQueue(DATABASE_URL, APP_ENCRYPTION_KEY) if DATABASE_URL else None
 )
+_auth_store = PostgresAuthStore(DATABASE_URL) if DATABASE_URL else None
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+AUTH_REQUIRED = (
+    bool(GOOGLE_CLIENT_ID or ADMIN_EMAIL)
+    or os.environ.get("QUIZORA_REQUIRE_AUTH") == "1"
+)
+AUTH_DISABLED_MESSAGE = (
+    "تسجيل Google غير مفعّل؛ يلزم إعداد GOOGLE_CLIENT_ID وADMIN_EMAIL "
+    "وربط PostgreSQL أولًا."
+)
+COOKIE_SECURE = os.environ.get(
+    "QUIZORA_COOKIE_SECURE",
+    "1"
+    if os.environ.get("QUIZORA_REQUIRE_DATABASE") == "1"
+    or os.environ.get("RAILWAY_ENVIRONMENT")
+    or GOOGLE_CLIENT_ID
+    else "0",
+) == "1"
 _worker_shutdown = threading.Event()
 QUREO_BANK_PATH = os.path.join(DATA_DIR, "qureo_answers.json")
 PORTAL_LOGIN = "https://me-portal.qureo.education/oauth2/password-login"
@@ -82,6 +115,8 @@ if (
 STATIC_ROUTES = {
     "/": ("frontend/index.html", "text/html; charset=utf-8"),
     "/index.html": ("frontend/index.html", "text/html; charset=utf-8"),
+    "/account": ("frontend/account.html", "text/html; charset=utf-8"),
+    "/account.html": ("frontend/account.html", "text/html; charset=utf-8"),
     "/manifest.json": ("frontend/manifest.json", "application/manifest+json; charset=utf-8"),
     "/sw.js": ("frontend/sw.js", "application/javascript; charset=utf-8"),
     "/config.js": ("frontend/config.js", "application/javascript; charset=utf-8"),
@@ -833,11 +868,23 @@ def _allow_public_start(client_ip):
         return True, 0
 
 
-def _local_queue_metrics(accounts, client_id):
+def _local_queue_metrics(accounts, client_id, owner_key=None):
     active = [account for account in accounts if account["running"]]
+    owner_active = (
+        [
+            account for account in active
+            if account.get("_owner_key") == owner_key
+        ]
+        if owner_key
+        else active
+    )
     client_accounts = [
         account for account in accounts
-        if client_id is None or account.get("_client_id") == client_id
+        if (
+            account.get("_owner_key") == owner_key
+            if owner_key
+            else client_id is None or account.get("_client_id") == client_id
+        )
     ]
     client_active = [account for account in client_accounts if account["running"]]
     if any(account["phase"] == "جاري التشغيل..." for account in client_active):
@@ -847,7 +894,7 @@ def _local_queue_metrics(accounts, client_id):
     elif client_active:
         first_order = min(account.get("_queue_order", 0) for account in client_active)
         queue_ahead = sum(
-            1 for account in active
+            1 for account in owner_active
             if account.get("_queue_order", 0) < first_order
         )
         queue_position = queue_ahead + 1
@@ -862,7 +909,7 @@ def _local_queue_metrics(accounts, client_id):
         queue_position = None
     return {
         "running_count": len(client_active),
-        "queue_total": len(active),
+        "queue_total": len(owner_active) if owner_key else len(active),
         "queue_ahead": queue_ahead,
         "queue_position": queue_position,
         "queue_state": queue_state,
@@ -971,13 +1018,18 @@ def _detail_for(job):
     return " + ".join(job.get("courses") or [])
 
 
-def _start(plan, accounts, client_id=None):
+def _start(plan, accounts, client_id=None, owner_key=None):
     global _accounts, _local_queue_sequence
     client_id = _normalize_client_id(client_id) or str(uuid.uuid4())
     if _queue_store:
-        added, _, _ = _queue_store.enqueue(
-            plan, accounts, MAX_ACCOUNTS, client_id
-        )
+        if owner_key is None:
+            added, _, _ = _queue_store.enqueue(
+                plan, accounts, MAX_ACCOUNTS, client_id
+            )
+        else:
+            added, _, _ = _queue_store.enqueue(
+                plan, accounts, MAX_ACCOUNTS, client_id, owner_key
+            )
         if added == 0:
             return False, "هذه العمليات موجودة بالفعل في طابور الانتظار أو قيد التشغيل."
         return True, "تم تسجيل %d عملية في طابور الانتظار؛ التنفيذ متسلسل." % added
@@ -987,7 +1039,11 @@ def _start(plan, accounts, client_id=None):
     with _lock:
         _accounts[:] = [
             a for a in _accounts
-            if a.get("_client_id") != client_id or a["running"]
+            if (
+                a.get("_owner_key") != owner_key
+                or a.get("_client_id") != client_id
+                or a["running"]
+            )
         ]
 
     total_new = len(accounts) * len(plan)
@@ -1012,6 +1068,7 @@ def _start(plan, accounts, client_id=None):
             with _lock:
                 _local_queue_sequence += 1
                 acct["_client_id"] = client_id
+                acct["_owner_key"] = owner_key
                 acct["_queue_order"] = _local_queue_sequence
                 _accounts.append(acct)
             opts = {
@@ -1135,6 +1192,9 @@ def make_handler():
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self._cors_headers()
+            cookie = getattr(self, "_pending_cookie", None)
+            if cookie:
+                self.send_header("Set-Cookie", cookie)
             self.end_headers()
             self.wfile.write(body)
 
@@ -1148,7 +1208,153 @@ def make_handler():
                     "Access-Control-Allow-Headers",
                     "Content-Type, ngrok-skip-browser-warning",
                 )
+                self.send_header("Access-Control-Allow-Credentials", "true")
                 self.send_header("Access-Control-Max-Age", "600")
+
+        def _cookie(self, name):
+            try:
+                cookies = SimpleCookie(self.headers.get("Cookie", ""))
+                morsel = cookies.get(name)
+                return morsel.value if morsel else None
+            except Exception:
+                return None
+
+        def _set_cookie(self, name, value, max_age):
+            secure = COOKIE_SECURE or (
+                (self.headers.get("Origin") or "").lower().startswith("https://")
+            )
+            same_site = "None" if secure else "Lax"
+            cookie = (
+                "%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=%s"
+                % (name, value, max_age, same_site)
+            )
+            if secure:
+                cookie += "; Secure"
+            self._pending_cookie = cookie
+
+        def _owner_key(self, user=None):
+            if self._auth_enabled():
+                if user is None:
+                    return None
+                return hashlib.sha256(
+                    ("account:" + str(user["id"])).encode("utf-8")
+                ).hexdigest()
+            token = self._cookie("quizora_owner")
+            if not token or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+                token = secrets.token_urlsafe(32)
+                self._set_cookie("quizora_owner", token, 60 * 60 * 24 * 180)
+            return hashlib.sha256(
+                ("anonymous:" + token).encode("ascii")
+            ).hexdigest()
+
+        def _auth_mutation_allowed(self):
+            origin = self.headers.get("Origin")
+            if origin:
+                return origin.rstrip("/") in CORS_ALLOWED_ORIGINS
+            return self.headers.get("Sec-Fetch-Site", "").lower() != "cross-site"
+
+        @staticmethod
+        def _public_user(user):
+            return {
+                "id": str(user["id"]),
+                "full_name": user["full_name"],
+                "email": user["email"],
+                "role": user["role"],
+            }
+
+        @staticmethod
+        def _auth_enabled():
+            return bool(
+                GOOGLE_CLIENT_ID
+                and ADMIN_EMAIL
+                and _auth_store
+                and _queue_store
+            )
+
+        def _auth_session(self):
+            session = self._cookie("quizora_session")
+            if not _auth_store or not session:
+                return None
+            return _auth_store.get_session_user(session)
+
+        def _require_api_user(self):
+            if not AUTH_REQUIRED:
+                return True, None
+            if not self._auth_enabled():
+                self._json(503, {
+                    "ok": False,
+                    "message": AUTH_DISABLED_MESSAGE,
+                })
+                return False, None
+            try:
+                user = self._auth_session()
+            except AuthStoreError:
+                self._json(503, {
+                    "ok": False,
+                    "message": "تعذّر التحقق من جلسة المستخدم.",
+                })
+                return False, None
+            if not user:
+                self._json(401, {
+                    "ok": False,
+                    "message": "سجّل الدخول بحساب Google للمتابعة.",
+                })
+                return False, None
+            return True, user
+
+        def _google_login(self):
+            if not self._auth_mutation_allowed():
+                self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
+                return
+            if not self._auth_enabled():
+                self._json(503, {"ok": False, "message": AUTH_DISABLED_MESSAGE})
+                return
+            try:
+                data = self._read_json()
+                if not isinstance(data, dict):
+                    raise ValueError("invalid body")
+                credential = data.get("credential")
+                nonce = data.get("nonce")
+                if (
+                    not isinstance(credential, str)
+                    or not 100 <= len(credential) <= 16384
+                    or not isinstance(nonce, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", nonce)
+                ):
+                    raise ValueError("تعذّر قراءة استجابة Google؛ حاول مجددًا.")
+                identity = verify_google_credential(
+                    credential, GOOGLE_CLIENT_ID, nonce
+                )
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                self._json(400, {
+                    "ok": False,
+                    "message": str(error) or "تعذّر التحقق من حساب Google.",
+                })
+                return
+            try:
+                if not _auth_store.allow_login(
+                    identity["google_sub"], self._client_ip()
+                ):
+                    self._json(429, {
+                        "ok": False,
+                        "message": "محاولات تسجيل الدخول كثيرة؛ حاول لاحقًا.",
+                    })
+                    return
+                user = _auth_store.upsert_google_user(identity, ADMIN_EMAIL)
+                token = _auth_store.create_session(user["id"])
+            except AuthStoreError as error:
+                self._json(503, {
+                    "ok": False,
+                    "message": str(error) or "تعذّر تسجيل الدخول بحساب Google.",
+                })
+                return
+            self._set_cookie(
+                "quizora_session", token, 60 * 60 * 24 * 30
+            )
+            self._json(200, {
+                "ok": True,
+                "user": self._public_user(user),
+            })
 
         def _file(self, name, ctype):
             try:
@@ -1183,7 +1389,7 @@ def make_handler():
                     pass
             return remote_ip
 
-        def _admin_request_allowed(self):
+        def _local_request_allowed(self):
             try:
                 if not ipaddress.ip_address(self.client_address[0]).is_loopback:
                     return False
@@ -1209,14 +1415,33 @@ def make_handler():
             except ValueError:
                 return False
 
-        def _status_payload(self, client_id=None):
+        def _admin_request_allowed(self):
+            if not self._local_request_allowed():
+                return False
+            if not AUTH_REQUIRED:
+                return True
+            if not self._auth_enabled():
+                return False
+            try:
+                user = self._auth_session()
+            except AuthStoreError:
+                return False
+            return bool(user and user.get("role") == "admin")
+
+        def _status_payload(self, client_id=None, owner_key=None):
             if _queue_store:
-                return _queue_store.status_payload(STATUS_LOG_LINES, client_id)
+                return _queue_store.status_payload(
+                    STATUS_LOG_LINES, client_id, owner_key
+                )
             with _lock:
                 all_accounts = list(_accounts)
                 accs_for_client = [
                     a for a in all_accounts
-                    if client_id is None or a.get("_client_id") == client_id
+                    if (
+                        a.get("_owner_key") == owner_key
+                        if owner_key
+                        else client_id is None or a.get("_client_id") == client_id
+                    )
                 ]
                 accs = []
                 for a in accs_for_client:
@@ -1233,7 +1458,9 @@ def make_handler():
                         "progress": dict(a["progress"]),
                         "lines": list(a["lines"]),
                     })
-                queue_metrics = _local_queue_metrics(all_accounts, client_id)
+                queue_metrics = _local_queue_metrics(
+                    all_accounts, client_id, owner_key
+                )
             return {
                 "accounts": accs,
                 "running_count": queue_metrics["running_count"],
@@ -1249,8 +1476,18 @@ def make_handler():
 
         def do_GET(self):
             parsed_path = urlsplit(self.path)
+            if (
+                parsed_path.path == "/admin"
+                or parsed_path.path == "/api/admin"
+                or parsed_path.path.startswith("/api/admin/")
+            ) and not self._admin_request_allowed():
+                self._json(403, {
+                    "ok": False,
+                    "error": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
+                })
+                return
             if parsed_path.path == "/progress":
-                if not self._admin_request_allowed():
+                if not self._local_request_allowed():
                     self._json(403, {"ok": False, "error": "صفحة المتابعة متاحة من الجهاز المحلي فقط."})
                     return
                 query = parse_qs(parsed_path.query)
@@ -1261,9 +1498,6 @@ def make_handler():
                     self._json(404, {"error": "resource not found"})
                 return
             if parsed_path.path == "/admin":
-                if not self._admin_request_allowed():
-                    self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
-                    return
                 body = ADMIN_PAGE.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1274,18 +1508,12 @@ def make_handler():
                 self.wfile.write(body)
                 return
             if parsed_path.path == "/api/admin/queue":
-                if not self._admin_request_allowed():
-                    self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
-                    return
                 try:
                     self._json(200, _admin_queue_payload())
                 except QueueStoreError:
                     self._json(503, {"ok": False, "error": "تعذّر قراءة طابور الانتظار."})
                 return
             if parsed_path.path == "/api/admin/settings":
-                if not self._admin_request_allowed():
-                    self._json(403, {"ok": False, "error": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
-                    return
                 self._json(200, {
                     "ok": True,
                     "browser_visible": _get_browser_visible(),
@@ -1313,6 +1541,9 @@ def make_handler():
                     self._json(503, {"ok": False, "error": "قاعدة البيانات غير متاحة."})
                 return
             if parsed_path.path == "/api/status":
+                authenticated, user = self._require_api_user()
+                if not authenticated:
+                    return
                 query = parse_qs(parsed_path.query)
                 raw_client_id = query.get("client_id", [None])[0]
                 client_id = _normalize_client_id(raw_client_id)
@@ -1320,9 +1551,44 @@ def make_handler():
                     self._json(400, {"ok": False, "error": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
                 try:
-                    self._json(200, self._status_payload(client_id))
+                    self._json(
+                        200,
+                        self._status_payload(client_id, self._owner_key(user)),
+                    )
                 except QueueStoreError:
                     self._json(503, {"ok": False, "error": "تعذّر قراءة طابور الانتظار."})
+                return
+            if parsed_path.path == "/api/auth/status":
+                enabled = self._auth_enabled()
+                self._json(200, {
+                    "ok": True,
+                    "enabled": enabled,
+                    "required": AUTH_REQUIRED,
+                    "google_client_id": GOOGLE_CLIENT_ID if enabled else "",
+                    "message": (
+                        "" if enabled
+                        else AUTH_DISABLED_MESSAGE if AUTH_REQUIRED
+                        else "تسجيل الدخول متاح عند إعداد Google OAuth."
+                    ),
+                })
+                return
+            if parsed_path.path == "/api/auth/me":
+                if not self._auth_enabled():
+                    self._json(503, {
+                        "ok": False,
+                        "enabled": False,
+                        "message": AUTH_DISABLED_MESSAGE,
+                    })
+                    return
+                try:
+                    user = self._auth_session()
+                except AuthStoreError:
+                    self._json(503, {"ok": False, "message": "تعذّر قراءة الجلسة."})
+                    return
+                self._json(
+                    200,
+                    {"ok": True, "user": self._public_user(user) if user else None},
+                )
                 return
             if self.path == "/api/game_results":
                 self._json(403, {"ok": False, "error": "هذه البيانات غير متاحة عبر الخدمة العامة."})
@@ -1343,10 +1609,37 @@ def make_handler():
             return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
 
         def do_POST(self):
-            if urlsplit(self.path).path == "/api/admin/settings":
-                if not self._admin_request_allowed():
-                    self._json(403, {"ok": False, "message": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
+            route = urlsplit(self.path).path
+            if (
+                route == "/api/admin"
+                or route.startswith("/api/admin/")
+            ) and not self._admin_request_allowed():
+                self._json(403, {
+                    "ok": False,
+                    "message": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
+                })
+                return
+            if route == "/api/auth/register":
+                self._json(404, {"ok": False, "message": "استخدم زر تسجيل الدخول بحساب Google."})
+                return
+            if route == "/api/auth/google/login":
+                self._google_login()
+                return
+            if route == "/api/auth/logout":
+                if not self._auth_mutation_allowed():
+                    self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
                     return
+                token = self._cookie("quizora_session")
+                if _auth_store and token:
+                    try:
+                        _auth_store.revoke_session(token)
+                    except AuthStoreError:
+                        self._json(503, {"ok": False, "message": "تعذّر إنهاء الجلسة."})
+                        return
+                self._set_cookie("quizora_session", "", 0)
+                self._json(200, {"ok": True})
+                return
+            if urlsplit(self.path).path == "/api/admin/settings":
                 try:
                     data = self._read_json()
                 except (ValueError, json.JSONDecodeError):
@@ -1373,9 +1666,6 @@ def make_handler():
                     self._json(500, {"ok": False, "message": "تعذّر حفظ إعداد المتصفح محليًا."})
                 return
             if urlsplit(self.path).path == "/api/admin/start-now":
-                if not self._admin_request_allowed():
-                    self._json(403, {"ok": False, "message": "لوحة الإدارة متاحة من الجهاز المحلي فقط."})
-                    return
                 try:
                     data = self._read_json()
                     job_id = str(uuid.UUID(str(data.get("id") or "")))
@@ -1391,6 +1681,9 @@ def make_handler():
                     self._json(500, {"ok": False, "message": "تعذّر إنشاء عملية الحل."})
                 return
             if self.path == "/api/start":
+                authenticated, user = self._require_api_user()
+                if not authenticated:
+                    return
                 try:
                     data = self._read_json()
                 except Exception:
@@ -1450,7 +1743,9 @@ def make_handler():
                 if "concurrency" in data:
                     _set_concurrency(data["concurrency"])
                 try:
-                    ok, msg = _start(plan, accounts, client_id)
+                    ok, msg = _start(
+                        plan, accounts, client_id, self._owner_key(user)
+                    )
                     self._json(200 if ok else 409, {
                         "ok": ok,
                         "message": msg,
@@ -1471,6 +1766,9 @@ def make_handler():
                 })
                 return
             if self.path == "/api/stop":
+                authenticated, user = self._require_api_user()
+                if not authenticated:
+                    return
                 try:
                     data = self._read_json()
                 except Exception:
@@ -1481,11 +1779,13 @@ def make_handler():
                 if not client_id:
                     self._json(400, {"ok": False, "message": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
+                owner_key = self._owner_key(user)
                 if _queue_store:
                     try:
                         queued, running = _queue_store.request_stop(
                             str(code_to_stop).strip() if code_to_stop else None,
                             client_id,
+                            owner_key,
                         )
                     except QueueStoreError:
                         self._json(503, {
@@ -1493,8 +1793,6 @@ def make_handler():
                             "message": "تعذّر تحديث حالة طابور الانتظار.",
                         })
                         return
-                    if running:
-                        _stop.set()
                     if not queued and not running:
                         message = "لا توجد عملية مطابقة قيد الانتظار أو التشغيل."
                     elif code_to_stop:
@@ -1515,7 +1813,8 @@ def make_handler():
                             if (
                                 a["code"] == str(code_to_stop)
                                 and a["running"]
-                                and (client_id is None or a.get("_client_id") == client_id)
+                                and a.get("_client_id") == client_id
+                                and a.get("_owner_key") == owner_key
                             ):
                                 if "_stop_event" in a:
                                     a["_stop_event"].set()
@@ -1529,16 +1828,18 @@ def make_handler():
                     for a in _accounts:
                         if (
                             a["running"]
-                            and (client_id is None or a.get("_client_id") == client_id)
+                            and a.get("_client_id") == client_id
+                            and a.get("_owner_key") == owner_key
                             and "_stop_event" in a
                         ):
                             a["_stop_event"].set()
-                if client_id is None:
-                    _stop.set()
                 self._json(200, {"ok": True, "message": "جارٍ إيقاف جميع العمليات..."})
                 return
 
             if self.path == "/api/clear_finished":
+                authenticated, user = self._require_api_user()
+                if not authenticated:
+                    return
                 try:
                     data = self._read_json()
                 except Exception:
@@ -1548,9 +1849,10 @@ def make_handler():
                 if not client_id:
                     self._json(400, {"ok": False, "message": "معرّف الجلسة مطلوب أو غير صالح."})
                     return
+                owner_key = self._owner_key(user)
                 if _queue_store:
                     try:
-                        deleted = _queue_store.clear_finished(client_id)
+                        deleted = _queue_store.clear_finished(client_id, owner_key)
                         self._json(200, {
                             "ok": True,
                             "message": "تمت أرشفة %d عملية مكتملة." % deleted,
@@ -1565,8 +1867,8 @@ def make_handler():
                     _accounts[:] = [
                         a for a in _accounts
                         if a["running"] or (
-                            client_id is not None
-                            and a.get("_client_id") != client_id
+                            a.get("_client_id") != client_id
+                            or a.get("_owner_key") != owner_key
                         )
                     ]
                 self._json(200, {"ok": True, "message": "تم مسح العمليات المكتملة."})
@@ -1582,8 +1884,13 @@ def main():
     if _queue_store:
         try:
             _queue_store.initialize()
+            _auth_store.initialize()
+            _auth_store.cleanup_expired()
         except QueueStoreError as error:
             _ORIG_STDOUT.write("[app] تعذّر تجهيز قاعدة البيانات: %s\n" % error)
+            raise
+        except AuthStoreError as error:
+            _ORIG_STDOUT.write("[app] تعذّر تجهيز حسابات المستخدمين: %s\n" % error)
             raise
         threading.Thread(
             target=_database_worker_loop,

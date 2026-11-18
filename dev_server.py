@@ -23,6 +23,15 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
         url = API_TARGET + self.path
         body = None
         headers = {}
+        cookies = self.headers.get("Cookie")
+        if cookies:
+            allowed = []
+            for entry in cookies.split(";"):
+                name, separator, value = entry.strip().partition("=")
+                if separator and name in ("quizora_owner", "quizora_session"):
+                    allowed.append(name + "=" + value)
+            if allowed:
+                headers["Cookie"] = "; ".join(allowed)
         if method == "POST":
             length = int(self.headers.get("Content-Length", 0) or 0)
             body = self.rfile.read(length) if length else None
@@ -39,6 +48,8 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
                 val = resp.headers.get(key)
                 if val:
                     self.send_header(key, val)
+            for val in resp.headers.get_all("Set-Cookie", []):
+                self.send_header("Set-Cookie", val)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -48,6 +59,8 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(e.code)
             ct = e.headers.get("Content-Type", "application/json")
             self.send_header("Content-Type", ct)
+            for val in e.headers.get_all("Set-Cookie", []):
+                self.send_header("Set-Cookie", val)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)

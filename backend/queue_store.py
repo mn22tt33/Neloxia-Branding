@@ -65,6 +65,7 @@ class PostgresQueue:
             CREATE TABLE IF NOT EXISTS quizora_operations (
                 id UUID PRIMARY KEY,
                 client_id UUID,
+                owner_key TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 status TEXT NOT NULL,
                 total_jobs INTEGER NOT NULL DEFAULT 0
@@ -73,6 +74,10 @@ class PostgresQueue:
             """
             ALTER TABLE quizora_operations
                 ADD COLUMN IF NOT EXISTS client_id UUID
+            """,
+            """
+            ALTER TABLE quizora_operations
+                ADD COLUMN IF NOT EXISTS owner_key TEXT
             """,
             """
             CREATE TABLE IF NOT EXISTS quizora_jobs (
@@ -164,6 +169,10 @@ class PostgresQueue:
             """
             CREATE INDEX IF NOT EXISTS quizora_operations_client
                 ON quizora_operations (client_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS quizora_operations_owner
+                ON quizora_operations (owner_key)
             """,
             """
             CREATE UNIQUE INDEX IF NOT EXISTS quizora_jobs_account_fingerprint
@@ -299,7 +308,7 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not recover interrupted queue jobs.") from error
 
-    def enqueue(self, plan, accounts, max_active, client_id=None):
+    def enqueue(self, plan, accounts, max_active, client_id=None, owner_key=None):
         client_uuid = self._as_uuid(client_id) if client_id else uuid.uuid4()
         try:
             with self._connect() as connection:
@@ -307,17 +316,23 @@ class PostgresQueue:
                     cursor.execute(
                         "SELECT pg_advisory_xact_lock(%s)", (SUBMISSION_LOCK_ID,)
                     )
+                    if owner_key:
+                        owner_filter = "owner_key = %s"
+                        owner_params = (owner_key,)
+                    else:
+                        owner_filter = "client_id = %s"
+                        owner_params = (client_uuid,)
                     cursor.execute(
-                        """
+                        f"""
                         UPDATE quizora_jobs
                         SET archived = TRUE
                         WHERE operation_id IN (
-                            SELECT id FROM quizora_operations WHERE client_id = %s
+                            SELECT id FROM quizora_operations WHERE {owner_filter}
                         )
                           AND status IN ('succeeded', 'failed', 'cancelled')
                           AND archived = FALSE
                         """,
-                        (client_uuid,),
+                        owner_params,
                     )
                     cursor.execute(
                         """
@@ -358,10 +373,11 @@ class PostgresQueue:
                     operation_id = uuid.uuid4()
                     cursor.execute(
                         """
-                        INSERT INTO quizora_operations (id, client_id, status, total_jobs)
-                        VALUES (%s, %s, 'queued', %s)
+                        INSERT INTO quizora_operations
+                            (id, client_id, owner_key, status, total_jobs)
+                        VALUES (%s, %s, %s, 'queued', %s)
                         """,
-                        (operation_id, client_uuid, len(additions)),
+                        (operation_id, client_uuid, owner_key, len(additions)),
                     )
                     inserted = 0
                     for position, (code, password, fingerprint, item) in enumerate(
@@ -599,12 +615,15 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not persist the queue job result.") from error
 
-    def request_stop(self, code=None, client_id=None):
+    def request_stop(self, code=None, client_id=None, owner_key=None):
         fingerprint = self._fingerprint(code) if code else None
         client_uuid = self._as_uuid(client_id) if client_id else None
         filters = []
         params = []
-        if client_uuid:
+        if owner_key:
+            filters.append(" AND operation.owner_key = %s")
+            params.append(owner_key)
+        elif client_uuid:
             filters.append(" AND operation.client_id = %s")
             params.append(client_uuid)
         if fingerprint:
@@ -651,12 +670,25 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not stop the requested queue jobs.") from error
 
-    def clear_finished(self, client_id=None):
+    def clear_finished(self, client_id=None, owner_key=None):
         client_uuid = self._as_uuid(client_id) if client_id else None
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
-                    if client_uuid:
+                    if owner_key:
+                        cursor.execute(
+                            """
+                            UPDATE quizora_jobs AS job
+                            SET archived = TRUE
+                            FROM quizora_operations AS operation
+                            WHERE job.operation_id = operation.id
+                              AND job.status IN ('succeeded', 'failed', 'cancelled')
+                              AND job.archived = FALSE
+                              AND operation.owner_key = %s
+                            """,
+                            (owner_key,),
+                        )
+                    elif client_uuid:
                         cursor.execute(
                             """
                             UPDATE quizora_jobs AS job
@@ -683,12 +715,14 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not clear completed queue jobs.") from error
 
-    def status_payload(self, log_limit, client_id=None):
+    def status_payload(self, log_limit, client_id=None, owner_key=None):
         client_uuid = self._as_uuid(client_id) if client_id else None
-        owner_filter = (
-            " AND operation.client_id = %s" if client_uuid else ""
-        )
-        owner_params = (client_uuid,) if client_uuid else ()
+        if owner_key:
+            owner_filter = " AND operation.owner_key = %s"
+            owner_params = (owner_key,)
+        else:
+            owner_filter = " AND operation.client_id = %s" if client_uuid else ""
+            owner_params = (client_uuid,) if client_uuid else ()
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
@@ -751,12 +785,15 @@ class PostgresQueue:
                             })
 
                     cursor.execute(
-                        """
+                        f"""
                         SELECT count(*) AS total,
-                               count(*) FILTER (WHERE status = 'running') AS running
-                        FROM quizora_jobs
-                        WHERE status IN ('queued', 'running')
-                        """
+                               count(*) FILTER (WHERE job.status = 'running') AS running
+                        FROM quizora_jobs AS job
+                        JOIN quizora_operations AS operation
+                          ON operation.id = job.operation_id
+                        WHERE job.status IN ('queued', 'running'){owner_filter}
+                        """,
+                        owner_params,
                     )
                     counts = cursor.fetchone()
                     client_running_count = sum(
@@ -770,13 +807,15 @@ class PostgresQueue:
                         queue_position = 1
                     elif active:
                         cursor.execute(
-                            """
+                            f"""
                             SELECT count(*) AS ahead
-                            FROM quizora_jobs
-                            WHERE status IN ('queued', 'running')
-                              AND queue_order < %s
+                            FROM quizora_jobs AS job
+                            JOIN quizora_operations AS operation
+                              ON operation.id = job.operation_id
+                            WHERE job.status IN ('queued', 'running')
+                              AND job.queue_order < %s{owner_filter}
                             """,
-                            (active[0]["queue_order"],),
+                            (active[0]["queue_order"],) + owner_params,
                         )
                         queue_ahead = cursor.fetchone()["ahead"]
                         queue_position = queue_ahead + 1

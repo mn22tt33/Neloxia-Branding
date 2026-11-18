@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#493849">
+  <title>حساب QUIZORA</title>
+  <style>
+    :root{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#302b31;background:#f3efe9}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;padding:24px;display:grid;place-items:center}
+    main{width:min(100%,440px);padding:30px;background:#fffcf8;border:1px solid #e6ded9;border-radius:22px;box-shadow:0 20px 50px #3027351f;text-align:center}
+    .mark{width:60px;height:60px;margin:0 auto 15px;display:grid;place-items:center;border-radius:18px;background:#493849;color:#fff;font-size:23px;font-weight:900}
+    h1{margin:0;font-size:24px}p{color:#706972;line-height:1.8}
+    .notice{margin:16px 0;padding:12px;border-radius:12px;background:#f6ebdd;color:#805832;font-size:13px}
+    #googleButton{display:flex;justify-content:center;min-height:44px;margin:20px 0}
+    #googleButton[hidden]{display:none}
+    #message{min-height:1.5em;color:#9b4e56;font-size:13px}
+    #userCard{padding:14px;border:1px solid #e6ded9;border-radius:13px;background:#faf6f1}
+    #userCard[hidden]{display:none}
+    button,.link{display:inline-flex;justify-content:center;align-items:center;min-height:42px;padding:10px 16px;border:0;border-radius:11px;background:#493849;color:#fff;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .link{margin-top:16px;background:transparent;color:#705a72}
+    @media(max-width:480px){body{padding:14px}main{padding:24px 18px}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="mark" aria-hidden="true">Q</div>
+  <h1>حساب QUIZORA</h1>
+  <p>سجّل الدخول أو أنشئ حسابك باختيار حساب Google الموجود على جهازك.</p>
+  <div id="availability" class="notice" role="status">جارٍ التحقق من إعداد تسجيل الدخول…</div>
+  <div id="googleButton" hidden></div>
+  <p id="message" aria-live="polite"></p>
+  <section id="userCard" hidden>
+    <p id="currentUser"></p>
+    <button id="logout" type="button">تسجيل الخروج</button>
+  </section>
+  <a class="link" href="/">العودة إلى QUIZORA</a>
+</main>
+<script src="/config.js"></script>
+<script>
+  (function () {
+    "use strict";
+    var config = window.APP_CONFIG || {};
+    var base = (config.apiBaseUrl || "").replace(/\/+$/, "");
+    var message = document.getElementById("message");
+    var availability = document.getElementById("availability");
+    var button = document.getElementById("googleButton");
+    var userCard = document.getElementById("userCard");
+    var next = new URLSearchParams(location.search).get("next") || "/";
+    if (next.charAt(0) !== "/" || next.indexOf("//") === 0) next = "/";
+
+    function api(path, method, data) {
+      return fetch(base + path, {
+        method: method || "GET",
+        credentials: "include",
+        cache: "no-store",
+        headers: data ? {"Content-Type": "application/json"} : {},
+        body: data ? JSON.stringify(data) : undefined
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (payload) {
+          if (!response.ok) throw new Error(payload.message || "تعذّر إتمام الطلب.");
+          return payload;
+        });
+      });
+    }
+
+    function randomNonce() {
+      var bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      return Array.prototype.map.call(bytes, function (byte) {
+        return byte.toString(16).padStart(2, "0");
+      }).join("");
+    }
+
+    function showUser(user) {
+      if (!user) return;
+      document.getElementById("currentUser").textContent =
+        user.full_name + " — " + user.email;
+      userCard.hidden = false;
+      button.hidden = true;
+    }
+
+    function loadGoogle(clientId) {
+      var script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.onload = function () {
+        var nonce = randomNonce();
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: function (response) {
+            button.hidden = true;
+            message.textContent = "جارٍ التحقق من حساب Google…";
+            api("/api/auth/google/login", "POST", {
+              credential: response.credential,
+              nonce: nonce
+            }).then(function () {
+              location.replace(next);
+            }).catch(function (error) {
+              message.textContent = error.message;
+              button.hidden = false;
+            });
+          },
+          nonce: nonce,
+          auto_select: false,
+          ux_mode: "popup"
+        });
+        google.accounts.id.renderButton(button, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          text: "continue_with",
+          shape: "rectangular",
+          locale: "ar",
+          width: Math.min(320, Math.max(240, mainWidth()))
+        });
+        button.hidden = false;
+      };
+      script.onerror = function () {
+        availability.textContent = "تعذّر تحميل تسجيل الدخول من Google. تحقق من الاتصال بالإنترنت.";
+      };
+      document.head.appendChild(script);
+    }
+
+    function mainWidth() {
+      return document.querySelector("main").clientWidth - 36;
+    }
+
+    document.getElementById("logout").addEventListener("click", function () {
+      api("/api/auth/logout", "POST", {}).then(function () {
+        userCard.hidden = true;
+        message.textContent = "تم تسجيل الخروج.";
+        api("/api/auth/status").then(function (status) {
+          if (status.enabled) loadGoogle(status.google_client_id);
+        });
+      }).catch(function (error) {
+        message.textContent = error.message;
+      });
+    });
+
+    api("/api/auth/status").then(function (status) {
+      if (!status.enabled) {
+        availability.textContent = status.message || "تسجيل الدخول غير مفعّل حاليًا.";
+        return;
+      }
+      availability.textContent = "تسجيل آمن باستخدام Google.";
+      api("/api/auth/me").then(function (result) {
+        if (result.user) {
+          showUser(result.user);
+        } else {
+          loadGoogle(status.google_client_id);
+        }
+      }).catch(function () {
+        loadGoogle(status.google_client_id);
+      });
+    }).catch(function () {
+      availability.textContent = "تعذّر الاتصال بخدمة الحسابات.";
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import tempfile
@@ -8,7 +9,10 @@ import urllib.error
 import urllib.request
 import uuid
 from contextlib import contextmanager
+from http.cookiejar import CookieJar
 from unittest.mock import MagicMock, patch
+
+os.environ["QUIZORA_TEST_MODE"] = "1"
 
 from cryptography.fernet import Fernet
 
@@ -61,6 +65,10 @@ class QueueStorageTests(unittest.TestCase):
                 self.assertEqual(
                     response.headers.get("Access-Control-Allow-Origin"),
                     "https://quizora.movb.workers.dev",
+                )
+                self.assertEqual(
+                    response.headers.get("Access-Control-Allow-Credentials"),
+                    "true",
                 )
                 allowed_headers = {
                     value.strip().lower()
@@ -558,45 +566,40 @@ class QueueStorageTests(unittest.TestCase):
 
     def test_public_status_only_returns_the_requested_session(self):
         first_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-        second_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-        accounts = [
-            {
-                "id": "first",
-                "code": "student-first",
-                "mode": "spx",
-                "detail": "test",
-                "running": False,
-                "finished": True,
-                "success": True,
-                "message": "",
-                "phase": "done",
-                "progress": {},
-                "lines": [],
-                "_client_id": first_id,
-            },
-            {
-                "id": "second",
-                "code": "student-second",
-                "mode": "spx",
-                "detail": "test",
-                "running": False,
-                "finished": True,
-                "success": True,
-                "message": "",
-                "phase": "done",
-                "progress": {},
-                "lines": [],
-                "_client_id": second_id,
-            },
-        ]
+        accounts = []
         with (
             patch.object(server, "_accounts", accounts),
             patch.object(server, "_queue_store", None),
             self._running_api() as base,
         ):
-            with urllib.request.urlopen(
-                base + "/api/status?client_id=" + first_id
-            ) as response:
+            cookie_jar = CookieJar()
+            client = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(cookie_jar)
+            )
+            with client.open(base + "/api/status?client_id=" + first_id) as response:
+                token = next(
+                    cookie.value for cookie in cookie_jar
+                    if cookie.name == "quizora_owner"
+                )
+                owner_key = hashlib.sha256(
+                    ("anonymous:" + token).encode("ascii")
+                ).hexdigest()
+                accounts.append({
+                    "id": "first",
+                    "code": "student-first",
+                    "mode": "spx",
+                    "detail": "test",
+                    "running": False,
+                    "finished": True,
+                    "success": True,
+                    "message": "",
+                    "phase": "done",
+                    "progress": {},
+                    "lines": [],
+                    "_client_id": first_id,
+                    "_owner_key": owner_key,
+                })
+            with client.open(base + "/api/status?client_id=" + first_id) as response:
                 payload = json.loads(response.read().decode("utf-8"))
 
         self.assertEqual([account["code"] for account in payload["accounts"]], ["student-first"])
