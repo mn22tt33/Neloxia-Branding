@@ -1627,7 +1627,15 @@ def make_handler():
 
         def do_GET(self):
             parsed_path = urlsplit(self.path)
-            if AUTH_REQUIRED and parsed_path.path in ("/", "/index.html", "/progress"):
+            protected_page = {
+                "/": "frontend/index.html",
+                "/index.html": "frontend/index.html",
+                "/progress": "frontend/progress.html",
+            }.get(parsed_path.path)
+            if AUTH_REQUIRED and protected_page:
+                if not os.path.isfile(os.path.join(APP_DIR, protected_page)):
+                    self._json(404, {"error": "frontend is hosted separately"})
+                    return
                 return_to = parsed_path.path
                 if parsed_path.query:
                     return_to += "?" + parsed_path.query

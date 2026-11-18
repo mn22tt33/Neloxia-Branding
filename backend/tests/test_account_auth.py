@@ -1,5 +1,6 @@
 import json
 import threading
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -94,6 +95,22 @@ class FirebaseAuthTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertIn("/account.html?next=%2F", response.url)
                 self.assertIn("تسجيل الدخول".encode("utf-8"), response.read())
+
+    def test_api_only_deployment_does_not_redirect_to_missing_frontend(self):
+        with tempfile.TemporaryDirectory() as app_dir:
+            with (
+                patch.object(server, "APP_DIR", app_dir),
+                patch.object(server, "AUTH_REQUIRED", True),
+                self._running_api() as base,
+            ):
+                with self.assertRaises(urllib.error.HTTPError) as missing:
+                    urllib.request.urlopen(base + "/")
+                self.assertEqual(missing.exception.code, 404)
+                self.assertIn(
+                    b"frontend is hosted separately",
+                    missing.exception.read(),
+                )
+                missing.exception.close()
 
     @staticmethod
     def _open_json(opener, url, method="GET", payload=None, headers=None):
