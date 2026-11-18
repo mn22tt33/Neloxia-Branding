@@ -32,6 +32,7 @@ class QueueStorageTests(unittest.TestCase):
             ),
             patch.object(server, "_local_solved_count", 0),
             patch.object(server, "_local_solved_events", []),
+            patch.object(server, "AUTH_REQUIRED", False),
         )
         for patcher in patchers:
             patcher.start()

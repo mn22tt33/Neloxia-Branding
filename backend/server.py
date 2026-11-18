@@ -18,7 +18,7 @@ import uuid
 import webbrowser
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 from dotenv import load_dotenv
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +34,10 @@ if BACKEND_DIR not in sys.path:
 from queue_store import PostgresQueue, QueueCapacityError, QueueStoreError
 from admin_page import ADMIN_PAGE
 from account_auth import (
+    AccountExistsError,
     AuthStoreError,
     PostgresAuthStore,
+    hash_password,
     verify_firebase_credential,
 )
 
@@ -74,10 +76,7 @@ _queue_store = (
 _auth_store = PostgresAuthStore(DATABASE_URL) if DATABASE_URL else None
 FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "").strip()
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-AUTH_REQUIRED = (
-    bool(FIREBASE_PROJECT_ID or ADMIN_EMAIL)
-    or os.environ.get("QUIZORA_REQUIRE_AUTH") == "1"
-)
+AUTH_REQUIRED = True
 AUTH_DISABLED_MESSAGE = (
     "تسجيل Google غير مفعّل؛ يلزم إعداد FIREBASE_PROJECT_ID وADMIN_EMAIL "
     "وربط PostgreSQL أولًا."
@@ -1302,6 +1301,28 @@ def make_handler():
                 return False, None
             return True, user
 
+        def _redirect_to_account(self, return_to):
+            location = "/account.html?next=" + quote(return_to or "/", safe="")
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _require_page_user(self, return_to):
+            if not self._auth_enabled():
+                self._redirect_to_account(return_to)
+                return False
+            try:
+                user = self._auth_session()
+            except AuthStoreError:
+                self._json(503, {"ok": False, "message": "تعذّر التحقق من جلسة المستخدم."})
+                return False
+            if not user:
+                self._redirect_to_account(return_to)
+                return False
+            return True
+
         def _firebase_login(self):
             if not self._auth_mutation_allowed():
                 self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
@@ -1337,7 +1358,13 @@ def make_handler():
                         "message": "محاولات تسجيل الدخول كثيرة؛ حاول لاحقًا.",
                     })
                     return
-                user = _auth_store.upsert_firebase_user(identity, ADMIN_EMAIL)
+                user = _auth_store.find_firebase_user(identity, ADMIN_EMAIL)
+                if not user:
+                    self._json(404, {
+                        "ok": False,
+                        "message": "لا يوجد حساب لهذا البريد. أنشئ حسابًا أولًا.",
+                    })
+                    return
                 token = _auth_store.create_session(user["id"])
             except AuthStoreError as error:
                 self._json(503, {
@@ -1348,6 +1375,133 @@ def make_handler():
             self._set_cookie(
                 "quizora_session", token, 60 * 60 * 24 * 30
             )
+            self._json(200, {
+                "ok": True,
+                "user": self._public_user(user),
+            })
+
+        def _firebase_register(self):
+            if not self._auth_mutation_allowed():
+                self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
+                return
+            if not self._auth_enabled():
+                self._json(503, {"ok": False, "message": AUTH_DISABLED_MESSAGE})
+                return
+            try:
+                data = self._read_json()
+                if not isinstance(data, dict):
+                    raise ValueError("invalid body")
+                credential = data.get("id_token")
+                full_name = data.get("full_name")
+                password = data.get("password")
+                confirmation = data.get("password_confirmation")
+                if (
+                    not isinstance(credential, str)
+                    or not 100 <= len(credential) <= 16384
+                    or not isinstance(full_name, str)
+                    or not full_name.strip()
+                    or len(full_name.strip()) > 120
+                    or not isinstance(password, str)
+                    or password != confirmation
+                ):
+                    raise ValueError("بيانات إنشاء الحساب غير مكتملة أو غير متطابقة.")
+                identity = verify_firebase_credential(
+                    credential, FIREBASE_PROJECT_ID
+                )
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                self._json(400, {
+                    "ok": False,
+                    "message": str(error) or "تعذّر إنشاء الحساب.",
+                })
+                return
+            try:
+                if not _auth_store.allow_login(
+                    identity["firebase_uid"], self._client_ip()
+                ):
+                    self._json(429, {
+                        "ok": False,
+                        "message": "محاولات إنشاء الحساب كثيرة؛ حاول لاحقًا.",
+                    })
+                    return
+                password_hash = hash_password(password)
+                user = _auth_store.create_firebase_user(
+                    identity,
+                    full_name.strip(),
+                    password_hash,
+                    ADMIN_EMAIL,
+                )
+                token = _auth_store.create_session(user["id"])
+            except ValueError as error:
+                self._json(400, {"ok": False, "message": str(error)})
+                return
+            except AccountExistsError as error:
+                self._json(409, {"ok": False, "message": str(error)})
+                return
+            except AuthStoreError as error:
+                self._json(503, {
+                    "ok": False,
+                    "message": str(error) or "تعذّر إنشاء الحساب.",
+                })
+                return
+            self._set_cookie("quizora_session", token, 60 * 60 * 24 * 30)
+            self._json(201, {
+                "ok": True,
+                "user": self._public_user(user),
+            })
+
+        def _password_login(self):
+            if not self._auth_mutation_allowed():
+                self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
+                return
+            if not self._auth_enabled():
+                self._json(503, {"ok": False, "message": AUTH_DISABLED_MESSAGE})
+                return
+            try:
+                data = self._read_json()
+                if not isinstance(data, dict):
+                    raise ValueError("invalid body")
+                email = data.get("email")
+                password = data.get("password")
+                if (
+                    not isinstance(email, str)
+                    or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
+                    or len(email) > 254
+                    or not isinstance(password, str)
+                    or len(password) > 128
+                ):
+                    raise ValueError("أدخل بريدًا إلكترونيًا وكلمة مرور صالحين.")
+                email = email.strip().lower()
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                self._json(400, {
+                    "ok": False,
+                    "message": str(error) or "بيانات الدخول غير صالحة.",
+                })
+                return
+            try:
+                if not _auth_store.allow_password_login(email, self._client_ip()):
+                    self._json(429, {
+                        "ok": False,
+                        "message": "محاولات تسجيل الدخول كثيرة؛ حاول لاحقًا.",
+                    })
+                    return
+                user = _auth_store.authenticate_password(email, password)
+                if not user:
+                    self._json(401, {
+                        "ok": False,
+                        "message": (
+                            "بيانات الدخول غير صحيحة. إذا أنشأت حسابك باستخدام "
+                            "Google، سجّل الدخول بزر Google."
+                        ),
+                    })
+                    return
+                token = _auth_store.create_session(user["id"])
+            except AuthStoreError as error:
+                self._json(503, {
+                    "ok": False,
+                    "message": str(error) or "تعذّر تسجيل الدخول.",
+                })
+                return
+            self._set_cookie("quizora_session", token, 60 * 60 * 24 * 30)
             self._json(200, {
                 "ok": True,
                 "user": self._public_user(user),
@@ -1473,6 +1627,12 @@ def make_handler():
 
         def do_GET(self):
             parsed_path = urlsplit(self.path)
+            if AUTH_REQUIRED and parsed_path.path in ("/", "/index.html", "/progress"):
+                return_to = parsed_path.path
+                if parsed_path.query:
+                    return_to += "?" + parsed_path.query
+                if not self._require_page_user(return_to):
+                    return
             if (
                 parsed_path.path == "/admin"
                 or parsed_path.path == "/api/admin"
@@ -1516,12 +1676,12 @@ def make_handler():
                     "browser_visible": _get_browser_visible(),
                 })
                 return
-            if self.path in STATIC_ROUTES:
-                name, ctype = STATIC_ROUTES[self.path]
+            if parsed_path.path in STATIC_ROUTES:
+                name, ctype = STATIC_ROUTES[parsed_path.path]
                 if not self._file(name, ctype):
                     self._json(404, {"error": "resource not found"})
                 return
-            if self.path == "/favicon.ico":
+            if parsed_path.path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
                 return
@@ -1616,10 +1776,19 @@ def make_handler():
                 })
                 return
             if route == "/api/auth/register":
-                self._json(404, {"ok": False, "message": "استخدم زر تسجيل الدخول بحساب Google."})
+                self._json(404, {
+                    "ok": False,
+                    "message": "اختر Google أولًا لإنشاء حساب.",
+                })
+                return
+            if route == "/api/auth/firebase/register":
+                self._firebase_register()
                 return
             if route == "/api/auth/firebase/login":
                 self._firebase_login()
+                return
+            if route == "/api/auth/password/login":
+                self._password_login()
                 return
             if route == "/api/auth/logout":
                 if not self._auth_mutation_allowed():
@@ -1874,6 +2043,10 @@ def make_handler():
     return Handler
 
 
+def _server_bind_host():
+    return "0.0.0.0" if os.environ.get("RAILWAY_ENVIRONMENT") else "127.0.0.1"
+
+
 def main():
     global _server_port
     sys.stdout = _StdoutSink()
@@ -1898,24 +2071,18 @@ def main():
     server = None
     explicit_port = bool(os.environ.get("PORT"))
     attempts = 1 if explicit_port else 6
+    bind_host = _server_bind_host()
     for attempt in range(attempts):
         try:
             server = ThreadingHTTPServer(
-                ("0.0.0.0", port if explicit_port else port + attempt),
+                (bind_host, port if explicit_port else port + attempt),
                 make_handler(),
             )
             if not explicit_port:
                 port += attempt
             break
         except OSError:
-            if explicit_port:
-                break
-            try:
-                server = ThreadingHTTPServer(("127.0.0.1", port + attempt), make_handler())
-                port += attempt
-                break
-            except OSError:
-                continue
+            continue
     if server is None:
         _ORIG_STDOUT.write("[app] لا منفذ حر متاح — أغلق النوافذ القديمة ثم أعد المحاولة.\n")
         return

@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.2.0"></script>
+<script src="/config.js?v=1.4.0"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.0").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.4.0").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -1136,7 +1136,7 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.2.0">v1.2.0</span>
+      <span class="brand-version" aria-label="الإصدار 1.4.0">v1.4.0</span>
     </div>
   </div>
   <a class="btn secondary" href="/account.html">حساب المستخدم</a>
@@ -1271,6 +1271,7 @@
     ? window.APP_CONFIG.apiBaseUrl.trim()
     : "";
   var API_BASE_URL = (configuredApiBase || location.origin).replace(/\/+$/, "");
+  var redirectingToAccount = false;
 
   function setBackendUnavailable(unavailable){
     var notice = document.getElementById("serverOfflineNotice");
@@ -1281,6 +1282,14 @@
     setBackendUnavailable(!available);
     var gate = document.getElementById("serverStartupGate");
     if (gate) gate.hidden = true;
+  }
+
+  function redirectToAccount(){
+    redirectingToAccount = true;
+    var returnTo = location.pathname + location.search + location.hash;
+    location.replace(
+      "/account.html?next=" + encodeURIComponent(returnTo || "/")
+    );
   }
 
   function apiFetch(path, options){
@@ -1325,21 +1334,18 @@
         if (!payload || payload.ok !== true) throw new Error("الخادم غير جاهز.");
         return apiFetch("/api/auth/status").then(function(authResponse){
           if (authResponse.status === 404) {
-            finishStartupCheck(true);
+            redirectToAccount();
             return;
           }
           if (!authResponse.ok) throw new Error("تعذّر التحقق من تسجيل الدخول.");
           return authResponse.json().then(function(authStatus){
-            if (!authStatus.enabled) {
-              finishStartupCheck(true);
+            if (!authStatus.enabled || !authStatus.required) {
+              redirectToAccount();
               return;
             }
             return apiFetch("/api/auth/me").then(function(userResponse){
               if (userResponse.status === 401) {
-                var returnTo = location.pathname + location.search + location.hash;
-                location.replace(
-                  "/account.html?next=" + encodeURIComponent(returnTo || "/")
-                );
+                redirectToAccount();
                 return;
               }
               if (!userResponse.ok) throw new Error("تعذّر التحقق من جلسة المستخدم.");
@@ -1349,10 +1355,11 @@
         });
       })
       .catch(function(){
-        finishStartupCheck(false);
+        redirectToAccount();
       })
       .then(function(){
         window.clearTimeout(timeout);
+        return !redirectingToAccount;
       });
   }
 
@@ -2350,7 +2357,8 @@
     history.pushState({ quizoraBackGuard: true }, "", location.href);
   });
   renderAll();
-  checkBackendAtStartup().then(function(){
+  checkBackendAtStartup().then(function(ready){
+    if (!ready) return;
     return poll();
   }).then(function(){
     if (state.serverRunningCount > 0 && !isFreshVisit){

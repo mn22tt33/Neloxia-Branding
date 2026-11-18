@@ -5,43 +5,107 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#493849">
-  <title>حساب QUIZORA</title>
+  <title>تسجيل الدخول إلى QUIZORA</title>
   <style>
     :root{font-family:"Segoe UI",Tahoma,Arial,sans-serif;color:#302b31;background:#f3efe9}
     *{box-sizing:border-box}
     body{margin:0;min-height:100vh;padding:24px;display:grid;place-items:center}
-    main{width:min(100%,440px);padding:30px;background:#fffcf8;border:1px solid #e6ded9;border-radius:22px;box-shadow:0 20px 50px #3027351f;text-align:center}
+    main{width:min(100%,460px);padding:34px;background:#fffcf8;border:1px solid #e6ded9;border-radius:22px;box-shadow:0 20px 50px #3027351f;text-align:center}
     .mark{width:60px;height:60px;margin:0 auto 15px;display:grid;place-items:center;border-radius:18px;background:#493849;color:#fff;font-size:23px;font-weight:900}
-    h1{margin:0;font-size:24px}p{color:#706972;line-height:1.8}
+    h1{margin:0;font-size:25px}p{color:#706972;line-height:1.8}
+    .intro{margin:10px 0 22px;font-size:14px}
+    .panel-intro{margin:0 0 12px;font-size:13px}
+    .field input::placeholder{color:#a49aa4}
+    .helper{margin:10px 0 0;font-size:12px}
     .notice{margin:16px 0;padding:12px;border-radius:12px;background:#f6ebdd;color:#805832;font-size:13px}
-    #googleButton{display:flex;width:100%;justify-content:center;align-items:center;gap:10px;min-height:46px;margin:20px 0;padding:10px 16px;border:1px solid #d5ced4;border-radius:11px;background:#fff;color:#302b31;font:inherit;font-weight:700;cursor:pointer}
-    #googleButton[hidden]{display:none}
-    #googleButton:disabled{opacity:.6;cursor:wait}
+    .google-button{display:flex;width:100%;justify-content:center;align-items:center;gap:10px;min-height:46px;margin:18px 0;padding:10px 16px;border:1px solid #d5ced4;border-radius:11px;background:#fff;color:#302b31;font:inherit;font-weight:700;cursor:pointer}
+    .google-button[hidden],[hidden]{display:none!important}
+    .google-button:disabled{opacity:.6;cursor:wait}
     .google-g{font:bold 20px Arial,sans-serif;color:#4285f4}
     #message{min-height:1.5em;color:#9b4e56;font-size:13px}
     #userCard{padding:14px;border:1px solid #e6ded9;border-radius:13px;background:#faf6f1}
-    #userCard[hidden]{display:none}
     button,.link{display:inline-flex;justify-content:center;align-items:center;min-height:42px;padding:10px 16px;border:0;border-radius:11px;background:#493849;color:#fff;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
     button:disabled{opacity:.55;cursor:not-allowed}
-    .link{margin-top:16px;background:transparent;color:#705a72}
-    @media(max-width:480px){body{padding:14px}main{padding:24px 18px}}
+    .text-button{margin-top:8px;background:transparent;color:#705a72}
+    .primary{width:100%;margin-top:8px}
+    .field{text-align:right;margin:14px 0}
+    .field label{display:block;margin-bottom:6px;color:#514853;font-weight:700;font-size:13px}
+    .field input{width:100%;min-height:44px;padding:10px 12px;border:1px solid #d9d1d8;border-radius:10px;background:#fff;color:#302b31;font:inherit;direction:ltr;text-align:left}
+    .field input:focus{outline:2px solid #a68bad;outline-offset:1px}
+    .divider{display:flex;align-items:center;gap:10px;color:#89818a;font-size:12px}
+    .divider:before,.divider:after{content:"";height:1px;flex:1;background:#e6ded9}
+    .selected-account{padding:10px;border-radius:10px;background:#f6f1f5;color:#514853;direction:ltr}
+    .actions{display:grid;gap:8px}
+    @media(max-width:480px){body{padding:14px}main{padding:26px 18px}}
   </style>
 </head>
 <body>
 <main>
   <div class="mark" aria-hidden="true">Q</div>
-  <h1>حساب QUIZORA</h1>
-  <p>سجّل الدخول أو أنشئ حسابك باختيار حساب Google الموجود على جهازك.</p>
+  <h1>مرحبًا بعودتك إلى QUIZORA</h1>
+  <p class="intro">سجّل الدخول لمتابعة استخدام حسابك، أو أنشئ حسابًا جديدًا باستخدام Google.</p>
   <div id="availability" class="notice" role="status">جارٍ التحقق من إعداد تسجيل الدخول…</div>
-  <button id="googleButton" type="button" hidden><span class="google-g" aria-hidden="true">G</span>المتابعة باستخدام Google</button>
   <p id="message" aria-live="polite"></p>
+  <section id="loginPanel" hidden>
+    <p class="panel-intro">اختر طريقة تسجيل الدخول المرتبطة بحسابك.</p>
+    <button id="googleLoginButton" class="google-button" type="button">
+      <span class="google-g" aria-hidden="true">G</span>المتابعة باستخدام Google
+    </button>
+    <div class="divider">أو بالبريد وكلمة المرور</div>
+    <form id="passwordLoginForm">
+      <div class="field">
+        <label for="loginEmail">البريد الإلكتروني</label>
+        <input id="loginEmail" type="email" autocomplete="username" maxlength="254" required>
+      </div>
+      <div class="field">
+        <label for="loginPassword">كلمة المرور</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" maxlength="128" required>
+      </div>
+      <button id="passwordLoginButton" class="primary" type="submit">تسجيل الدخول</button>
+    </form>
+    <p class="helper">استخدم البريد الإلكتروني وكلمة المرور اللذين سجلت بهما في QUIZORA.</p>
+    <button id="showRegister" class="text-button" type="button">إنشاء حساب جديد</button>
+  </section>
+  <section id="registerPanel" hidden>
+    <p>اختر حساب Google أولًا، ثم أضف اسمك وكلمة مرور لحساب QUIZORA.</p>
+    <button id="googleRegisterButton" class="google-button" type="button">
+      <span class="google-g" aria-hidden="true">G</span>إنشاء حساب باستخدام Google
+    </button>
+    <div id="registrationDetails" hidden>
+      <p id="selectedGoogleEmail" class="selected-account"></p>
+      <form id="registrationForm">
+        <div class="field">
+          <label for="registrationName">الاسم</label>
+          <input id="registrationName" type="text" autocomplete="name" maxlength="120" required>
+        </div>
+        <div class="field">
+          <label for="registrationPassword">كلمة المرور (8 أحرف على الأقل)</label>
+          <input id="registrationPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+        </div>
+        <div class="field">
+          <label for="passwordConfirmation">تأكيد كلمة المرور</label>
+          <input id="passwordConfirmation" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+        </div>
+        <div class="actions">
+          <button id="createAccountButton" class="primary" type="submit">إنشاء الحساب</button>
+        </div>
+      </form>
+    </div>
+    <button id="backToLogin" class="text-button" type="button">العودة لتسجيل الدخول</button>
+  </section>
   <section id="userCard" hidden>
     <p id="currentUser"></p>
     <button id="logout" type="button">تسجيل الخروج</button>
   </section>
-  <a class="link" href="/">العودة إلى QUIZORA</a>
 </main>
-<script src="/config.js?v=1.2.0"></script>
+<script src="/config.js?v=1.4.0"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js?v=1.4.0").catch(function(error){
+      console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
+    });
+  }
+</script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
   import {
@@ -57,11 +121,17 @@
   const base = (config.apiBaseUrl || "").replace(/\/+$/, "");
   const message = document.getElementById("message");
   const availability = document.getElementById("availability");
-  const button = document.getElementById("googleButton");
+  const loginPanel = document.getElementById("loginPanel");
+  const registerPanel = document.getElementById("registerPanel");
+  const googleLoginButton = document.getElementById("googleLoginButton");
+  const googleRegisterButton = document.getElementById("googleRegisterButton");
+  const registrationDetails = document.getElementById("registrationDetails");
   const userCard = document.getElementById("userCard");
   const firebaseConfig = config.firebase;
   const requestedNext = new URLSearchParams(location.search).get("next") || "/";
+  const signupIntentKey = "quizora_signup_flow";
   let next = "/";
+  let selectedFirebaseUser = null;
   try {
     const nextUrl = new URL(requestedNext, location.origin);
     if (nextUrl.origin === location.origin) {
@@ -80,23 +150,38 @@
       body: data ? JSON.stringify(data) : undefined
     }).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
-        if (!response.ok) throw new Error(payload.message || "تعذّر إتمام الطلب.");
+        if (!response.ok) {
+          const error = new Error(payload.message || "تعذّر إتمام الطلب.");
+          error.status = response.status;
+          throw error;
+        }
         return payload;
       });
     });
   }
 
-  function showSignIn() {
-    button.hidden = false;
-    button.disabled = false;
+  function showLogin() {
+    loginPanel.hidden = false;
+    registerPanel.hidden = true;
+    userCard.hidden = true;
   }
 
-  function showUser(user) {
-    if (!user) return;
-    document.getElementById("currentUser").textContent =
-      user.full_name + " — " + user.email;
-    userCard.hidden = false;
-    button.hidden = true;
+  function showRegistration() {
+    loginPanel.hidden = true;
+    registerPanel.hidden = false;
+    userCard.hidden = true;
+    registrationDetails.hidden = !selectedFirebaseUser;
+    googleRegisterButton.hidden = Boolean(selectedFirebaseUser);
+    googleRegisterButton.disabled = false;
+  }
+
+  function showRegistrationFields(user) {
+    selectedFirebaseUser = user;
+    document.getElementById("selectedGoogleEmail").textContent =
+      user.email || "حساب Google";
+    document.getElementById("registrationName").value = user.displayName || "";
+    registrationDetails.hidden = false;
+    googleRegisterButton.hidden = true;
   }
 
   function showSignInError(error) {
@@ -109,43 +194,149 @@
     message.textContent = messages[error.code] || error.message || "تعذّر تسجيل الدخول باستخدام Google.";
   }
 
+  function showUser(user) {
+    if (!user) return;
+    document.getElementById("currentUser").textContent =
+      user.full_name + " — " + user.email;
+    userCard.hidden = false;
+    loginPanel.hidden = true;
+    registerPanel.hidden = true;
+  }
+
+  async function completeSession() {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.warn("تعذّر إنهاء جلسة Firebase المحلية.", error);
+    }
+    location.replace(next);
+  }
+
   const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
   const auth = app ? getAuth(app) : null;
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({prompt: "select_account"});
   if (auth) auth.languageCode = "ar";
 
-  async function finishSignIn(user) {
+  async function loginWithGoogle(user) {
     message.textContent = "جارٍ التحقق من حساب Google…";
-    button.disabled = true;
     try {
       const idToken = await user.getIdToken();
       await api("/api/auth/firebase/login", "POST", {id_token: idToken});
-      try {
-        await signOut(auth);
-      } catch (error) {
-        console.warn("تعذّر إنهاء جلسة Firebase المحلية.", error);
-      }
-      location.replace(next);
+      await completeSession();
     } catch (error) {
       showSignInError(error);
-      showSignIn();
+      showLogin();
     }
   }
 
-  button.addEventListener("click", async function () {
+  async function selectGoogleForRegistration(user) {
+    message.textContent = "";
+    showRegistration();
+    showRegistrationFields(user);
+  }
+
+  async function startGoogleFlow(flow) {
+    const button = flow === "register" ? googleRegisterButton : googleLoginButton;
     button.disabled = true;
     message.textContent = "جارٍ فتح حسابات Google…";
     try {
       if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
+        if (flow === "register") {
+          sessionStorage.setItem(signupIntentKey, "register");
+        }
         await signInWithRedirect(auth, provider);
         return;
       }
       const result = await signInWithPopup(auth, provider);
-      await finishSignIn(result.user);
+      if (flow === "register") {
+        await selectGoogleForRegistration(result.user);
+      } else {
+        await loginWithGoogle(result.user);
+      }
     } catch (error) {
+      if (flow === "register") sessionStorage.removeItem(signupIntentKey);
       showSignInError(error);
-      showSignIn();
+      button.disabled = false;
+      if (flow === "register") showRegistration();
+      else showLogin();
+    }
+  }
+
+  googleLoginButton.addEventListener("click", function () {
+    startGoogleFlow("login");
+  });
+  googleRegisterButton.addEventListener("click", function () {
+    startGoogleFlow("register");
+  });
+
+  document.getElementById("showRegister").addEventListener("click", function () {
+    message.textContent = "";
+    showRegistration();
+  });
+  async function cancelRegistration() {
+    selectedFirebaseUser = null;
+    registrationDetails.hidden = true;
+    googleRegisterButton.hidden = false;
+    sessionStorage.removeItem(signupIntentKey);
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.warn("تعذّر إنهاء جلسة Firebase المحلية.", error);
+    }
+    message.textContent = "";
+    showLogin();
+  }
+  document.getElementById("backToLogin").addEventListener("click", cancelRegistration);
+
+  document.getElementById("passwordLoginForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    const button = document.getElementById("passwordLoginButton");
+    button.disabled = true;
+    message.textContent = "جارٍ تسجيل الدخول…";
+    try {
+      await api("/api/auth/password/login", "POST", {
+        email: document.getElementById("loginEmail").value,
+        password: document.getElementById("loginPassword").value
+      });
+      await completeSession();
+    } catch (error) {
+      message.textContent = error.message || "تعذّر تسجيل الدخول.";
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("registrationForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    if (!selectedFirebaseUser) {
+      message.textContent = "اختر حساب Google أولًا.";
+      return;
+    }
+    const password = document.getElementById("registrationPassword").value;
+    const confirmation = document.getElementById("passwordConfirmation").value;
+    if (password !== confirmation) {
+      message.textContent = "كلمتا المرور غير متطابقتين.";
+      return;
+    }
+    const button = document.getElementById("createAccountButton");
+    button.disabled = true;
+    message.textContent = "جارٍ إنشاء الحساب…";
+    try {
+      const idToken = await selectedFirebaseUser.getIdToken();
+      await api("/api/auth/firebase/register", "POST", {
+        id_token: idToken,
+        full_name: document.getElementById("registrationName").value,
+        password: password,
+        password_confirmation: confirmation
+      });
+      await completeSession();
+    } catch (error) {
+      message.textContent = error.message || "تعذّر إنشاء الحساب.";
+      if (error.status === 409) {
+        selectedFirebaseUser = null;
+        showLogin();
+      }
+      button.disabled = false;
     }
   });
 
@@ -153,7 +344,8 @@
     api("/api/auth/logout", "POST", {}).then(function () {
       userCard.hidden = true;
       message.textContent = "تم تسجيل الخروج.";
-      showSignIn();
+      document.getElementById("passwordLoginButton").disabled = false;
+      showLogin();
     }).catch(function (error) {
       message.textContent = error.message;
     });
@@ -171,14 +363,22 @@
     }
     availability.textContent = "تسجيل آمن باستخدام Google.";
 
+    const signupPending = sessionStorage.getItem(signupIntentKey) === "register";
     let redirectResult = null;
     try {
       redirectResult = await getRedirectResult(auth);
     } catch (error) {
       showSignInError(error);
+      sessionStorage.removeItem(signupIntentKey);
     }
     if (redirectResult && redirectResult.user) {
-      await finishSignIn(redirectResult.user);
+      if (signupPending) {
+        sessionStorage.removeItem(signupIntentKey);
+        showRegistration();
+        await selectGoogleForRegistration(redirectResult.user);
+      } else {
+        await loginWithGoogle(redirectResult.user);
+      }
       return;
     }
 
@@ -186,13 +386,18 @@
     if (result.user) {
       showUser(result.user);
     } else {
-      showSignIn();
+      if (signupPending) {
+        sessionStorage.removeItem(signupIntentKey);
+        showRegistration();
+      } else {
+        showLogin();
+      }
     }
   }
 
   initializeAccountPage().catch(function (error) {
     availability.textContent = error.message || "تعذّر الاتصال بخدمة الحسابات.";
-    showSignIn();
+    showLogin();
   });
 </script>
 </body>
