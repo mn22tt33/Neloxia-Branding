@@ -649,6 +649,17 @@ class QueueStorageTests(unittest.TestCase):
         self.assertNotIn(secret, encrypted)
         self.assertEqual(queue._decrypt(encrypted), secret)
 
+    def test_unpadded_fernet_key_remains_compatible_with_stored_ciphertext(self):
+        padded_key = Fernet.generate_key()
+        unpadded_key = padded_key.rstrip(b"=")
+        padded_queue = PostgresQueue("postgresql://unused", padded_key.decode("ascii"))
+        unpadded_queue = PostgresQueue("postgresql://unused", unpadded_key.decode("ascii"))
+
+        encrypted = padded_queue._encrypt("existing-account-code")
+
+        self.assertEqual(unpadded_queue._decrypt(encrypted), "existing-account-code")
+        self.assertEqual(padded_queue._fingerprint_key, unpadded_queue._fingerprint_key)
+
     def test_successful_database_job_persists_only_encrypted_account_code(self):
         queue = PostgresQueue(
             "postgresql://unused",

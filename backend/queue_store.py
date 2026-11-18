@@ -35,6 +35,8 @@ class PostgresQueue:
             ) from error
 
         key = encryption_key.encode("ascii")
+        if len(key) == 43:
+            key += b"="
         try:
             self._fernet = Fernet(key)
             raw_key = base64.urlsafe_b64decode(key)
