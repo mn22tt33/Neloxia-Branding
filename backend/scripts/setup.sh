@@ -6,6 +6,7 @@ echo "       📦 تثبيت متطلبات QUIZORA على Termux"
 echo "============================================================"
 pkg update -y
 pkg install python unzip curl proot-distro -y
+python -m pip install "python-dotenv>=1.0,<2"
 
 if ! proot-distro login debian -- /bin/true >/dev/null 2>&1; then
     proot-distro install debian

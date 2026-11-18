@@ -23,6 +23,10 @@ if ! command -v curl >/dev/null 2>&1; then
     echo "❌ curl غير مثبت. شغّل bash setup.sh أولًا." >&2
     exit 1
 fi
+if ! python -c 'import dotenv' >/dev/null 2>&1; then
+    echo "❌ حزمة python-dotenv غير مثبتة. شغّل bash setup.sh أولًا." >&2
+    exit 1
+fi
 if ! proot-distro login debian -- bash -lc 'command -v ngrok >/dev/null 2>&1'; then
     echo "❌ ngrok غير مثبت داخل Debian. شغّل bash setup.sh أولًا." >&2
     exit 1

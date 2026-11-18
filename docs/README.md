@@ -51,7 +51,7 @@ ww/
 ### `backend/scripts/` و`backend/tests/` و`docs/`
 
 - `backend/scripts/run.sh`: يشغّل الخادم ونفق ngrok بعنوان الـAPI الثابت من Termux.
-- `backend/scripts/setup.sh`: يثبّت Python وأداة فك الضغط وPRoot-Distro، ثم يجهّز ngrok داخل Debian على Termux.
+- `backend/scripts/setup.sh`: يثبّت Python و`python-dotenv` وأداة فك الضغط وPRoot-Distro، ثم يجهّز ngrok داخل Debian على Termux.
 - `android/termux-widget/`: سكربتا بدء وإيقاف QUIZORA من مهام Termux:Widget.
 - `install_android_widget.sh`: ينسخ اختصاري التشغيل والإيقاف إلى Termux:Widget ويربطهما بمجلد المشروع الحالي.
 - `backend/tests/`: اختبارات رجوع لاكتمال الحل والطابور والتزامن؛ تُشغّل من الجذر بـ `python -m unittest discover -s backend/tests -v`.
