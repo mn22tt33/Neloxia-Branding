@@ -1,4 +1,4 @@
-"""Google sign-in and PostgreSQL account sessions."""
+"""Firebase Google sign-in and PostgreSQL account sessions."""
 
 import hashlib
 import re
@@ -13,30 +13,32 @@ class AuthStoreError(RuntimeError):
     pass
 
 
-def verify_google_credential(credential, client_id, nonce):
-    """Verify Google's signed ID token and bind it to this login attempt."""
+def verify_firebase_credential(credential, project_id):
+    """Verify a Firebase ID token issued after Google sign-in."""
     from google.auth.exceptions import GoogleAuthError
     from google.auth.transport.requests import Request
     from google.oauth2 import id_token
 
     try:
-        claims = id_token.verify_oauth2_token(
+        claims = id_token.verify_firebase_token(
             credential,
             Request(),
-            audience=client_id,
+            audience=project_id,
         )
     except (GoogleAuthError, ValueError) as error:
         raise ValueError("تعذّر التحقق من حساب Google؛ حاول تسجيل الدخول مجددًا.") from error
 
-    issuer = claims.get("iss")
-    if issuer not in ("accounts.google.com", "https://accounts.google.com"):
-        raise ValueError("مصدر بيانات حساب Google غير صالح.")
+    firebase_claims = claims.get("firebase")
+    if (
+        not isinstance(firebase_claims, dict)
+        or firebase_claims.get("sign_in_provider") != "google.com"
+    ):
+        raise ValueError("يجب تسجيل الدخول باستخدام Google.")
     if claims.get("email_verified") is not True:
         raise ValueError("يجب استخدام حساب Google موثّق البريد الإلكتروني.")
     subject = claims.get("sub")
     email = claims.get("email")
     full_name = claims.get("name") or email
-    token_nonce = claims.get("nonce")
     if (
         not isinstance(subject, str)
         or not subject
@@ -44,12 +46,10 @@ def verify_google_credential(credential, client_id, nonce):
         or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
         or not isinstance(full_name, str)
         or not full_name.strip()
-        or not isinstance(token_nonce, str)
-        or not secrets.compare_digest(token_nonce, nonce)
     ):
-        raise ValueError("بيانات حساب Google غير مكتملة أو غير مطابقة لطلب الدخول.")
+        raise ValueError("بيانات حساب Google غير مكتملة.")
     return {
-        "google_sub": subject,
+        "firebase_uid": subject,
         "email": email.strip().lower(),
         "full_name": full_name.strip()[:120],
     }
@@ -81,6 +81,7 @@ class PostgresAuthStore:
                 full_name TEXT NOT NULL,
                 email TEXT,
                 google_sub TEXT,
+                firebase_uid TEXT,
                 phone_e164 TEXT,
                 password_hash TEXT,
                 phone_verified BOOLEAN NOT NULL DEFAULT TRUE,
@@ -92,11 +93,16 @@ class PostgresAuthStore:
             """,
             "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS email TEXT",
             "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS google_sub TEXT",
+            "ALTER TABLE quizora_users ADD COLUMN IF NOT EXISTS firebase_uid TEXT",
             "ALTER TABLE quizora_users ALTER COLUMN phone_e164 DROP NOT NULL",
             "ALTER TABLE quizora_users ALTER COLUMN password_hash DROP NOT NULL",
             """
             CREATE UNIQUE INDEX IF NOT EXISTS quizora_users_google_sub
                 ON quizora_users (google_sub) WHERE google_sub IS NOT NULL
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS quizora_users_firebase_uid
+                ON quizora_users (firebase_uid) WHERE firebase_uid IS NOT NULL
             """,
             """
             CREATE UNIQUE INDEX IF NOT EXISTS quizora_users_email
@@ -163,7 +169,7 @@ class PostgresAuthStore:
         )
         return cursor.fetchone()["attempts"] <= limit
 
-    def upsert_google_user(self, identity, admin_email=None):
+    def upsert_firebase_user(self, identity, admin_email=None):
         email = identity["email"].strip().lower()
         role = "admin" if admin_email and email == admin_email.strip().lower() else "user"
         try:
@@ -171,34 +177,73 @@ class PostgresAuthStore:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        INSERT INTO quizora_users
-                            (id, full_name, email, google_sub, phone_verified, role)
-                        VALUES (%s, %s, %s, %s, TRUE, %s)
-                        ON CONFLICT (google_sub) DO UPDATE SET
-                            full_name = EXCLUDED.full_name,
-                            email = EXCLUDED.email,
-                            phone_verified = TRUE,
-                            role = CASE WHEN EXCLUDED.role = 'admin'
-                                        THEN 'admin'
-                                        ELSE quizora_users.role END,
-                            updated_at = now()
-                        RETURNING id, full_name, email, role
+                        SELECT id FROM quizora_users
+                        WHERE firebase_uid = %s
+                        LIMIT 1
+                        FOR UPDATE
                         """,
-                        (
-                            uuid.uuid4(),
-                            identity["full_name"][:120],
-                            email,
-                            identity["google_sub"],
-                            role,
-                        ),
+                        (identity["firebase_uid"],),
                     )
+                    existing = cursor.fetchone()
+                    if not existing:
+                        cursor.execute(
+                            """
+                            SELECT id FROM quizora_users
+                            WHERE lower(email) = %s AND google_sub IS NOT NULL
+                            LIMIT 1
+                            FOR UPDATE
+                            """,
+                            (email,),
+                        )
+                        existing = cursor.fetchone()
+
+                    if existing:
+                        cursor.execute(
+                            """
+                            UPDATE quizora_users
+                            SET full_name = %s,
+                                email = %s,
+                                firebase_uid = %s,
+                                phone_verified = TRUE,
+                                role = CASE WHEN %s = 'admin'
+                                            THEN 'admin'
+                                            ELSE role END,
+                                updated_at = now()
+                            WHERE id = %s
+                            RETURNING id, full_name, email, role
+                            """,
+                            (
+                                identity["full_name"][:120],
+                                email,
+                                identity["firebase_uid"],
+                                role,
+                                existing["id"],
+                            ),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO quizora_users
+                                (id, full_name, email, firebase_uid,
+                                 phone_verified, role)
+                            VALUES (%s, %s, %s, %s, TRUE, %s)
+                            RETURNING id, full_name, email, role
+                            """,
+                            (
+                                uuid.uuid4(),
+                                identity["full_name"][:120],
+                                email,
+                                identity["firebase_uid"],
+                                role,
+                            ),
+                        )
                     return cursor.fetchone()
         except self._psycopg.errors.UniqueViolation as error:
             raise AuthStoreError(
                 "هذا البريد مرتبط بحساب آخر؛ تواصل مع المسؤول."
             ) from error
         except self._psycopg.Error as error:
-            raise AuthStoreError("Could not save the Google account.") from error
+            raise AuthStoreError("Could not save the Firebase account.") from error
 
     def allow_login(self, subject, ip_address):
         try:

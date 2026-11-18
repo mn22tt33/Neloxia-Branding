@@ -9,10 +9,10 @@ from unittest.mock import MagicMock, patch
 os.environ["QUIZORA_TEST_MODE"] = "1"
 
 from backend import server
-from backend.account_auth import verify_google_credential
+from backend.account_auth import verify_firebase_credential
 
 
-class GoogleAuthTests(unittest.TestCase):
+class FirebaseAuthTests(unittest.TestCase):
     @staticmethod
     def _open_json(opener, url, method="GET", payload=None, headers=None):
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -25,42 +25,47 @@ class GoogleAuthTests(unittest.TestCase):
         with opener.open(request) as response:
             return response.status, response.headers, json.loads(response.read())
 
-    def test_google_id_token_claims_require_verified_email_and_matching_nonce(self):
+    def test_firebase_token_requires_google_provider_and_verified_email(self):
         claims = {
-            "iss": "https://accounts.google.com",
             "email_verified": True,
-            "sub": "google-user-id",
+            "sub": "firebase-user-id",
             "email": "User@Example.com",
             "name": "Test User",
-            "nonce": "n" * 32,
+            "firebase": {"sign_in_provider": "google.com"},
         }
         with patch(
-            "google.oauth2.id_token.verify_oauth2_token",
+            "google.oauth2.id_token.verify_firebase_token",
             return_value=claims,
         ) as verify:
-            identity = verify_google_credential("signed-token", "client-id", "n" * 32)
-        verify.assert_called_once()
+            identity = verify_firebase_credential("signed-token", "project-id")
+        verify.assert_called_once_with(
+            "signed-token",
+            unittest.mock.ANY,
+            audience="project-id",
+        )
         self.assertEqual(identity["email"], "user@example.com")
-        self.assertEqual(identity["google_sub"], "google-user-id")
+        self.assertEqual(identity["firebase_uid"], "firebase-user-id")
 
         with patch(
-            "google.oauth2.id_token.verify_oauth2_token",
-            return_value=dict(claims, nonce="x" * 32),
+            "google.oauth2.id_token.verify_firebase_token",
+            return_value=dict(
+                claims, firebase={"sign_in_provider": "password"}
+            ),
         ):
-            with self.assertRaisesRegex(ValueError, "غير مطابقة"):
-                verify_google_credential("signed-token", "client-id", "n" * 32)
+            with self.assertRaisesRegex(ValueError, "باستخدام Google"):
+                verify_firebase_credential("signed-token", "project-id")
 
         with patch(
-            "google.oauth2.id_token.verify_oauth2_token",
+            "google.oauth2.id_token.verify_firebase_token",
             return_value=dict(claims, email_verified=False),
         ):
             with self.assertRaisesRegex(ValueError, "موثّق"):
-                verify_google_credential("signed-token", "client-id", "n" * 32)
+                verify_firebase_credential("signed-token", "project-id")
 
-    def test_auth_status_disables_login_until_database_and_google_are_configured(self):
+    def test_auth_status_disables_login_until_database_and_firebase_are_configured(self):
         with (
             patch.object(server, "AUTH_REQUIRED", False),
-            patch.object(server, "GOOGLE_CLIENT_ID", ""),
+            patch.object(server, "FIREBASE_PROJECT_ID", ""),
             patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "_auth_store", None),
             patch.object(server, "_queue_store", None),
@@ -71,29 +76,27 @@ class GoogleAuthTests(unittest.TestCase):
             )
         self.assertEqual(status, 200)
         self.assertFalse(info["enabled"])
-        self.assertEqual(info["google_client_id"], "")
 
-    def test_google_login_verifies_identity_and_uses_http_only_session_cookie(self):
+    def test_firebase_login_verifies_identity_and_uses_http_only_session_cookie(self):
         auth_store = MagicMock()
         auth_store.allow_login.return_value = True
-        auth_store.upsert_google_user.return_value = {
+        auth_store.upsert_firebase_user.return_value = {
             "id": "user-1",
             "full_name": "Test User",
             "email": "user@example.com",
             "role": "user",
         }
         auth_store.create_session.return_value = "s" * 43
-        nonce = "n" * 32
         with (
-            patch.object(server, "GOOGLE_CLIENT_ID", "client-id"),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
             patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             patch(
-                "backend.server.verify_google_credential",
+                "backend.server.verify_firebase_credential",
                 return_value={
-                    "google_sub": "google-user-id",
+                    "firebase_uid": "firebase-user-id",
                     "email": "user@example.com",
                     "full_name": "Test User",
                 },
@@ -101,10 +104,9 @@ class GoogleAuthTests(unittest.TestCase):
             self._running_api() as base,
         ):
             request = urllib.request.Request(
-                base + "/api/auth/google/login",
+                base + "/api/auth/firebase/login",
                 data=json.dumps({
-                    "credential": "t" * 120,
-                    "nonce": nonce,
+                    "id_token": "t" * 120,
                 }).encode("utf-8"),
                 method="POST",
                 headers={
@@ -122,12 +124,12 @@ class GoogleAuthTests(unittest.TestCase):
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=None", cookie)
         self.assertNotIn("s" * 43, json.dumps(payload))
-        auth_store.upsert_google_user.assert_called_once()
+        auth_store.upsert_firebase_user.assert_called_once()
 
-    def test_auth_status_exposes_public_client_id_only_when_fully_enabled(self):
+    def test_auth_status_is_enabled_only_when_firebase_is_configured(self):
         auth_store = MagicMock()
         with (
-            patch.object(server, "GOOGLE_CLIENT_ID", "public-client-id"),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
             patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
@@ -138,13 +140,12 @@ class GoogleAuthTests(unittest.TestCase):
                 urllib.request.build_opener(), base + "/api/auth/status"
             )
         self.assertTrue(status["enabled"])
-        self.assertEqual(status["google_client_id"], "public-client-id")
         self.assertTrue(status["required"])
 
     def test_login_rejects_unapproved_origin_before_creating_a_user(self):
         auth_store = MagicMock()
         with (
-            patch.object(server, "GOOGLE_CLIENT_ID", "client-id"),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
             patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
@@ -152,10 +153,9 @@ class GoogleAuthTests(unittest.TestCase):
             self._running_api() as base,
         ):
             request = urllib.request.Request(
-                base + "/api/auth/google/login",
+                base + "/api/auth/firebase/login",
                 data=json.dumps({
-                    "credential": "t" * 120,
-                    "nonce": "n" * 32,
+                    "id_token": "t" * 120,
                 }).encode("utf-8"),
                 method="POST",
                 headers={
@@ -167,15 +167,15 @@ class GoogleAuthTests(unittest.TestCase):
                 urllib.request.urlopen(request)
             self.assertEqual(rejected.exception.code, 403)
             rejected.exception.close()
-        auth_store.upsert_google_user.assert_not_called()
+        auth_store.upsert_firebase_user.assert_not_called()
 
-    def test_protected_queue_routes_require_google_session_when_auth_is_configured(self):
+    def test_protected_queue_routes_require_firebase_session_when_auth_is_configured(self):
         auth_store = MagicMock()
         auth_store.get_session_user.return_value = None
         client_id = "123e4567-e89b-12d3-a456-426614174000"
         with (
             patch.object(server, "AUTH_REQUIRED", True),
-            patch.object(server, "GOOGLE_CLIENT_ID", "client-id"),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
             patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -213,7 +213,7 @@ class GoogleAuthTests(unittest.TestCase):
         }
         with (
             patch.object(server, "AUTH_REQUIRED", True),
-            patch.object(server, "GOOGLE_CLIENT_ID", "client-id"),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
             patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),

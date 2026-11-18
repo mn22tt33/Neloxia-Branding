@@ -12,5 +12,13 @@
       ? ""
       : apiBaseUrl;
   appConfig.backendMode = "local";
+  appConfig.firebase = {
+    apiKey: "AIzaSyCg2xh6IwR8WpYSX3S7EZosCB351rWyYSg",
+    authDomain: "quizora-auth-105be.firebaseapp.com",
+    projectId: "quizora-auth-105be",
+    storageBucket: "quizora-auth-105be.firebasestorage.app",
+    messagingSenderId: "800691791403",
+    appId: "1:800691791403:web:1f20c461ab12459d226c6e"
+  };
   window.APP_CONFIG = appConfig;
 })();

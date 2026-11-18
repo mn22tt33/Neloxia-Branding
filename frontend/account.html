@@ -14,8 +14,10 @@
     .mark{width:60px;height:60px;margin:0 auto 15px;display:grid;place-items:center;border-radius:18px;background:#493849;color:#fff;font-size:23px;font-weight:900}
     h1{margin:0;font-size:24px}p{color:#706972;line-height:1.8}
     .notice{margin:16px 0;padding:12px;border-radius:12px;background:#f6ebdd;color:#805832;font-size:13px}
-    #googleButton{display:flex;justify-content:center;min-height:44px;margin:20px 0}
+    #googleButton{display:flex;width:100%;justify-content:center;align-items:center;gap:10px;min-height:46px;margin:20px 0;padding:10px 16px;border:1px solid #d5ced4;border-radius:11px;background:#fff;color:#302b31;font:inherit;font-weight:700;cursor:pointer}
     #googleButton[hidden]{display:none}
+    #googleButton:disabled{opacity:.6;cursor:wait}
+    .google-g{font:bold 20px Arial,sans-serif;color:#4285f4}
     #message{min-height:1.5em;color:#9b4e56;font-size:13px}
     #userCard{padding:14px;border:1px solid #e6ded9;border-radius:13px;background:#faf6f1}
     #userCard[hidden]{display:none}
@@ -31,7 +33,7 @@
   <h1>حساب QUIZORA</h1>
   <p>سجّل الدخول أو أنشئ حسابك باختيار حساب Google الموجود على جهازك.</p>
   <div id="availability" class="notice" role="status">جارٍ التحقق من إعداد تسجيل الدخول…</div>
-  <div id="googleButton" hidden></div>
+  <button id="googleButton" type="button" hidden><span class="google-g" aria-hidden="true">G</span>المتابعة باستخدام Google</button>
   <p id="message" aria-live="polite"></p>
   <section id="userCard" hidden>
     <p id="currentUser"></p>
@@ -39,127 +41,159 @@
   </section>
   <a class="link" href="/">العودة إلى QUIZORA</a>
 </main>
-<script src="/config.js"></script>
-<script>
-  (function () {
-    "use strict";
-    var config = window.APP_CONFIG || {};
-    var base = (config.apiBaseUrl || "").replace(/\/+$/, "");
-    var message = document.getElementById("message");
-    var availability = document.getElementById("availability");
-    var button = document.getElementById("googleButton");
-    var userCard = document.getElementById("userCard");
-    var next = new URLSearchParams(location.search).get("next") || "/";
-    if (next.charAt(0) !== "/" || next.indexOf("//") === 0) next = "/";
+<script src="/config.js?v=1.2.0"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import {
+    getAuth,
+    GoogleAuthProvider,
+    getRedirectResult,
+    signInWithPopup,
+    signInWithRedirect,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-    function api(path, method, data) {
-      return fetch(base + path, {
-        method: method || "GET",
-        credentials: "include",
-        cache: "no-store",
-        headers: data ? {"Content-Type": "application/json"} : {},
-        body: data ? JSON.stringify(data) : undefined
-      }).then(function (response) {
-        return response.json().catch(function () { return {}; }).then(function (payload) {
-          if (!response.ok) throw new Error(payload.message || "تعذّر إتمام الطلب.");
-          return payload;
-        });
-      });
+  const config = window.APP_CONFIG || {};
+  const base = (config.apiBaseUrl || "").replace(/\/+$/, "");
+  const message = document.getElementById("message");
+  const availability = document.getElementById("availability");
+  const button = document.getElementById("googleButton");
+  const userCard = document.getElementById("userCard");
+  const firebaseConfig = config.firebase;
+  const requestedNext = new URLSearchParams(location.search).get("next") || "/";
+  let next = "/";
+  try {
+    const nextUrl = new URL(requestedNext, location.origin);
+    if (nextUrl.origin === location.origin) {
+      next = nextUrl.pathname + nextUrl.search + nextUrl.hash;
     }
+  } catch (error) {
+    console.warn("تجاهل رابط العودة غير الصالح.", error);
+  }
 
-    function randomNonce() {
-      var bytes = new Uint8Array(32);
-      crypto.getRandomValues(bytes);
-      return Array.prototype.map.call(bytes, function (byte) {
-        return byte.toString(16).padStart(2, "0");
-      }).join("");
-    }
-
-    function showUser(user) {
-      if (!user) return;
-      document.getElementById("currentUser").textContent =
-        user.full_name + " — " + user.email;
-      userCard.hidden = false;
-      button.hidden = true;
-    }
-
-    function loadGoogle(clientId) {
-      var script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.onload = function () {
-        var nonce = randomNonce();
-        google.accounts.id.initialize({
-          client_id: clientId,
-          callback: function (response) {
-            button.hidden = true;
-            message.textContent = "جارٍ التحقق من حساب Google…";
-            api("/api/auth/google/login", "POST", {
-              credential: response.credential,
-              nonce: nonce
-            }).then(function () {
-              location.replace(next);
-            }).catch(function (error) {
-              message.textContent = error.message;
-              button.hidden = false;
-            });
-          },
-          nonce: nonce,
-          auto_select: false,
-          ux_mode: "popup"
-        });
-        google.accounts.id.renderButton(button, {
-          type: "standard",
-          theme: "outline",
-          size: "large",
-          text: "continue_with",
-          shape: "rectangular",
-          locale: "ar",
-          width: Math.min(320, Math.max(240, mainWidth()))
-        });
-        button.hidden = false;
-      };
-      script.onerror = function () {
-        availability.textContent = "تعذّر تحميل تسجيل الدخول من Google. تحقق من الاتصال بالإنترنت.";
-      };
-      document.head.appendChild(script);
-    }
-
-    function mainWidth() {
-      return document.querySelector("main").clientWidth - 36;
-    }
-
-    document.getElementById("logout").addEventListener("click", function () {
-      api("/api/auth/logout", "POST", {}).then(function () {
-        userCard.hidden = true;
-        message.textContent = "تم تسجيل الخروج.";
-        api("/api/auth/status").then(function (status) {
-          if (status.enabled) loadGoogle(status.google_client_id);
-        });
-      }).catch(function (error) {
-        message.textContent = error.message;
+  function api(path, method, data) {
+    return fetch(base + path, {
+      method: method || "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: data ? {"Content-Type": "application/json"} : {},
+      body: data ? JSON.stringify(data) : undefined
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (payload) {
+        if (!response.ok) throw new Error(payload.message || "تعذّر إتمام الطلب.");
+        return payload;
       });
     });
+  }
 
-    api("/api/auth/status").then(function (status) {
-      if (!status.enabled) {
-        availability.textContent = status.message || "تسجيل الدخول غير مفعّل حاليًا.";
+  function showSignIn() {
+    button.hidden = false;
+    button.disabled = false;
+  }
+
+  function showUser(user) {
+    if (!user) return;
+    document.getElementById("currentUser").textContent =
+      user.full_name + " — " + user.email;
+    userCard.hidden = false;
+    button.hidden = true;
+  }
+
+  function showSignInError(error) {
+    const messages = {
+      "auth/unauthorized-domain": "أضف نطاق الواجهة إلى النطاقات المسموح بها في Firebase Authentication.",
+      "auth/operation-not-allowed": "فعّل مزوّد Google من Firebase Authentication.",
+      "auth/popup-closed-by-user": "أُغلقت نافذة اختيار حساب Google قبل اكتمال الدخول.",
+      "auth/network-request-failed": "تعذّر الاتصال بـGoogle؛ تحقق من الإنترنت وحاول مجددًا."
+    };
+    message.textContent = messages[error.code] || error.message || "تعذّر تسجيل الدخول باستخدام Google.";
+  }
+
+  const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
+  const auth = app ? getAuth(app) : null;
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({prompt: "select_account"});
+  if (auth) auth.languageCode = "ar";
+
+  async function finishSignIn(user) {
+    message.textContent = "جارٍ التحقق من حساب Google…";
+    button.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      await api("/api/auth/firebase/login", "POST", {id_token: idToken});
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.warn("تعذّر إنهاء جلسة Firebase المحلية.", error);
+      }
+      location.replace(next);
+    } catch (error) {
+      showSignInError(error);
+      showSignIn();
+    }
+  }
+
+  button.addEventListener("click", async function () {
+    button.disabled = true;
+    message.textContent = "جارٍ فتح حسابات Google…";
+    try {
+      if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
+        await signInWithRedirect(auth, provider);
         return;
       }
-      availability.textContent = "تسجيل آمن باستخدام Google.";
-      api("/api/auth/me").then(function (result) {
-        if (result.user) {
-          showUser(result.user);
-        } else {
-          loadGoogle(status.google_client_id);
-        }
-      }).catch(function () {
-        loadGoogle(status.google_client_id);
-      });
-    }).catch(function () {
-      availability.textContent = "تعذّر الاتصال بخدمة الحسابات.";
+      const result = await signInWithPopup(auth, provider);
+      await finishSignIn(result.user);
+    } catch (error) {
+      showSignInError(error);
+      showSignIn();
+    }
+  });
+
+  document.getElementById("logout").addEventListener("click", function () {
+    api("/api/auth/logout", "POST", {}).then(function () {
+      userCard.hidden = true;
+      message.textContent = "تم تسجيل الخروج.";
+      showSignIn();
+    }).catch(function (error) {
+      message.textContent = error.message;
     });
-  })();
+  });
+
+  async function initializeAccountPage() {
+    if (!firebaseConfig || !auth) {
+      availability.textContent = "إعداد Firebase غير موجود في الواجهة.";
+      return;
+    }
+    const status = await api("/api/auth/status");
+    if (!status.enabled) {
+      availability.textContent = status.message || "تسجيل الدخول غير مفعّل حاليًا.";
+      return;
+    }
+    availability.textContent = "تسجيل آمن باستخدام Google.";
+
+    let redirectResult = null;
+    try {
+      redirectResult = await getRedirectResult(auth);
+    } catch (error) {
+      showSignInError(error);
+    }
+    if (redirectResult && redirectResult.user) {
+      await finishSignIn(redirectResult.user);
+      return;
+    }
+
+    const result = await api("/api/auth/me");
+    if (result.user) {
+      showUser(result.user);
+    } else {
+      showSignIn();
+    }
+  }
+
+  initializeAccountPage().catch(function (error) {
+    availability.textContent = error.message || "تعذّر الاتصال بخدمة الحسابات.";
+    showSignIn();
+  });
 </script>
 </body>
 </html>

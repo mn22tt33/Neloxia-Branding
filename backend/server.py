@@ -36,7 +36,7 @@ from admin_page import ADMIN_PAGE
 from account_auth import (
     AuthStoreError,
     PostgresAuthStore,
-    verify_google_credential,
+    verify_firebase_credential,
 )
 
 try:
@@ -72,14 +72,14 @@ _queue_store = (
     PostgresQueue(DATABASE_URL, APP_ENCRYPTION_KEY) if DATABASE_URL else None
 )
 _auth_store = PostgresAuthStore(DATABASE_URL) if DATABASE_URL else None
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "").strip()
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 AUTH_REQUIRED = (
-    bool(GOOGLE_CLIENT_ID or ADMIN_EMAIL)
+    bool(FIREBASE_PROJECT_ID or ADMIN_EMAIL)
     or os.environ.get("QUIZORA_REQUIRE_AUTH") == "1"
 )
 AUTH_DISABLED_MESSAGE = (
-    "تسجيل Google غير مفعّل؛ يلزم إعداد GOOGLE_CLIENT_ID وADMIN_EMAIL "
+    "تسجيل Google غير مفعّل؛ يلزم إعداد FIREBASE_PROJECT_ID وADMIN_EMAIL "
     "وربط PostgreSQL أولًا."
 )
 COOKIE_SECURE = os.environ.get(
@@ -87,7 +87,7 @@ COOKIE_SECURE = os.environ.get(
     "1"
     if os.environ.get("QUIZORA_REQUIRE_DATABASE") == "1"
     or os.environ.get("RAILWAY_ENVIRONMENT")
-    or GOOGLE_CLIENT_ID
+    or FIREBASE_PROJECT_ID
     else "0",
 ) == "1"
 _worker_shutdown = threading.Event()
@@ -1265,7 +1265,7 @@ def make_handler():
         @staticmethod
         def _auth_enabled():
             return bool(
-                GOOGLE_CLIENT_ID
+                FIREBASE_PROJECT_ID
                 and ADMIN_EMAIL
                 and _auth_store
                 and _queue_store
@@ -1302,7 +1302,7 @@ def make_handler():
                 return False, None
             return True, user
 
-        def _google_login(self):
+        def _firebase_login(self):
             if not self._auth_mutation_allowed():
                 self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
                 return
@@ -1313,17 +1313,14 @@ def make_handler():
                 data = self._read_json()
                 if not isinstance(data, dict):
                     raise ValueError("invalid body")
-                credential = data.get("credential")
-                nonce = data.get("nonce")
+                credential = data.get("id_token")
                 if (
                     not isinstance(credential, str)
                     or not 100 <= len(credential) <= 16384
-                    or not isinstance(nonce, str)
-                    or not re.fullmatch(r"[A-Za-z0-9_-]{20,128}", nonce)
                 ):
                     raise ValueError("تعذّر قراءة استجابة Google؛ حاول مجددًا.")
-                identity = verify_google_credential(
-                    credential, GOOGLE_CLIENT_ID, nonce
+                identity = verify_firebase_credential(
+                    credential, FIREBASE_PROJECT_ID
                 )
             except (ValueError, TypeError, json.JSONDecodeError) as error:
                 self._json(400, {
@@ -1333,14 +1330,14 @@ def make_handler():
                 return
             try:
                 if not _auth_store.allow_login(
-                    identity["google_sub"], self._client_ip()
+                    identity["firebase_uid"], self._client_ip()
                 ):
                     self._json(429, {
                         "ok": False,
                         "message": "محاولات تسجيل الدخول كثيرة؛ حاول لاحقًا.",
                     })
                     return
-                user = _auth_store.upsert_google_user(identity, ADMIN_EMAIL)
+                user = _auth_store.upsert_firebase_user(identity, ADMIN_EMAIL)
                 token = _auth_store.create_session(user["id"])
             except AuthStoreError as error:
                 self._json(503, {
@@ -1564,11 +1561,10 @@ def make_handler():
                     "ok": True,
                     "enabled": enabled,
                     "required": AUTH_REQUIRED,
-                    "google_client_id": GOOGLE_CLIENT_ID if enabled else "",
                     "message": (
                         "" if enabled
                         else AUTH_DISABLED_MESSAGE if AUTH_REQUIRED
-                        else "تسجيل الدخول متاح عند إعداد Google OAuth."
+                        else "تسجيل الدخول متاح عند إعداد Firebase Authentication."
                     ),
                 })
                 return
@@ -1622,8 +1618,8 @@ def make_handler():
             if route == "/api/auth/register":
                 self._json(404, {"ok": False, "message": "استخدم زر تسجيل الدخول بحساب Google."})
                 return
-            if route == "/api/auth/google/login":
-                self._google_login()
+            if route == "/api/auth/firebase/login":
+                self._firebase_login()
                 return
             if route == "/api/auth/logout":
                 if not self._auth_mutation_allowed():
