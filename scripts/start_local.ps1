@@ -168,7 +168,9 @@ try {
         -PassThru
 
     $publicUrl = ""
-    $tunnelDeadline = (Get-Date).AddSeconds(60)
+    # ngrok can take longer on the first connection while it negotiates the
+    # reserved endpoint; keep the local server alive while that handshake completes.
+    $tunnelDeadline = (Get-Date).AddSeconds(120)
     while ((Get-Date) -lt $tunnelDeadline) {
         if ($tunnelProcess.HasExited) {
             throw "ngrok وقف أثناء التشغيل. راجع السجل: $tunnelStderr، وتأكد إنك ضايف مفتاح حسابك."
