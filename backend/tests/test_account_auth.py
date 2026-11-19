@@ -32,9 +32,13 @@ class FirebaseAuthTests(unittest.TestCase):
         with patch.dict(os.environ, {"RAILWAY_ENVIRONMENT": "production"}, clear=True):
             self.assertEqual(server._server_bind_host(), "0.0.0.0")
 
+    def test_server_binds_to_configured_host_in_termux(self):
+        with patch.dict(os.environ, {"QUIZORA_BIND_HOST": "0.0.0.0"}, clear=True):
+            self.assertEqual(server._server_bind_host(), "0.0.0.0")
+
     def test_versioned_config_route_serves_static_file(self):
         with self._running_api() as base:
-            with urllib.request.urlopen(base + "/config.js?v=1.1.1") as response:
+            with urllib.request.urlopen(base + "/config.js?v=1.1.3") as response:
                 body = response.read()
                 self.assertEqual(response.status, 200)
         self.assertIn(b"window.APP_CONFIG", body)
@@ -45,7 +49,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.1.1", page)
+        self.assertIn("v1.1.3", page)
         self.assertIn('id="continueToSite"', page)
         self.assertIn('<main id="accountMain" hidden>', page)
         self.assertIn('id="serverOfflineNotice"', page)

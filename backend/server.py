@@ -2346,6 +2346,9 @@ def make_handler():
 
 
 def _server_bind_host():
+    configured_host = os.environ.get("QUIZORA_BIND_HOST", "").strip()
+    if configured_host:
+        return configured_host
     return "0.0.0.0" if os.environ.get("RAILWAY_ENVIRONMENT") else "127.0.0.1"
 
 

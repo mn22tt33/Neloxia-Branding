@@ -33,7 +33,7 @@ if ! proot-distro login debian -- bash -lc 'command -v ngrok >/dev/null 2>&1'; t
 fi
 
 cd "$PROJECT_ROOT"
-PORT="$PORT" python backend/server.py &
+PORT="$PORT" QUIZORA_BIND_HOST="0.0.0.0" TOOL_NO_BROWSER="1" python backend/server.py &
 SERVER_PID=$!
 TUNNEL_PID=""
 
@@ -42,12 +42,21 @@ cleanup() {
         kill "$TUNNEL_PID" 2>/dev/null || true
         wait "$TUNNEL_PID" 2>/dev/null || true
     fi
+    proot-distro login debian -- bash -lc \
+        "pkill -f 'ngrok http .*8700' 2>/dev/null || true" >/dev/null 2>&1 || true
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# Stop stale ngrok tunnel first. This also prevents ERR_NGROK_334 and
+# ensures the new process owns the reserved endpoint.
+proot-distro login debian -- bash -lc \
+    "pkill -f 'ngrok http .*8700' 2>/dev/null || true" >/dev/null 2>&1 || true
+pkill -f 'python.*backend/server.py' 2>/dev/null || true
+sleep 2
 
 server_ready=0
 for _ in {1..30}; do
@@ -68,10 +77,10 @@ if [ "$server_ready" -ne 1 ]; then
     exit 1
 fi
 
-proot-distro login debian -- ngrok http "$PORT" --url "$API_URL" &
+proot-distro login debian -- ngrok http "127.0.0.1:$PORT" --url "$API_URL" &
 TUNNEL_PID=$!
 tunnel_ready=0
-for _ in {1..60}; do
+for _ in {1..120}; do
     if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
         wait "$TUNNEL_PID"
         echo "❌ توقف ngrok. تأكد من إعداد رمز الحساب ومن أن العنوان متاح." >&2
@@ -96,5 +105,8 @@ echo "📱 الموقع العام: https://quizora.movb.workers.dev"
 echo "🔗 عنوان الـAPI: $API_URL"
 echo "🏠 الواجهة المحلية: http://localhost:$PORT"
 echo "💡 للإيقاف اضغط Ctrl+C. لا تشغّل ngrok على الكمبيوتر والهاتف في الوقت نفسه."
+if command -v termux-open-url >/dev/null 2>&1; then
+    termux-open-url "https://quizora.movb.workers.dev" >/dev/null 2>&1 || true
+fi
 wait "$TUNNEL_PID"
 
