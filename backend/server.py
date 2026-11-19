@@ -2056,10 +2056,18 @@ def make_handler():
                 self._admin_user_action()
                 return
             if route == "/api/auth/logout":
-                self._json(403, {
-                    "ok": False,
-                    "message": "تسجيل الخروج غير متاح؛ تظل جلستك محفوظة.",
-                })
+                if not self._auth_mutation_allowed():
+                    self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
+                    return
+                token = self._cookie("quizora_session")
+                if token and _auth_store:
+                    try:
+                        _auth_store.revoke_session(token)
+                    except AuthStoreError:
+                        self._json(503, {"ok": False, "message": "تعذّر إنهاء الجلسة."})
+                        return
+                self._set_cookie("quizora_session", "", 0)
+                self._json(200, {"ok": True, "message": "تم تسجيل الخروج."})
                 return
             if urlsplit(self.path).path == "/api/admin/settings":
                 try:

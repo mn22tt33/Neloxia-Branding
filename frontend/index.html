@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.2.0"></script>
+<script src="/config.js?v=1.1.4"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.0").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.1.4").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -73,7 +73,10 @@
   html,body{margin:0;padding:0}
   body{
     font-family:"Segoe UI","Tajawal","Cairo","Noto Kufi Arabic","Noto Naskh Arabic",Tahoma,system-ui,sans-serif;
-    background:var(--bg);
+    background:
+      radial-gradient(1000px 520px at 100% -10%,rgba(156,135,221,.16),transparent 62%),
+      radial-gradient(840px 460px at 0% 8%,rgba(226,178,116,.18),transparent 60%),
+      var(--bg);
     color:var(--ink);
     min-height:100vh;
     font-size:15px;
@@ -477,24 +480,44 @@
     padding:20px;background:linear-gradient(145deg,#F3EFE9 0%,#ECE6E8 52%,#E6DFE8 100%);
   }
   .server-offline-overlay[hidden]{display:none}
-  .server-startup-overlay{
-    position:fixed;inset:0;z-index:11000;display:grid;place-items:center;
-    padding:20px;background:linear-gradient(145deg,#F3EFE9 0%,#ECE6E8 52%,#E6DFE8 100%);
+
+  /* ─── شاشة التحميل ─── */
+  .startup-loader{
+    position:fixed;inset:0;z-index:10001;display:grid;place-items:center;
+    background:linear-gradient(145deg,#F3EFE9 0%,#ECE6E8 52%,#E6DFE8 100%);
   }
-  .server-startup-overlay[hidden]{display:none}
-  .server-startup-card{
-    width:min(440px,100%);padding:30px 24px;text-align:center;
-    background:var(--surface);border:1px solid var(--line);border-radius:24px;
-    box-shadow:var(--shadow);
+  .startup-loader[hidden]{display:none!important}
+  .startup-loader-inner{text-align:center;padding:24px}
+  .startup-loader-spinner{
+    width:48px;height:48px;margin:0 auto 18px;
+    border:4px solid rgba(73,56,73,.15);
+    border-top-color:#493849;
+    border-radius:50%;
+    animation:startupSpin .75s linear infinite;
   }
-  .server-startup-spinner{
-    width:38px;height:38px;margin:0 auto 15px;border:3px solid var(--line);
-    border-top-color:var(--brand-700);border-radius:50%;animation:server-startup-spin .8s linear infinite;
+  .startup-loader-text{color:#493849;font-size:16px;font-weight:700;margin:0}
+  .startup-dots::after{content:'';animation:dots 1.4s steps(4,end) infinite}
+  @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+  @keyframes startupSpin{to{transform:rotate(360deg)}}
+  .profile-dialog{
+    width:min(440px,calc(100% - 32px));max-width:440px;padding:0;
+    border:1px solid var(--line);border-radius:24px;
+    background:var(--surface);color:var(--ink);box-shadow:var(--shadow);
   }
-  @keyframes server-startup-spin{to{transform:rotate(360deg)}}
-  @media (prefers-reduced-motion:reduce){.server-startup-spinner{animation:none}}
-  .server-startup-card h2{margin:0 0 7px;font-size:18px;color:var(--ink)}
-  .server-startup-card p{margin:0;color:var(--ink-2);font-size:13px}
+  .profile-dialog::backdrop{background:rgba(28,22,32,.48);backdrop-filter:blur(4px)}
+  .profile-dialog-content{padding:24px}
+  .profile-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+  .profile-dialog-head h2{margin:0;font-size:21px}
+  .profile-dialog-kicker{margin:0 0 5px;color:var(--brand-700);font-size:11px;font-weight:800}
+  .profile-dialog-close{
+    width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:11px;
+    background:var(--surface-2);color:var(--ink);font-size:22px;cursor:pointer;
+  }
+  .profile-details{display:grid;gap:10px;margin:20px 0}
+  .profile-field{display:grid;gap:4px;padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+  .profile-field span{color:var(--muted);font-size:11px;font-weight:700}
+  .profile-field strong{overflow-wrap:anywhere;font-size:14px}
+  .profile-field.email strong{direction:ltr;text-align:right}
   .server-offline-card{
     width:min(440px,100%);padding:28px 24px;text-align:center;
     background:var(--surface);border:1px solid var(--line);border-radius:24px;
@@ -583,7 +606,10 @@
   html{scroll-behavior:smooth;scroll-padding-top:18px}
   body{
     color:var(--ink);
-    background:var(--bg);
+    background:
+      radial-gradient(800px 440px at 92% -8%,rgba(189,118,84,.12),transparent 66%),
+      radial-gradient(700px 500px at -8% 36%,rgba(121,100,123,.09),transparent 68%),
+      linear-gradient(180deg,#F5F1EB 0%,var(--bg) 62%,#F5F1EB 100%);
     font-family:"Segoe UI","Tajawal","Cairo","Noto Naskh Arabic",Tahoma,system-ui,sans-serif;
     line-height:1.65;
   }
@@ -1117,26 +1143,48 @@
 </head>
 <body>
 
-<div class="server-startup-overlay" id="serverStartupGate" role="status" aria-live="polite">
-  <section class="server-startup-card">
-    <div class="server-startup-spinner" aria-hidden="true"></div>
-    <h2>جارٍ التحقق من توفر الخدمة</h2>
-    <p>لحظات وهنعرض الصفحة المناسبة لحالة الموقع.</p>
-  </section>
-</div>
-
 <header class="app-header">
   <div class="brand">
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.2.0">v1.2.0</span>
+      <span class="brand-version" aria-label="الإصدار 1.1.3">v1.1.3</span>
     </div>
   </div>
-  <a class="btn secondary" href="/account.html">حساب المستخدم</a>
+  <button class="btn secondary" id="profileButton" type="button" hidden>الملف الشخصي</button>
 </header>
 
-<main class="wrap">
+<dialog class="profile-dialog" id="profileDialog" aria-labelledby="profileDialogTitle">
+  <div class="profile-dialog-content">
+    <div class="profile-dialog-head">
+      <div>
+        <p class="profile-dialog-kicker">حسابك في QUIZORA</p>
+        <h2 id="profileDialogTitle">الملف الشخصي</h2>
+      </div>
+      <button class="profile-dialog-close" id="closeProfileButton" type="button" aria-label="إغلاق">×</button>
+    </div>
+    <div class="profile-details">
+      <div class="profile-field">
+        <span>الاسم</span>
+        <strong id="profileName">—</strong>
+      </div>
+      <div class="profile-field email">
+        <span>البريد الإلكتروني</span>
+        <strong id="profileEmail">—</strong>
+      </div>
+    </div>
+    <button class="btn secondary" id="closeProfileFooter" type="button">إغلاق</button>
+  </div>
+</dialog>
+
+<div class="startup-loader" id="startupLoader" role="status" aria-live="polite">
+  <div class="startup-loader-inner">
+    <div class="startup-loader-spinner" aria-hidden="true"></div>
+    <p class="startup-loader-text">جارٍ التحقق من حالة الموقع<span class="startup-dots"></span></p>
+  </div>
+</div>
+
+<main class="wrap" hidden>
 
   <!-- STEP 1: school system -->
   <section class="panel active" data-panel="1" aria-labelledby="p1title">
@@ -1267,19 +1315,55 @@
   var API_BASE_URL = (configuredApiBase || location.origin).replace(/\/+$/, "");
   var redirectingToAccount = false;
 
+  function hideStartupLoader(){
+    var loader = document.getElementById("startupLoader");
+    if (loader) loader.hidden = true;
+  }
+
   function setBackendUnavailable(unavailable){
+    hideStartupLoader();
     var notice = document.getElementById("serverOfflineNotice");
-    if (notice) notice.hidden = !unavailable;
+    if (!notice) return;
+    if (unavailable) {
+      notice.hidden = false;
+      var mainEl = document.querySelector("main.wrap");
+      if (mainEl) mainEl.hidden = true;
+    }
   }
 
   function finishStartupCheck(available){
-    setBackendUnavailable(!available);
-    var gate = document.getElementById("serverStartupGate");
-    if (gate) gate.hidden = true;
+    hideStartupLoader();
+    var notice = document.getElementById("serverOfflineNotice");
+    var mainEl = document.querySelector("main.wrap");
+    if (available) {
+      if (notice) notice.hidden = true;
+      if (mainEl) mainEl.hidden = false;
+    } else {
+      if (notice) notice.hidden = false;
+      if (mainEl) mainEl.hidden = true;
+    }
   }
 
+  var profileButton = document.getElementById("profileButton");
+  var profileDialog = document.getElementById("profileDialog");
+  function showProfile(user){
+    document.getElementById("profileName").textContent = user.full_name || "غير محدد";
+    document.getElementById("profileEmail").textContent = user.email || "غير متوفر";
+    profileButton.hidden = false;
+  }
+  function closeProfile(){
+    if (profileDialog.open) profileDialog.close();
+  }
+  profileButton.addEventListener("click", function(){
+    profileDialog.showModal();
+  });
+  document.getElementById("closeProfileButton").addEventListener("click", closeProfile);
+  document.getElementById("closeProfileFooter").addEventListener("click", closeProfile);
+  profileDialog.addEventListener("click", function(event){
+    if (event.target === profileDialog) closeProfile();
+  });
+
   function redirectToAccount(){
-    if (redirectingToAccount) return;
     redirectingToAccount = true;
     var returnTo = location.pathname + location.search + location.hash;
     location.replace(
@@ -1301,6 +1385,14 @@
     }
     return fetch(API_BASE_URL + path, options).then(function(response){
       var contentType = response.headers.get("Content-Type") || "";
+      if (response.status === 503 && /application\/json/i.test(contentType)) {
+        return response.clone().json().then(function(body){
+          if (body && body.maintenance) {
+            setBackendUnavailable(true);
+          }
+          return response;
+        }).catch(function(){ return response; });
+      }
       var unavailable = !/application\/json/i.test(contentType) ||
         response.status === 404 ||
         response.status >= 500;
@@ -1327,6 +1419,10 @@
       })
       .then(function(payload){
         if (!payload || payload.ok !== true) throw new Error("الخادم غير جاهز.");
+        if (payload.maintenance) {
+          finishStartupCheck(false);
+          return false;
+        }
         return apiFetch("/api/auth/status").then(function(authResponse){
           if (authResponse.status === 404) {
             redirectToAccount();
@@ -1349,17 +1445,20 @@
                   redirectToAccount();
                   return;
                 }
+                showProfile(session.user);
                 finishStartupCheck(true);
               });
             });
           });
         });
       })
-      .catch(function(){
+      .catch(function(error){
         finishStartupCheck(false);
+        return false;
       })
-      .then(function(){
+      .then(function(ready){
         window.clearTimeout(timeout);
+        return Boolean(ready) && !redirectingToAccount;
       });
   }
 
@@ -1742,9 +1841,8 @@
 
   function logHtml(lines){
     return lines.map(function(l){
-      var level = l.level === "success" ? "ok" : l.level === "error" ? "err" : l.level === "warning" ? "wrn" : l.level;
-      var cls = level === "ok" ? "ok" : level === "err" ? "err" : level === "wrn" ? "wrn" : level === "sys" ? "sys" : "";
-      var marker = level === "ok" ? "+" : level === "err" || level === "wrn" ? "!" : ">";
+      var cls = l.level === "ok" ? "ok" : l.level === "err" ? "err" : l.level === "wrn" ? "wrn" : l.level === "sys" ? "sys" : "";
+      var marker = l.level === "ok" ? "+" : l.level === "err" || l.level === "wrn" ? "!" : ">";
       return '<div class="terminal-line ' + cls + '">' +
         '<span class="terminal-time">' + esc(l.t) + '</span>' +
         '<span class="terminal-marker" aria-hidden="true">' + marker + '</span>' +
@@ -2358,7 +2456,8 @@
     history.pushState({ quizoraBackGuard: true }, "", location.href);
   });
   renderAll();
-  checkBackendAtStartup().then(function(){
+  checkBackendAtStartup().then(function(ready){
+    if (!ready) return;
     return poll();
   }).then(function(){
     if (state.serverRunningCount > 0 && !isFreshVisit){

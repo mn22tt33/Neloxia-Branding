@@ -287,6 +287,69 @@ ADMIN_PAGE = r"""<!doctype html>
       .job { grid-template-columns: 39px minmax(0, 1fr) auto; gap: 8px; }
       .skip { max-width: 82px; padding: 0 8px; font-size: 11px; }
     }
+
+    /* Premium glass administration layer */
+    body {
+      background:
+        radial-gradient(900px 500px at 100% 0, rgba(62,95,158,.18), transparent 58%),
+        radial-gradient(700px 420px at 0 100%, rgba(156,135,221,.10), transparent 62%),
+        var(--bg);
+    }
+    .shell { width: min(1180px, calc(100% - 40px)); padding: 28px 0 48px; }
+    .topbar {
+      min-height: 92px; margin-bottom: 22px; padding: 14px 18px;
+      border: 1px solid rgba(255,255,255,.10); border-radius: 24px;
+      background:
+        radial-gradient(420px 140px at 82% -60%, rgba(255,255,255,.10), transparent 60%),
+        linear-gradient(112deg, #07111f 0%, #2C2054 58%, #3E5F9E 100%);
+      box-shadow: 0 18px 44px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.07);
+      -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    }
+    .brand-mark {
+      width: 58px; height: 58px; border-radius: 18px;
+      color: #fff; background: linear-gradient(135deg, #7A63CB, #3E5F9E);
+      box-shadow: 0 12px 28px rgba(62,95,158,.26);
+    }
+    .workspace { grid-template-columns: 220px minmax(0,1fr); gap: 16px; }
+    .sidebar {
+      position: sticky; top: 18px; padding: 12px; border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.09);
+      background: rgba(13,26,43,.88);
+      box-shadow: 0 16px 40px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.04);
+      -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    }
+    .nav-item { min-height: 46px; border-radius: 13px; }
+    .nav-item.active {
+      border-color: rgba(84,223,194,.22);
+      background: linear-gradient(135deg, rgba(84,223,194,.11), rgba(84,223,194,.05));
+    }
+    .hero, .preferences, .board, .user-board, .user-stat {
+      border: 1px solid rgba(179,205,235,.11);
+      background: rgba(16,30,48,.84);
+      box-shadow: 0 12px 32px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.025);
+      -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    }
+    .hero { border-radius: 22px; padding: 22px 24px; }
+    .preferences { border-radius: 17px; }
+    .stats { gap: 12px; }
+    .stat { min-height: 112px; border: 1px solid rgba(179,205,235,.10); border-radius: 18px; }
+    .board { border-radius: 20px; }
+    .job { border-radius: 14px; background: rgba(255,255,255,.018); }
+    .job-actions button, .refresh-button, .user-action, .users-pagination button {
+      border-radius: 10px; transition: .16s;
+    }
+    .job-actions button:hover:not(:disabled), .refresh-button:hover, .user-action:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+    @media (max-width:760px) {
+      .shell { width: calc(100% - 24px); padding-top: 16px; }
+      .topbar { min-height: 76px; padding: 10px 12px; border-radius: 18px; }
+      .brand-mark { width: 48px; height: 48px; border-radius: 15px; }
+      .workspace { grid-template-columns: minmax(0,1fr); }
+      .sidebar { position: static; border-radius: 15px; }
+      .hero { padding: 18px 16px; border-radius: 18px; }
+      .stat { min-height: 96px; border-radius: 15px; }
+    }
   </style>
 </head>
 <body>

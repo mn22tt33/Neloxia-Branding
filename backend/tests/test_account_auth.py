@@ -34,7 +34,7 @@ class FirebaseAuthTests(unittest.TestCase):
 
     def test_versioned_config_route_serves_static_file(self):
         with self._running_api() as base:
-            with urllib.request.urlopen(base + "/config.js?v=1.1.3") as response:
+            with urllib.request.urlopen(base + "/config.js?v=1.1.1") as response:
                 body = response.read()
                 self.assertEqual(response.status, 200)
         self.assertIn(b"window.APP_CONFIG", body)
@@ -45,7 +45,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.1.3", page)
+        self.assertIn("v1.1.1", page)
         self.assertIn('id="continueToSite"', page)
         self.assertIn('<main id="accountMain" hidden>', page)
         self.assertIn('id="serverOfflineNotice"', page)
@@ -385,22 +385,26 @@ class FirebaseAuthTests(unittest.TestCase):
             for statement in statements
         ))
 
-    def test_logout_endpoint_rejects_session_termination(self):
+    def test_logout_endpoint_revokes_session_and_clears_cookie(self):
+        auth_store = MagicMock()
         with (
             patch.object(server, "_queue_store", _QueueStoreStub()),
+            patch.object(server, "_auth_store", auth_store),
             self._running_api() as base,
         ):
             request = urllib.request.Request(
                 base + "/api/auth/logout",
                 data=b"{}",
                 method="POST",
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Cookie": "quizora_session=session-1",
+                },
             )
-            with self.assertRaises(urllib.error.HTTPError) as rejected:
-                urllib.request.urlopen(request)
-            self.assertEqual(rejected.exception.code, 403)
-            self.assertNotIn("Set-Cookie", rejected.exception.headers)
-            rejected.exception.close()
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn("Max-Age=0", response.headers["Set-Cookie"])
+            auth_store.revoke_session.assert_called_once_with("session-1")
 
     def test_blocked_firebase_account_cannot_start_a_session(self):
         auth_store = MagicMock()

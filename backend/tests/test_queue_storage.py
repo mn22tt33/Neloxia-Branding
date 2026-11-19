@@ -31,6 +31,7 @@ class QueueStorageTests(unittest.TestCase):
         history_dir = tempfile.TemporaryDirectory()
         self.addCleanup(history_dir.cleanup)
         patchers = (
+            patch.object(server, "_site_enabled_cache", None),
             patch.object(
                 server,
                 "SOLVED_COUNT_PATH",
@@ -123,7 +124,8 @@ class QueueStorageTests(unittest.TestCase):
 
     def test_site_maintenance_blocks_remote_visitors_but_allows_local_preview(self):
         class FakeQueue:
-            enabled = False
+            def __init__(self):
+                self.enabled = False
 
             def get_site_enabled(self):
                 return self.enabled
@@ -160,7 +162,7 @@ class QueueStorageTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertIn("QUIZORA", response.read().decode("utf-8"))
 
-            fake_queue.enabled = False
+            server._set_site_enabled_cached(False)
             remote_request = urllib.request.Request(
                 base + "/",
                 headers={"CF-Connecting-IP": "203.0.113.7"},
