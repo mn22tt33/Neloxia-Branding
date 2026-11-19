@@ -110,7 +110,10 @@ def _get_site_enabled_cached():
     with _site_enabled_lock:
         if _site_enabled_cache is not None:
             return _site_enabled_cache
-        _site_enabled_cache = _queue_store.get_site_enabled()
+        try:
+            _site_enabled_cache = _queue_store.get_site_enabled()
+        except Exception:
+            return True
         return _site_enabled_cache
 
 
@@ -127,10 +130,6 @@ def _set_site_enabled_cached(enabled):
         except Exception as err:
             _ORIG_STDOUT.write("[site-status] تعذّر حفظ الحالة في قاعدة البيانات: %s\n" % err)
     threading.Thread(target=_persist, daemon=True).start()
-
-
-if _queue_store:
-    threading.Thread(target=_get_site_enabled_cached, daemon=True).start()
 QUREO_BANK_PATH = os.path.join(DATA_DIR, "qureo_answers.json")
 PORTAL_LOGIN = "https://me-portal.qureo.education/oauth2/password-login"
 PORTAL_USERINFO = "https://me-portal.qureo.education/oauth2/userinfo"
@@ -2345,6 +2344,7 @@ def main():
             _queue_store.initialize()
             _auth_store.initialize()
             _auth_store.cleanup_expired()
+            _get_site_enabled_cached()
         except QueueStoreError as error:
             _ORIG_STDOUT.write("[app] تعذّر تجهيز قاعدة البيانات: %s\n" % error)
             raise
