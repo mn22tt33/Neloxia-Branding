@@ -108,13 +108,25 @@ if (-not $ngrokPath -or -not (Test-Path -LiteralPath $ngrokPath)) {
     throw "ngrok مش متثبت. ثبّته بالأمر: winget install --id Ngrok.Ngrok --exact، وبعدها ضيف مفتاح حسابك محليًا."
 }
 
-$serverStdout = Join-Path $runtimeDirectory "server.out.log"
-$serverStderr = Join-Path $runtimeDirectory "server.err.log"
-$tunnelStdout = Join-Path $runtimeDirectory "tunnel.out.log"
-$tunnelStderr = Join-Path $runtimeDirectory "tunnel.err.log"
-foreach ($logPath in @($serverStdout, $serverStderr, $tunnelStdout, $tunnelStderr)) {
-    Set-Content -LiteralPath $logPath -Value "" -Encoding UTF8
+# أوقف عمليات ngrok أو الخادم اليتيمة التي تبقى بعد فقدان state.json،
+# حتى لا يبقى سجل قديم مقفولًا ويمنع بدء التشغيل مرة أخرى.
+$orphanProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    ($_.Name -eq "ngrok.exe" -and $_.CommandLine -match "\bhttp\s+$port(?:\s|$)") -or
+    ($_.Name -eq "cloudflared.exe" -and $_.CommandLine -match "tunnel\s+--protocol\s+http2\s+--url\s+http://127\.0\.0\.1:$port") -or
+    ($_.Name -match "^python(w)?\.exe$" -and $_.CommandLine -match "backend[\\/]server\.py")
 }
+foreach ($orphan in $orphanProcesses) {
+    Stop-Process -Id $orphan.ProcessId -Force -ErrorAction SilentlyContinue
+}
+foreach ($orphan in $orphanProcesses) {
+    Wait-Process -Id $orphan.ProcessId -Timeout 5 -ErrorAction SilentlyContinue
+}
+
+$runId = (Get-Date).ToString("yyyyMMdd-HHmmss")
+$serverStdout = Join-Path $runtimeDirectory "server.$runId.out.log"
+$serverStderr = Join-Path $runtimeDirectory "server.$runId.err.log"
+$tunnelStdout = Join-Path $runtimeDirectory "tunnel.$runId.out.log"
+$tunnelStderr = Join-Path $runtimeDirectory "tunnel.$runId.err.log"
 
 try {
     $serverProcess = Start-Process `
@@ -127,13 +139,13 @@ try {
         -PassThru
 
     $healthReady = $false
-    $healthDeadline = (Get-Date).AddSeconds(30)
+    $healthDeadline = (Get-Date).AddSeconds(90)
     while ((Get-Date) -lt $healthDeadline) {
         if ($serverProcess.HasExited) {
             throw "توقف الخادم أثناء بدء التشغيل. راجع السجل: $serverStderr"
         }
         try {
-            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 2
+            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 10
             if ($health.ok) {
                 $healthReady = $true
                 break

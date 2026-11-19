@@ -94,6 +94,43 @@ COOKIE_SECURE = os.environ.get(
     else "0",
 ) == "1"
 _worker_shutdown = threading.Event()
+
+# ─── كاش حالة الموقع (فتح/قفل) في الذاكرة ───
+_site_enabled_cache = None          # None = لم تُقرأ بعد
+_site_enabled_lock = threading.Lock()
+
+
+def _get_site_enabled_cached():
+    """يرجع حالة الموقع من الكاش أو من قاعدة البيانات (أول مرة فقط)."""
+    global _site_enabled_cache
+    if _site_enabled_cache is not None:
+        return _site_enabled_cache
+    if not _queue_store:
+        return True
+    with _site_enabled_lock:
+        if _site_enabled_cache is not None:
+            return _site_enabled_cache
+        _site_enabled_cache = _queue_store.get_site_enabled()
+        return _site_enabled_cache
+
+
+def _set_site_enabled_cached(enabled):
+    """يحدّث الكاش فوراً ثم يحفظ في قاعدة البيانات في الخلفية بدون تأخير."""
+    global _site_enabled_cache
+    with _site_enabled_lock:
+        _site_enabled_cache = enabled
+    if not _queue_store:
+        return
+    def _persist():
+        try:
+            _queue_store.set_site_enabled(enabled)
+        except Exception as err:
+            _ORIG_STDOUT.write("[site-status] تعذّر حفظ الحالة في قاعدة البيانات: %s\n" % err)
+    threading.Thread(target=_persist, daemon=True).start()
+
+
+if _queue_store:
+    threading.Thread(target=_get_site_enabled_cached, daemon=True).start()
 QUREO_BANK_PATH = os.path.join(DATA_DIR, "qureo_answers.json")
 PORTAL_LOGIN = "https://me-portal.qureo.education/oauth2/password-login"
 PORTAL_USERINFO = "https://me-portal.qureo.education/oauth2/userinfo"
@@ -101,7 +138,7 @@ CORS_ALLOWED_ORIGINS = {
     origin.strip().rstrip("/")
     for origin in os.environ.get(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost:8700,http://127.0.0.1:8700,https://quizora55.up.railway.app,https://quizora.movb.workers.dev",
+        "http://localhost:8700,http://127.0.0.1:8700,https://quizora55.up.railway.app,https://quizora.movb.workers.dev,https://slouchy-grappling-stingily.ngrok-free.dev",
     ).split(",")
     if origin.strip()
 }
@@ -281,14 +318,19 @@ def _set_browser_visible(visible):
         _browser_visible = visible
 
 _concurrency_lock = threading.Condition()
-_current_concurrency = 1
+_current_concurrency = 3
 _active_workers = 0
 
 
 def _set_concurrency(_val):
     global _current_concurrency
+    try:
+        requested = int(_val)
+    except (TypeError, ValueError):
+        requested = 3
+    requested = max(1, min(requested, 6))
     with _concurrency_lock:
-        _current_concurrency = 1
+        _current_concurrency = requested
         _concurrency_lock.notify_all()
     return _current_concurrency
 
@@ -1220,6 +1262,7 @@ def make_handler():
                     "Content-Type, ngrok-skip-browser-warning",
                 )
                 self.send_header("Access-Control-Allow-Credentials", "true")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
                 self.send_header("Access-Control-Max-Age", "600")
 
         def _cookie(self, name):
@@ -1594,6 +1637,16 @@ def make_handler():
         def _admin_request_allowed(self):
             if not self._local_request_allowed():
                 return False
+            # لوحة الأدمن المحلية لا تحتاج إلى كوكي نطاق خارجي:
+            # الاتصال يقتصر على 127.0.0.1 ولا يقبل رؤوس proxy أو forwarding.
+            if _auth_store:
+                try:
+                    session_user = self._auth_session()
+                except AuthStoreError:
+                    return False
+                if session_user and session_user.get("role") != "admin":
+                    return False
+                return True
             if not AUTH_REQUIRED:
                 return True
             if not self._auth_enabled():
@@ -1613,7 +1666,7 @@ def make_handler():
             if not _queue_store:
                 return False
             try:
-                enabled = _queue_store.get_site_enabled()
+                enabled = _get_site_enabled_cached()
             except QueueStoreError as error:
                 _ORIG_STDOUT.write(
                     "[site] تعذّر التحقق من حالة الإتاحة: %s\n" % error
@@ -1782,14 +1835,29 @@ def make_handler():
         def do_GET(self):
             parsed_path = urlsplit(self.path)
             if (
-                parsed_path.path == "/admin"
-                or parsed_path.path == "/api/admin"
+                parsed_path.path == "/api/admin"
                 or parsed_path.path.startswith("/api/admin/")
             ) and not self._admin_request_allowed():
                 self._json(403, {
                     "ok": False,
                     "error": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
                 })
+                return
+            if parsed_path.path == "/admin":
+                if not self._local_request_allowed():
+                    self._json(403, {
+                        "ok": False,
+                        "error": "تتطلب الإدارة الاتصال المحلي.",
+                    })
+                    return
+                body = ADMIN_PAGE.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
                 return
             if self._maintenance_gate():
                 return
@@ -1853,7 +1921,7 @@ def make_handler():
                 try:
                     self._json(200, {
                         "ok": True,
-                        "enabled": _queue_store.get_site_enabled(),
+                        "enabled": _get_site_enabled_cached(),
                     })
                 except QueueStoreError:
                     self._json(503, {
@@ -1874,10 +1942,13 @@ def make_handler():
                 try:
                     if _queue_store:
                         _queue_store.health()
+                    site_on = _get_site_enabled_cached() if _queue_store else True
+                    is_local = self._local_request_allowed()
                     self._json(200, {
                         "ok": True,
                         "version": VERSION,
                         "database": "postgresql" if _queue_store else "local",
+                        "maintenance": (not site_on) and (not is_local),
                     })
                 except QueueStoreError:
                     self._json(503, {"ok": False, "error": "قاعدة البيانات غير متاحة."})
@@ -2028,10 +2099,10 @@ def make_handler():
                     })
                     return
                 try:
-                    _queue_store.set_site_enabled(data["enabled"])
+                    _set_site_enabled_cached(data["enabled"])
                     self._json(200, {
                         "ok": True,
-                        "enabled": _queue_store.get_site_enabled(),
+                        "enabled": data["enabled"],
                         "message": (
                             "تم تشغيل الموقع للزوار."
                             if data["enabled"]

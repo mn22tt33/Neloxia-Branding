@@ -34,7 +34,7 @@ class FirebaseAuthTests(unittest.TestCase):
 
     def test_versioned_config_route_serves_static_file(self):
         with self._running_api() as base:
-            with urllib.request.urlopen(base + "/config.js?v=1.1.0") as response:
+            with urllib.request.urlopen(base + "/config.js?v=1.1.3") as response:
                 body = response.read()
                 self.assertEqual(response.status, 200)
         self.assertIn(b"window.APP_CONFIG", body)
@@ -45,8 +45,11 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.1.0", page)
+        self.assertIn("v1.1.3", page)
         self.assertIn('id="continueToSite"', page)
+        self.assertIn('<main id="accountMain" hidden>', page)
+        self.assertIn('id="serverOfflineNotice"', page)
+        self.assertIn('class="server-offline-overlay" id="serverOfflineNotice"', page)
         self.assertNotIn('id="logout"', page)
 
     def test_app_page_redirects_to_login_without_a_session(self):

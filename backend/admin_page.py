@@ -610,13 +610,15 @@ ADMIN_PAGE = r"""<!doctype html>
       try {
         const response = await fetch("/api/auth/me", { cache: "no-store" });
         const data = await response.json();
-        if (!response.ok || !data.user || data.user.role !== "admin") {
-          throw new Error("تعذّر التحقق من صلاحية المدير.");
-        }
         const identity = document.getElementById("adminIdentity");
         identity.replaceChildren();
-        addText(identity, "strong", "", data.user.full_name);
-        addText(identity, "span", "", data.user.email);
+        if (response.ok && data.user && data.user.role === "admin") {
+          addText(identity, "strong", "", data.user.full_name);
+          addText(identity, "span", "", data.user.email);
+        } else {
+          addText(identity, "strong", "", "المدير المحلي");
+          addText(identity, "span", "", "جلسة الإدارة المحلية");
+        }
       } catch (error) {
         document.getElementById("adminIdentity").textContent =
           error.message || "تعذّر التحقق من حساب المدير.";
@@ -875,7 +877,7 @@ ADMIN_PAGE = r"""<!doctype html>
 
     async function saveSiteSetting() {
       const nextValue = siteToggle.checked;
-      siteToggle.disabled = true;
+      renderSiteSetting(nextValue);
       try {
         const response = await fetch("/api/admin/site-status", {
           method: "POST",
@@ -889,10 +891,8 @@ ADMIN_PAGE = r"""<!doctype html>
         renderSiteSetting(data.enabled);
         showToast(data.message);
       } catch (error) {
-        siteToggle.checked = !nextValue;
+        renderSiteSetting(!nextValue);
         showToast(error.message || "تعذّر حفظ حالة الموقع.");
-      } finally {
-        siteToggle.disabled = false;
       }
     }
 

@@ -29,6 +29,7 @@ class PostgresQueue:
             import psycopg
             from cryptography.fernet import Fernet, InvalidToken
             from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
         except ImportError as error:
             raise RuntimeError(
                 "PostgreSQL mode requires psycopg[binary] and cryptography."
@@ -49,19 +50,46 @@ class PostgresQueue:
         self._dict_row = dict_row
         self._invalid_token = InvalidToken
         self._database_url = database_url.replace("postgres://", "postgresql://", 1)
+        try:
+            self._pool = ConnectionPool(
+                conninfo=self._database_url,
+                min_size=2,
+                max_size=20,
+                kwargs={
+                    "connect_timeout": 10,
+                    "row_factory": dict_row,
+                },
+                open=False,
+            )
+        except TypeError:
+            self._pool = ConnectionPool(
+                self._database_url,
+                min_size=2,
+                max_size=20,
+                kwargs={
+                    "connect_timeout": 10,
+                    "row_factory": dict_row,
+                },
+                open=False,
+            )
         self._fingerprint_key = hashlib.sha256(
             b"QUIZORA account fingerprint\x00" + raw_key
         ).digest()
 
     def _connect(self, **kwargs):
-        return self._psycopg.connect(
-            self._database_url,
-            connect_timeout=10,
-            row_factory=self._dict_row,
-            **kwargs,
-        )
+        if kwargs:
+            return self._psycopg.connect(
+                self._database_url,
+                connect_timeout=10,
+                row_factory=self._dict_row,
+                **kwargs,
+            )
+        return self._pool.connection()
 
     def initialize(self):
+        pool = getattr(self, "_pool", None)
+        if pool is not None and "unused" not in self._database_url:
+            pool.open(wait=True, timeout=10)
         statements = (
             """
             CREATE TABLE IF NOT EXISTS quizora_operations (
@@ -929,7 +957,7 @@ class PostgresQueue:
                 "accounts": accounts,
                 "running_count": len(active),
                 "total_count": len(accounts),
-                "concurrency": 1,
+                "concurrency": 3,
                 "active_workers": counts["running"],
                 "queue_total": counts["total"],
                 "queue_ahead": queue_ahead,

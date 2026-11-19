@@ -12,7 +12,7 @@ function Test-LocalHealth {
     param([int]$Port)
 
     try {
-        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 2
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 10
         return [bool]$health.ok
     } catch {
         return $false
@@ -64,7 +64,7 @@ if ($null -eq $port) {
     $startedHere = $true
     try {
         $healthReady = $false
-        $healthDeadline = (Get-Date).AddSeconds(30)
+        $healthDeadline = (Get-Date).AddSeconds(90)
         while ((Get-Date) -lt $healthDeadline) {
             $serverProcess.Refresh()
             if ($serverProcess.HasExited) {
@@ -101,7 +101,7 @@ if ($null -eq $port) {
 
 $adminUrl = "http://127.0.0.1:$port/admin"
 try {
-    $page = Invoke-WebRequest -Uri $adminUrl -TimeoutSec 4 -UseBasicParsing
+    $page = Invoke-WebRequest -Uri $adminUrl -TimeoutSec 15 -UseBasicParsing
     if ($page.StatusCode -ne 200) {
         throw "استجاب الخادم، لكن لوحة الإدارة لم تفتح."
     }

@@ -119,7 +119,7 @@ class _UrllibSession:
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(self.jar)
         )
-        self.opener.addheaders = [("User-Agent", self.UA), ("Accept", "application/json")]
+        self.opener.addheaders = [("User-Agent", USER_AGENT), ("Accept", "application/json")]
         self.request = _UrllibRequest(self)
 
     def _full(self, url):

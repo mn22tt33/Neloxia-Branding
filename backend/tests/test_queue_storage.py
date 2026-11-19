@@ -459,6 +459,7 @@ class QueueStorageTests(unittest.TestCase):
         open_browser.assert_not_called()
 
     def test_admin_skip_runs_queued_account_without_stopping_current_account(self):
+        server._set_concurrency(1)
         first_started = threading.Event()
         second_started = threading.Event()
         release_first = threading.Event()
@@ -540,9 +541,9 @@ class QueueStorageTests(unittest.TestCase):
                 server._active_workers = 0
                 server._current_concurrency = 1
 
-    def test_solver_concurrency_is_always_one(self):
-        self.assertEqual(server._set_concurrency(12), 1)
-        self.assertEqual(server._set_concurrency("invalid"), 1)
+    def test_solver_concurrency_is_bounded(self):
+        self.assertEqual(server._set_concurrency(12), 6)
+        self.assertEqual(server._set_concurrency("invalid"), 3)
 
     def test_local_jobs_never_run_at_the_same_time(self):
         active = 0

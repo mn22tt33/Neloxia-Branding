@@ -7,6 +7,8 @@ import hmac
 import re
 import secrets
 import uuid
+import threading
+import time
 
 
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 365 * 10
@@ -127,20 +129,44 @@ class PostgresAuthStore:
         try:
             import psycopg
             from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
         except ImportError as error:
             raise RuntimeError("Google account storage requires psycopg.") from error
         self._psycopg = psycopg
         self._dict_row = dict_row
         self._database_url = database_url.replace("postgres://", "postgresql://", 1)
+        self._session_cache = {}
+        self._session_cache_lock = threading.Lock()
+        try:
+            self._pool = ConnectionPool(
+                conninfo=self._database_url,
+                min_size=1,
+                max_size=12,
+                kwargs={
+                    "connect_timeout": 10,
+                    "row_factory": dict_row,
+                },
+                open=False,
+            )
+        except TypeError:
+            self._pool = ConnectionPool(
+                self._database_url,
+                min_size=1,
+                max_size=12,
+                kwargs={
+                    "connect_timeout": 10,
+                    "row_factory": dict_row,
+                },
+                open=False,
+            )
 
     def _connect(self):
-        return self._psycopg.connect(
-            self._database_url,
-            connect_timeout=10,
-            row_factory=self._dict_row,
-        )
+        return self._pool.connection()
 
     def initialize(self):
+        pool = getattr(self, "_pool", None)
+        if pool is not None and "unused" not in self._database_url:
+            pool.open(wait=True, timeout=10)
         statements = (
             """
             CREATE TABLE IF NOT EXISTS quizora_users (
@@ -531,14 +557,25 @@ class PostgresAuthStore:
                         """,
                         (token_hash, user_id),
                     )
-            return token
         except self._psycopg.Error as error:
             raise AuthStoreError("Could not create an account session.") from error
+        return token
 
     def get_session_user(self, token):
         if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
             return None
         token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+        now = time.monotonic()
+        cache_lock = getattr(self, "_session_cache_lock", None)
+        cache = getattr(self, "_session_cache", None)
+        if cache_lock is not None:
+            with cache_lock:
+                cached = cache.get(token_hash)
+                if cached:
+                    expires_at, user = cached
+                    if expires_at > now:
+                        return user
+                    cache.pop(token_hash, None)
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
@@ -553,14 +590,20 @@ class PostgresAuthStore:
                         """,
                         (token_hash,),
                     )
-                    return cursor.fetchone()
+                    user = cursor.fetchone()
         except self._psycopg.Error as error:
             raise AuthStoreError("Could not read the account session.") from error
+        if cache_lock is not None:
+            with cache_lock:
+                cache[token_hash] = (now + 300, user)
+        return user
 
     def revoke_session(self, token):
         if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
             return
         token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+        with self._session_cache_lock:
+            self._session_cache.pop(token_hash, None)
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
