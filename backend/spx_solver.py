@@ -495,6 +495,21 @@ class Solver:
             return True  # حظر ظاهر من الموقع
         return d is None  # رد غير JSON — غالبًا صفحة حظر/كابتشا
 
+    @staticmethod
+    def _login_error_message(data, status):
+        error = data.get("error") if isinstance(data, dict) else None
+        if isinstance(error, dict):
+            detail = error.get("message") or error.get("detail") or error.get("code")
+        else:
+            detail = error
+        if not detail and isinstance(data, dict):
+            detail = data.get("message") or data.get("detail")
+        if detail:
+            return f"فشل تسجيل الدخول (HTTP {status}): {str(detail)[:180]}"
+        if status:
+            return f"فشل تسجيل الدخول (HTTP {status}) — لم تُرجع المنصة سبب الرفض."
+        return "تعذّر الوصول إلى منصة تسجيل الدخول — تحقق من الاتصال أو حالة المنصة."
+
     def _switch_to_browser(self):
         """يتحول من جلسة HTTP إلى متصفح حقيقي لإعادة المحاولة."""
         if not _HAS_PLAYWRIGHT:
@@ -533,10 +548,9 @@ class Solver:
                 self._switch_to_browser()
                 d, status = self._login_api(code, password)
             if not (d or {}).get("success"):
-                err = (d or {}).get("error") or {}
-                msg = err.get("message") if isinstance(err, dict) else str(err)
-                self.log(f"فشل تسجيل الدخول: {msg or 'بيانات غير صحيحة'}", "error")
-                return False, "فشل تسجيل الدخول — تحقق من الكود وكلمة المرور."
+                msg = self._login_error_message(d, status)
+                self.log(msg, "error")
+                return False, msg
             self.log("تم تسجيل الدخول بنجاح.", "success")
             if not self._check_subject():
                 return False, f"لا تملك صلاحية على مادة «{self.subject_name}»."

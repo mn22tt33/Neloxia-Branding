@@ -727,6 +727,11 @@ def _run_gfq(acct, code, password, start_new=True):
 
 
 def _finalize(acct, ok, msg, phase):
+    if not ok and msg:
+        with _lock:
+            last_message = acct["lines"][-1]["msg"] if acct["lines"] else ""
+        if str(msg) != last_message:
+            _log(acct, msg, "error")
     completed_at = time.time()
     started_at = acct.get("_started_at")
     duration_seconds = (
