@@ -78,19 +78,20 @@ _queue_store = (
     PostgresQueue(DATABASE_URL, APP_ENCRYPTION_KEY) if DATABASE_URL else None
 )
 _auth_store = PostgresAuthStore(DATABASE_URL) if DATABASE_URL else None
-FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "").strip()
+FIREBASE_PROJECT_ID = (
+    os.environ.get("FIREBASE_PROJECT_ID", "").strip() or "quizora-auth-105be"
+)
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 AUTH_REQUIRED = True
 AUTH_DISABLED_MESSAGE = (
-    "تسجيل Google غير مفعّل؛ يلزم إعداد FIREBASE_PROJECT_ID وADMIN_EMAIL "
-    "وربط PostgreSQL أولًا."
+    "تسجيل الدخول غير مفعّل؛ يلزم ربط PostgreSQL وإعداد Firebase."
 )
 COOKIE_SECURE = os.environ.get(
     "QUIZORA_COOKIE_SECURE",
     "1"
     if os.environ.get("QUIZORA_REQUIRE_DATABASE") == "1"
     or os.environ.get("RAILWAY_ENVIRONMENT")
-    or FIREBASE_PROJECT_ID
+    or os.environ.get("FIREBASE_PROJECT_ID")
     else "0",
 ) == "1"
 _worker_shutdown = threading.Event()
@@ -1324,7 +1325,6 @@ def make_handler():
         def _auth_enabled():
             return bool(
                 FIREBASE_PROJECT_ID
-                and ADMIN_EMAIL
                 and _auth_store
                 and _queue_store
             )

@@ -208,7 +208,7 @@ class FirebaseAuthTests(unittest.TestCase):
         )
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -616,7 +616,7 @@ class FirebaseAuthTests(unittest.TestCase):
         }
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -646,7 +646,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 self.assertEqual(response.status, 201)
                 self.assertIn("HttpOnly", response.headers["Set-Cookie"])
         auth_store.create_firebase_user.assert_called_once_with(
-            identity, "New User", "stored-hash", "admin@example.com"
+            identity, "New User", "stored-hash", ""
         )
         self.assertNotIn("password", json.dumps(payload))
 
@@ -720,11 +720,11 @@ class FirebaseAuthTests(unittest.TestCase):
             "user@example.com", "correct horse battery"
         )
 
-    def test_auth_status_is_enabled_only_when_firebase_is_configured(self):
+    def test_auth_status_allows_regular_accounts_without_admin_email(self):
         auth_store = MagicMock()
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
+            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -735,6 +735,20 @@ class FirebaseAuthTests(unittest.TestCase):
             )
         self.assertTrue(status["enabled"])
         self.assertTrue(status["required"])
+
+    def test_auth_status_stays_disabled_without_firebase_project_id(self):
+        with (
+            patch.object(server, "FIREBASE_PROJECT_ID", ""),
+            patch.object(server, "ADMIN_EMAIL", ""),
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "_auth_store", MagicMock()),
+            patch.object(server, "_queue_store", object()),
+            self._running_api() as base,
+        ):
+            _, _, status = self._open_json(
+                urllib.request.build_opener(), base + "/api/auth/status"
+            )
+        self.assertFalse(status["enabled"])
 
     def test_login_rejects_unapproved_origin_before_creating_a_user(self):
         auth_store = MagicMock()
