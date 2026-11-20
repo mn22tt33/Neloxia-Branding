@@ -539,6 +539,7 @@ class QureoSolver:
         print(f"📥 جاري الدخول إلى مسار {name}...", flush=True)
         self._section_id = 0  # القسم خاص بالمسار — لازم يتعاد اكتشافه لكل مسار جديد
         self._course_code = ""
+        self._opener_cache = None
         if self.turbo:
             self._enter_course_fast(name)
             return
@@ -1137,8 +1138,33 @@ class QureoSolver:
             """يجهّز فصل واحد (محاضراته بالترتيب ثم اختباره) — تسلسليًا بالترتيب."""
             cid, name = ch["id"], ch.get("name", "")
             qcount, test_type = ch.get("question_count", 0), ch.get("test_type", "review")
+            progress_row = pmap.get(cid, {}) or {}
+            best_correct = int(progress_row.get("best_correct_count") or 0)
+            lecture_count = int(progress_row.get("lecture_count") or 0)
+            completed_lectures = int(progress_row.get("completed_lecture_count") or 0)
+            explicitly_completed = any(
+                bool(progress_row.get(key))
+                for key in ("is_completed", "completed", "fully_completed")
+            ) or str(progress_row.get("status") or "").strip().lower() in (
+                "completed", "complete", "done", "finished", "مكتمل"
+            )
+            progress_is_complete = (
+                bool(qcount)
+                and best_correct >= qcount
+                and (lecture_count == 0 or completed_lectures >= lecture_count)
+            ) or explicitly_completed
+            if progress_is_complete:
+                state["done"] += 1
+                state["solved"].append((name, best_correct, qcount))
+                emit_progress(self.current_course, state["done"], total_ch, name)
+                print(
+                    f"▶️ الفصل {ch.get('seq')}: {name} ({cid}) — مكتمل بالفعل، تخطّي سريع",
+                    flush=True,
+                )
+                print("", flush=True)
+                return (name, best_correct, qcount)
             print(f"▶️ الفصل {ch.get('seq')}: {name} ({cid}) — أسئلة: {qcount} [{test_type}]", flush=True)
-            if qcount and pmap.get(cid, {}).get("best_correct_count", 0) >= qcount:
+            if qcount and best_correct >= qcount:
                 self.complete_chapter_lectures(cid, None, None)
                 print("   ✅ مُكتمل بالفعل — تخطّي", flush=True)
                 row = (name, qcount, qcount)

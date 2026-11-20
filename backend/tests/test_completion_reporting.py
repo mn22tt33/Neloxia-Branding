@@ -335,7 +335,12 @@ class CompletionReportingTests(unittest.TestCase):
                     {"id": 1, "name": "الفصل الأول", "seq": 1, "question_count": 1}
                 ]
             },
-            [{"chapter_id": 1, "best_correct_count": 1}],
+            [{
+                "chapter_id": 1,
+                "best_correct_count": 1,
+                "lecture_count": 3,
+                "completed_lecture_count": 2,
+            }],
         ])
         solver.complete_chapter_lectures = Mock(
             side_effect=RuntimeError("ما زالت هناك محاضرة غير مكتملة")
@@ -344,6 +349,57 @@ class CompletionReportingTests(unittest.TestCase):
         with patch.object(qureo_solver, "emit_progress"):
             with self.assertRaisesRegex(RuntimeError, "محاضرة غير مكتملة"):
                 solver.solve_course()
+
+    def test_qureo_skips_completed_chapter_without_opening_lectures_or_tests(self):
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.current_course = "JavaScript"
+        solver._bank_lock = threading.Lock()
+        solver.resolve_section_id = Mock(return_value=42)
+        solver.api_get_json = Mock(side_effect=[
+            {
+                "chapters": [
+                    {"id": 1, "name": "الفصل المكتمل", "seq": 1, "question_count": 5}
+                ]
+            },
+            [{
+                "chapter_id": 1,
+                "best_correct_count": 5,
+                "lecture_count": 3,
+                "completed_lecture_count": 3,
+            }],
+        ])
+        solver.complete_chapter_lectures = Mock()
+        solver._solve_chapter = Mock()
+
+        with patch.object(qureo_solver, "emit_progress"):
+            solved = solver.solve_course()
+
+        self.assertEqual(solved, [("الفصل المكتمل", 5, 5)])
+        solver.complete_chapter_lectures.assert_not_called()
+        solver._solve_chapter.assert_not_called()
+
+    def test_qureo_skips_chapter_when_platform_marks_is_completed(self):
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.current_course = "Python"
+        solver._bank_lock = threading.Lock()
+        solver.resolve_section_id = Mock(return_value=42)
+        solver.api_get_json = Mock(side_effect=[
+            {
+                "chapters": [
+                    {"id": 7, "name": "فصل مكتمل بالمنصة", "seq": 7, "question_count": 5}
+                ]
+            },
+            [{"chapter_id": 7, "is_completed": True, "best_correct_count": 0}],
+        ])
+        solver.complete_chapter_lectures = Mock()
+        solver._solve_chapter = Mock()
+
+        with patch.object(qureo_solver, "emit_progress"):
+            solved = solver.solve_course()
+
+        self.assertEqual(solved, [("فصل مكتمل بالمنصة", 0, 5)])
+        solver.complete_chapter_lectures.assert_not_called()
+        solver._solve_chapter.assert_not_called()
 
     def test_qureo_test_is_not_complete_after_failed_attempts(self):
         solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
