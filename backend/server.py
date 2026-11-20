@@ -1696,7 +1696,17 @@ def make_handler():
             if self._local_request_allowed():
                 return False
             path = urlsplit(self.path).path
-            if path in ("/api/health", "/admin", "/admin.html"):
+            if path in (
+                "/api/health",
+                "/api/auth/me",
+                "/api/auth/status",
+                "/api/auth/password/login",
+                "/api/auth/firebase/login",
+                "/account",
+                "/account.html",
+                "/admin",
+                "/admin.html",
+            ):
                 return False
             if path.startswith("/api/admin/") and self._admin_request_allowed():
                 return False

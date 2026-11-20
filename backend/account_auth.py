@@ -204,6 +204,31 @@ class PostgresAuthStore:
                 ON quizora_users (lower(email)) WHERE email IS NOT NULL
             """,
             """
+            CREATE TABLE IF NOT EXISTS quizora_admins (
+                user_id UUID PRIMARY KEY
+                    REFERENCES quizora_users(id) ON DELETE CASCADE,
+                email TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS quizora_admins_email
+                ON quizora_admins (lower(email))
+            """,
+            """
+            INSERT INTO quizora_admins (user_id, email, password_hash)
+            SELECT id, email, password_hash
+            FROM quizora_users
+            WHERE role = 'admin' AND email IS NOT NULL
+                AND password_hash IS NOT NULL
+            ON CONFLICT (user_id) DO UPDATE SET
+                email = EXCLUDED.email,
+                password_hash = EXCLUDED.password_hash,
+                updated_at = now()
+            """,
+            """
             CREATE TABLE IF NOT EXISTS quizora_user_sessions (
                 token_hash TEXT PRIMARY KEY,
                 user_id UUID NOT NULL REFERENCES quizora_users(id) ON DELETE CASCADE,
@@ -393,11 +418,11 @@ class PostgresAuthStore:
                         cursor.execute(
                             """
                             UPDATE quizora_users
-                            SET full_name = %s, password_hash = %s, role = 'admin',
+                            SET full_name = %s, password_hash = NULL, role = 'admin',
                                 is_blocked = FALSE, updated_at = now()
                             WHERE id = %s
                             """,
-                            (normalized_name, password_hash, user_id),
+                            (normalized_name, user_id),
                         )
                     else:
                         user_id = uuid.uuid4()
@@ -405,15 +430,30 @@ class PostgresAuthStore:
                             """
                             INSERT INTO quizora_users
                                 (id, full_name, email, password_hash, role)
-                            VALUES (%s, %s, %s, %s, 'admin')
+                            VALUES (%s, %s, %s, NULL, 'admin')
                             """,
-                            (user_id, normalized_name, normalized_email, password_hash),
+                            (user_id, normalized_name, normalized_email),
                         )
+                    cursor.execute(
+                        """
+                        INSERT INTO quizora_admins (user_id, email, password_hash)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            email = EXCLUDED.email,
+                            password_hash = EXCLUDED.password_hash,
+                            updated_at = now()
+                        """,
+                        (user_id, normalized_email, password_hash),
+                    )
                     cursor.execute(
                         "DELETE FROM quizora_user_sessions WHERE user_id = %s",
                         (user_id,),
                     )
                     return str(user_id)
+        except self._psycopg.errors.UniqueViolation as error:
+            raise AuthStoreError(
+                "هذا البريد مرتبط بحساب آخر؛ تعذّر إعداد حساب المدير."
+            ) from error
         except self._psycopg.Error as error:
             raise AuthStoreError("Could not provision the administrator account.") from error
 
@@ -438,9 +478,16 @@ class PostgresAuthStore:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, full_name, email, role, password_hash, is_blocked
-                        FROM quizora_users
-                        WHERE lower(email) = %s AND password_hash IS NOT NULL
+                        SELECT u.id, u.full_name, u.email, u.role,
+                               COALESCE(a.password_hash, u.password_hash)
+                                   AS password_hash,
+                               u.is_blocked
+                        FROM quizora_users AS u
+                        LEFT JOIN quizora_admins AS a
+                            ON a.user_id = u.id AND u.role = 'admin'
+                        WHERE lower(u.email) = %s
+                            AND COALESCE(a.password_hash, u.password_hash)
+                                IS NOT NULL
                         LIMIT 1
                         """,
                         (normalized_email,),

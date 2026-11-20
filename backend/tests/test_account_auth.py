@@ -52,7 +52,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.2.4", page)
+        self.assertIn("v1.2.5", page)
         self.assertIn('id="continueToSite"', page)
         self.assertIn('<main id="accountMain" hidden>', page)
         self.assertIn('id="serverOfflineNotice"', page)
@@ -81,6 +81,20 @@ class FirebaseAuthTests(unittest.TestCase):
         self.assertIn("if (error.status !== 401) throw error;", page)
         self.assertIn("if (result && result.user)", page)
         self.assertIn("showLogin();", page)
+
+    def test_site_login_routes_admins_to_the_admin_panel(self):
+        import pathlib
+
+        page = pathlib.Path(
+            server.APP_DIR
+        ).joinpath("frontend", "account.html").read_text(encoding="utf-8")
+
+        self.assertIn("async function completeSession(user)", page)
+        self.assertIn(
+            'user && user.role === "admin" && next === "/" ? "/admin.html" : next',
+            page,
+        )
+        self.assertIn("await completeSession(result.user);", page)
 
     def test_account_page_stores_and_sends_bearer_session_fallback(self):
         import pathlib
@@ -259,16 +273,126 @@ class FirebaseAuthTests(unittest.TestCase):
             encoded_hash,
         )
 
-        insert = next(
+        user_insert = next(
             call for call in cursor.execute.call_args_list
             if "INSERT INTO quizora_users" in call.args[0]
         )
-        self.assertIn("'admin'", insert.args[0])
-        self.assertEqual(insert.args[1][-1], encoded_hash)
-        self.assertNotIn(password, insert.args[0])
-        self.assertNotIn(password, insert.args[1])
-        self.assertTrue(verify_password(password, insert.args[1][-1]))
+        admin_insert = next(
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO quizora_admins" in call.args[0]
+        )
+        self.assertIn("'admin'", user_insert.args[0])
+        self.assertIn("NULL", user_insert.args[0])
+        self.assertEqual(user_insert.args[1][2], "admin@example.test")
+        self.assertEqual(admin_insert.args[1][-1], encoded_hash)
+        self.assertNotIn(password, user_insert.args[0])
+        self.assertNotIn(password, user_insert.args[1])
+        self.assertNotIn(password, admin_insert.args[0])
+        self.assertNotIn(password, admin_insert.args[1])
+        self.assertTrue(verify_password(password, admin_insert.args[1][-1]))
         self.assertNotEqual(provisioned_id, password)
+
+    def test_site_password_authentication_reads_admin_credentials_table(self):
+        store = object.__new__(server.PostgresAuthStore)
+        password_hash = hash_password("correct horse battery")
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            {
+                "id": "admin-1",
+                "full_name": "Site Admin",
+                "email": "admin@example.test",
+                "role": "admin",
+                "is_blocked": False,
+                "password_hash": password_hash,
+            },
+            {
+                "id": "admin-1",
+                "full_name": "Site Admin",
+                "email": "admin@example.test",
+                "role": "admin",
+                "is_blocked": False,
+                "password_hash": password_hash,
+            },
+        ]
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        store._connect = MagicMock(return_value=connection_context)
+
+        user = store.authenticate_password(
+            "Admin@Example.Test", "correct horse battery"
+        )
+        rejected = store.authenticate_password(
+            "admin@example.test", "wrong password"
+        )
+
+        self.assertEqual(user["role"], "admin")
+        self.assertIsNone(rejected)
+        self.assertTrue(all(
+            "LEFT JOIN quizora_admins AS a" in call.args[0]
+            and "COALESCE(a.password_hash, u.password_hash)" in call.args[0]
+            for call in cursor.execute.call_args_list
+        ))
+
+    def test_site_password_login_returns_admin_role_for_admin_credentials(self):
+        class MaintenanceQueueStore:
+            def get_site_enabled(self):
+                return False
+
+        auth_store = MagicMock()
+        auth_store.allow_password_login.return_value = True
+        auth_store.authenticate_password.return_value = {
+            "id": "admin-1",
+            "full_name": "Site Admin",
+            "email": "admin@example.test",
+            "role": "admin",
+        }
+        auth_store.get_session_user.return_value = {
+            "id": "admin-1",
+            "full_name": "Site Admin",
+            "email": "admin@example.test",
+            "role": "admin",
+        }
+        auth_store.create_session.return_value = "s" * 43
+        with (
+            patch.object(server, "_auth_store", auth_store),
+            patch.object(server, "_queue_store", MaintenanceQueueStore()),
+            patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "_admin_queue_payload", return_value={"ok": True}),
+            self._running_api() as base,
+        ):
+            request = urllib.request.Request(
+                base + "/api/auth/password/login",
+                data=json.dumps({
+                    "email": "Admin@Example.Test",
+                    "password": "correct horse battery",
+                }).encode("utf-8"),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 200)
+                self.assertIn("HttpOnly", response.headers["Set-Cookie"])
+            admin_request = urllib.request.Request(
+                base + "/api/admin/queue",
+                headers={"Authorization": "Bearer " + ("s" * 43)},
+            )
+            with urllib.request.urlopen(admin_request) as response:
+                self.assertEqual(
+                    json.loads(response.read().decode("utf-8")),
+                    {"ok": True},
+                )
+
+        self.assertEqual(payload["user"]["role"], "admin")
+        self.assertEqual(payload["session_token"], "s" * 43)
+        auth_store.authenticate_password.assert_called_once_with(
+            "admin@example.test", "correct horse battery"
+        )
 
     def test_password_login_rejects_blocked_account(self):
         auth_store = MagicMock()
@@ -451,6 +575,15 @@ class FirebaseAuthTests(unittest.TestCase):
             "ALTER TABLE quizora_user_sessions ALTER COLUMN expires_at DROP NOT NULL",
             statements,
         )
+        self.assertTrue(any(
+            "CREATE TABLE IF NOT EXISTS quizora_admins" in statement
+            for statement in statements
+        ))
+        self.assertTrue(any(
+            "INSERT INTO quizora_admins" in statement
+            and "FROM quizora_users" in statement
+            for statement in statements
+        ))
         self.assertTrue(any(
             "UPDATE quizora_user_sessions SET expires_at = NULL" in statement
             and "WHERE expires_at > now()" in statement

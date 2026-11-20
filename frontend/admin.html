@@ -99,10 +99,7 @@
     .admin-login-card { width: min(420px, 100%); padding: 28px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); box-shadow: 0 24px 70px rgba(0,0,0,.28); }
     .admin-login-card h1 { margin: 0; font-size: 25px; }
     .admin-login-card p { color: var(--muted); line-height: 1.7; }
-    .admin-login-form { display: grid; gap: 14px; margin-top: 20px; }
-    .admin-login-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
-    .admin-login-form input { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; color: var(--text); background: #0b1828; font: inherit; }
-    .admin-login-error { color: var(--red) !important; }
+    .admin-gate-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
     .topbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .subscription-code-field select { min-width: 210px; }
     .switch { position: relative; flex: none; width: 48px; height: 27px; }
@@ -408,21 +405,15 @@
   </style>
 </head>
 <body>
-  <section class="admin-login" id="adminLogin">
+  <section class="admin-login" id="adminGate">
     <div class="admin-login-card">
       <p class="eyebrow">QUIZORA • الإدارة</p>
-      <h1>تسجيل دخول المدير</h1>
-      <p>استخدم حساب المدير المحفوظ بأمان في قاعدة البيانات.</p>
-      <form class="admin-login-form" id="adminLoginForm">
-        <label for="adminEmail">البريد الإلكتروني
-          <input id="adminEmail" type="email" autocomplete="username" maxlength="254" required>
-        </label>
-        <label for="adminPassword">كلمة المرور
-          <input id="adminPassword" type="password" autocomplete="current-password" maxlength="128" required>
-        </label>
-        <button class="refresh-button" id="adminLoginButton" type="submit">دخول لوحة الإدارة</button>
-      </form>
-      <p class="admin-login-error" id="adminLoginError" role="alert" hidden></p>
+      <h1>لوحة الإدارة</h1>
+      <p id="adminGateMessage" role="status">جارٍ التحقق من جلسة الموقع…</p>
+      <div class="admin-gate-actions">
+        <a class="refresh-button" id="siteLoginLink" href="/account.html" hidden>تسجيل الدخول إلى الموقع</a>
+        <a class="refresh-button" href="/">العودة إلى الموقع</a>
+      </div>
     </div>
   </section>
   <main class="shell" id="adminApp" hidden>
@@ -636,18 +627,21 @@
     </div>
   </dialog>
   <div class="toast" id="toast" role="status"></div>
-  <script src="/config.js?v=1.2.4"></script>
+  <script src="/config.js?v=1.2.5"></script>
   <script>
     const API_BASE_URL = (
       window.APP_CONFIG && typeof window.APP_CONFIG.apiBaseUrl === "string"
         ? window.APP_CONFIG.apiBaseUrl.trim()
         : ""
     ).replace(/\/+$/, "") || location.origin;
-    const adminLogin = document.getElementById("adminLogin");
-    const adminLoginForm = document.getElementById("adminLoginForm");
-    const adminLoginError = document.getElementById("adminLoginError");
+    const adminGate = document.getElementById("adminGate");
+    const adminGateMessage = document.getElementById("adminGateMessage");
+    const siteLoginLink = document.getElementById("siteLoginLink");
     const adminApp = document.getElementById("adminApp");
     let adminStarted = false;
+    siteLoginLink.href = "/account.html?next=" + encodeURIComponent(
+      location.pathname + location.search + location.hash
+    );
 
     function adminFetch(path, options) {
       options = Object.assign({}, options || {}, { credentials: "include" });
@@ -658,15 +652,15 @@
       return fetch(API_BASE_URL + path, options);
     }
 
-    function showAdminLogin(message) {
+    function showAdminGate(message, allowLogin) {
       adminApp.hidden = true;
-      adminLogin.hidden = false;
-      adminLoginError.textContent = message || "";
-      adminLoginError.hidden = !message;
+      adminGate.hidden = false;
+      adminGateMessage.textContent = message;
+      siteLoginLink.hidden = !allowLogin;
     }
 
     function showAdmin(user) {
-      adminLogin.hidden = true;
+      adminGate.hidden = true;
       adminApp.hidden = false;
       const identity = document.getElementById("adminIdentity");
       identity.replaceChildren();
@@ -1333,43 +1327,6 @@
       window.open("/", "_blank", "noopener");
     });
 
-    adminLoginForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const button = document.getElementById("adminLoginButton");
-      button.disabled = true;
-      adminLoginError.hidden = true;
-      try {
-        const response = await adminFetch("/api/auth/password/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: document.getElementById("adminEmail").value,
-            password: document.getElementById("adminPassword").value
-          })
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.message || "تعذّر تسجيل الدخول.");
-        }
-        if (data.session_token) {
-          sessionStorage.setItem("quizora_session_token", data.session_token);
-        }
-        document.getElementById("adminPassword").value = "";
-        if (!data.user || data.user.role !== "admin") {
-          await adminFetch("/api/auth/logout", { method: "POST" });
-          sessionStorage.removeItem("quizora_session_token");
-          throw new Error("هذا الحساب لا يملك صلاحية المدير.");
-        }
-        adminLoginForm.reset();
-        showAdmin(data.user);
-      } catch (error) {
-        adminLoginError.textContent = error.message || "تعذّر تسجيل الدخول.";
-        adminLoginError.hidden = false;
-      } finally {
-        button.disabled = false;
-      }
-    });
-
     document.getElementById("adminLogout").addEventListener("click", async () => {
       const button = document.getElementById("adminLogout");
       button.disabled = true;
@@ -1395,11 +1352,16 @@
           showAdmin(data.user);
           return;
         }
-        showAdminLogin(
-          data.user ? "هذا الحساب لا يملك صلاحية المدير." : ""
-        );
+        if (data.user) {
+          showAdminGate("هذا الحساب لا يملك صلاحية المدير.", false);
+          return;
+        }
+        location.replace(siteLoginLink.href);
       } catch (error) {
-        showAdminLogin(error.message || "تعذّر الاتصال بخادم تسجيل الدخول.");
+        showAdminGate(
+          error.message || "تعذّر الاتصال بخادم الموقع.",
+          true
+        );
       }
     }
 

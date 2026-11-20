@@ -69,7 +69,7 @@
 </div>
 <main id="accountMain" hidden>
   <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA" width="148" height="148">
-  <span class="version-badge" aria-label="الإصدار 1.2.4">v1.2.4</span>
+  <span class="version-badge" aria-label="الإصدار 1.2.5">v1.2.5</span>
   <h1 id="pageTitle">مرحبًا بعودتك إلى QUIZORA</h1>
   <p id="pageIntro" class="intro">سجّل الدخول لمتابعة استخدام حسابك، أو أنشئ حسابًا جديدًا باستخدام Google.</p>
   <div id="availability" class="notice" role="status" hidden></div>
@@ -135,10 +135,10 @@
     <p class="server-offline-hint">فعّل إشعارات القناة عشان تكون من أول الناس اللي تعرف أول ما الموقع يفتح.</p>
   </section>
 </div>
-<script src="/config.js?v=1.2.4"></script>
+<script src="/config.js?v=1.2.5"></script>
 <script>
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js?v=1.2.4", {
+    navigator.serviceWorker.register("/sw.js?v=1.2.5", {
       updateViaCache: "none"
     }).then(function(registration){
       return registration.update();
@@ -299,13 +299,15 @@
     registerPanel.hidden = true;
   }
 
-  async function completeSession() {
+  async function completeSession(user) {
     try {
       await signOut(auth);
     } catch (error) {
       console.warn("تعذّر إنهاء جلسة Firebase المحلية.", error);
     }
-    location.replace(next);
+    location.replace(
+      user && user.role === "admin" && next === "/" ? "/admin.html" : next
+    );
   }
 
   const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
@@ -320,8 +322,8 @@
     message.textContent = "جارٍ التحقق من حساب Google…";
     try {
       const idToken = await user.getIdToken();
-      await api("/api/auth/firebase/login", "POST", {id_token: idToken});
-      await completeSession();
+      const result = await api("/api/auth/firebase/login", "POST", {id_token: idToken});
+      await completeSession(result.user);
     } catch (error) {
       googleLoginButton.disabled = false;
       googleLoginButton.innerHTML = '<span class="google-g" aria-hidden="true">G</span>المتابعة باستخدام Google';
@@ -422,11 +424,11 @@
     button.textContent = "جارٍ تسجيل الدخول…";
     message.textContent = "جارٍ تسجيل الدخول…";
     try {
-      await api("/api/auth/password/login", "POST", {
+      const result = await api("/api/auth/password/login", "POST", {
         email: document.getElementById("loginEmail").value,
         password: document.getElementById("loginPassword").value
       });
-      await completeSession();
+      await completeSession(result.user);
     } catch (error) {
       message.textContent = error.message || "تعذّر تسجيل الدخول.";
       button.disabled = false;

@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.2.4"></script>
+<script src="/config.js?v=1.2.5"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.4", {
+      navigator.serviceWorker.register("/sw.js?v=1.2.5", {
         updateViaCache: "none"
       }).then(function(registration){
         return registration.update();
@@ -1203,7 +1203,7 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.2.4">v1.2.4</span>
+      <span class="brand-version" aria-label="الإصدار 1.2.5">v1.2.5</span>
     </div>
   </div>
   <div class="header-actions">
