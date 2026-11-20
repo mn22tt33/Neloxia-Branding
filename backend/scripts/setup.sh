@@ -5,7 +5,7 @@ echo "============================================================"
 echo "       📦 تثبيت متطلبات QUIZORA على Termux"
 echo "============================================================"
 pkg update -y
-pkg install python unzip curl proot-distro -y
+pkg install python unzip curl proot-distro procps -y
 python -m pip install "python-dotenv>=1.0,<2"
 
 if ! proot-distro login debian -- /bin/true >/dev/null 2>&1; then
@@ -22,7 +22,7 @@ case "$(uname -m)" in
 esac
 
 proot-distro login debian -- bash -lc \
-    'apt-get update && apt-get install -y ca-certificates curl tar'
+    'apt-get update && apt-get install -y ca-certificates curl tar procps'
 if ! proot-distro login debian -- bash -lc \
     'command -v ngrok >/dev/null 2>&1'; then
     proot-distro login debian -- bash -lc \

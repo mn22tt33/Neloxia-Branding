@@ -23,6 +23,10 @@ if ! command -v curl >/dev/null 2>&1; then
     echo "❌ curl غير مثبت. شغّل bash setup.sh أولًا." >&2
     exit 1
 fi
+if ! command -v pkill >/dev/null 2>&1; then
+    echo "❌ أدوات إدارة العمليات غير مثبتة. شغّل bash setup.sh أولًا." >&2
+    exit 1
+fi
 if ! python -c 'import dotenv' >/dev/null 2>&1; then
     echo "❌ حزمة python-dotenv غير مثبتة. شغّل bash setup.sh أولًا." >&2
     exit 1
@@ -33,6 +37,13 @@ if ! proot-distro login debian -- bash -lc 'command -v ngrok >/dev/null 2>&1'; t
 fi
 
 cd "$PROJECT_ROOT"
+# Stop stale ngrok tunnel first. This also prevents ERR_NGROK_334 and
+# ensures the new process owns the reserved endpoint.
+proot-distro login debian -- bash -lc \
+    "pkill -f '[n]grok http .*8700' 2>/dev/null || true" >/dev/null 2>&1 || true
+pkill -f '[p]ython.*backend/server\.py' 2>/dev/null || true
+sleep 2
+
 PORT="$PORT" QUIZORA_BIND_HOST="0.0.0.0" TOOL_NO_BROWSER="1" python backend/server.py &
 SERVER_PID=$!
 TUNNEL_PID=""
@@ -43,20 +54,13 @@ cleanup() {
         wait "$TUNNEL_PID" 2>/dev/null || true
     fi
     proot-distro login debian -- bash -lc \
-        "pkill -f 'ngrok http .*8700' 2>/dev/null || true" >/dev/null 2>&1 || true
+        "pkill -f '[n]grok http .*8700' 2>/dev/null || true" >/dev/null 2>&1 || true
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-# Stop stale ngrok tunnel first. This also prevents ERR_NGROK_334 and
-# ensures the new process owns the reserved endpoint.
-proot-distro login debian -- bash -lc \
-    "pkill -f 'ngrok http .*8700' 2>/dev/null || true" >/dev/null 2>&1 || true
-pkill -f 'python.*backend/server.py' 2>/dev/null || true
-sleep 2
 
 server_ready=0
 for _ in {1..30}; do
