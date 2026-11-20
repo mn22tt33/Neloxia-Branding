@@ -589,7 +589,7 @@ class PostgresQueue:
                     (id, user_id, subscription_id, code_fingerprint,
                      operation_id, status, consumed_at)
                 VALUES (%s, %s, NULL, %s, %s, 'consumed', now())
-                ON CONFLICT (user_id, code_fingerprint) DO NOTHING
+                ON CONFLICT DO NOTHING
                 """,
                 (
                     uuid.uuid4(),
@@ -743,16 +743,34 @@ class PostgresQueue:
     ):
         if not owner_user_id or not code_fingerprint:
             return
-        if success:
+        cursor.execute(
+            """
+            SELECT
+              count(*) FILTER (WHERE status IN ('queued', 'running')) AS active_jobs,
+              count(*) FILTER (WHERE status IN ('failed', 'cancelled')) AS failed_jobs,
+              count(*) FILTER (WHERE status = 'succeeded') AS succeeded_jobs,
+              count(*) AS total_jobs
+            FROM quizora_jobs
+            WHERE operation_id = %s
+            """,
+            (operation_id,),
+        )
+        totals = cursor.fetchone() or {}
+        has_active_jobs = int(totals.get("active_jobs") or 0) > 0
+        has_failures = int(totals.get("failed_jobs") or 0) > 0
+        if has_active_jobs:
+            return
+
+        if not has_failures:
             cursor.execute(
                 """
                 UPDATE quizora_subscription_uses
                 SET status = 'consumed', consumed_at = now()
                 WHERE user_id = %s AND operation_id = %s
-                  AND code_fingerprint = %s AND status = 'reserved'
+                  AND status = 'reserved'
                 RETURNING subscription_id
                 """,
-                (owner_user_id, operation_id, code_fingerprint),
+                (owner_user_id, operation_id),
             )
             use = cursor.fetchone()
             if use and use["subscription_id"] is None:
@@ -771,42 +789,31 @@ class PostgresQueue:
             """
             SELECT subscription_id FROM quizora_subscription_uses
             WHERE user_id = %s AND operation_id = %s
-              AND code_fingerprint = %s AND status = 'reserved'
+              AND status = 'reserved'
+            LIMIT 1
             FOR UPDATE
             """,
-            (owner_user_id, operation_id, code_fingerprint),
+            (owner_user_id, operation_id),
         )
         use = cursor.fetchone()
-        if not use:
-            return
-        cursor.execute(
-            """
-            SELECT 1 FROM quizora_jobs
-            WHERE operation_id = %s AND code_fingerprint = %s
-              AND status IN ('queued', 'running')
-            LIMIT 1
-            """,
-            (operation_id, code_fingerprint),
-        )
-        if cursor.fetchone():
-            return
-        cursor.execute(
-            """
-            DELETE FROM quizora_subscription_uses
-            WHERE user_id = %s AND operation_id = %s
-              AND code_fingerprint = %s AND status = 'reserved'
-            """,
-            (owner_user_id, operation_id, code_fingerprint),
-        )
-        if use["subscription_id"] is None:
+        if use:
             cursor.execute(
                 """
-                DELETE FROM quizora_subscription_trials
+                DELETE FROM quizora_subscription_uses
                 WHERE user_id = %s AND operation_id = %s
-                  AND code_fingerprint = %s AND status = 'reserved'
+                  AND status = 'reserved'
                 """,
-                (owner_user_id, operation_id, code_fingerprint),
+                (owner_user_id, operation_id),
             )
+            if use["subscription_id"] is None:
+                cursor.execute(
+                    """
+                    DELETE FROM quizora_subscription_trials
+                    WHERE user_id = %s AND operation_id = %s
+                      AND status = 'reserved'
+                    """,
+                    (owner_user_id, operation_id),
+                )
 
     def health(self):
         try:

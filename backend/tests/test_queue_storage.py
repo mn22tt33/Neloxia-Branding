@@ -998,6 +998,11 @@ class QueueStorageTests(unittest.TestCase):
         operation_id = uuid.uuid4()
         cursor = MagicMock()
         cursor.fetchone.return_value = {"subscription_id": None}
+        cursor.fetchall.return_value = []
+        cursor.fetchone.side_effect = [
+            {"active_jobs": 0, "failed_jobs": 0, "succeeded_jobs": 1, "total_jobs": 1},
+            {"subscription_id": None},
+        ]
 
         queue._settle_subscription_use(
             cursor, user_id, operation_id, "fingerprint-1", True
@@ -1009,7 +1014,10 @@ class QueueStorageTests(unittest.TestCase):
         ))
 
         cursor.reset_mock()
-        cursor.fetchone.side_effect = [{"subscription_id": None}, None]
+        cursor.fetchone.side_effect = [
+            {"active_jobs": 0, "failed_jobs": 1, "succeeded_jobs": 0, "total_jobs": 1},
+            {"subscription_id": None},
+        ]
         queue._settle_subscription_use(
             cursor, user_id, operation_id, "fingerprint-2", False
         )
