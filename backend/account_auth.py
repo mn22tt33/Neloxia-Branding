@@ -269,9 +269,8 @@ class PostgresAuthStore:
         )
         return cursor.fetchone()["attempts"] <= limit
 
-    def find_firebase_user(self, identity, admin_email=None):
+    def find_firebase_user(self, identity):
         email = identity["email"].strip().lower()
-        role = "admin" if admin_email and email == admin_email.strip().lower() else None
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
@@ -306,14 +305,11 @@ class PostgresAuthStore:
                         UPDATE quizora_users
                         SET email = %s,
                             firebase_uid = %s,
-                            role = CASE WHEN %s = 'admin'
-                                        THEN 'admin'
-                                        ELSE role END,
                             updated_at = now()
                         WHERE id = %s
                         RETURNING id, full_name, email, role
                         """,
-                        (email, identity["firebase_uid"], role, existing["id"]),
+                        (email, identity["firebase_uid"], existing["id"]),
                     )
                     return cursor.fetchone()
         except self._psycopg.errors.UniqueViolation as error:
@@ -325,11 +321,8 @@ class PostgresAuthStore:
         except self._psycopg.Error as error:
             raise AuthStoreError("Could not read the Firebase account.") from error
 
-    def create_firebase_user(
-        self, identity, full_name, password_hash, admin_email=None
-    ):
+    def create_firebase_user(self, identity, full_name, password_hash):
         email = identity["email"].strip().lower()
-        role = "admin" if admin_email and email == admin_email.strip().lower() else "user"
         try:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
@@ -351,7 +344,7 @@ class PostgresAuthStore:
                         INSERT INTO quizora_users
                             (id, full_name, email, firebase_uid, password_hash,
                              phone_verified, role)
-                        VALUES (%s, %s, %s, %s, %s, TRUE, %s)
+                        VALUES (%s, %s, %s, %s, %s, TRUE, 'user')
                         RETURNING id, full_name, email, role
                         """,
                         (
@@ -360,7 +353,6 @@ class PostgresAuthStore:
                             email,
                             identity["firebase_uid"],
                             password_hash,
-                            role,
                         ),
                     )
                     return cursor.fetchone()
@@ -372,6 +364,58 @@ class PostgresAuthStore:
             ) from error
         except self._psycopg.Error as error:
             raise AuthStoreError("Could not create the Firebase account.") from error
+
+    def provision_admin(self, email, full_name, password_hash):
+        normalized_email = str(email or "").strip().lower()
+        normalized_name = str(full_name or "").strip()[:120]
+        if (
+            not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized_email)
+            or not normalized_name
+            or not isinstance(password_hash, str)
+            or not password_hash.startswith("pbkdf2_sha256$")
+        ):
+            raise ValueError("بيانات حساب المدير غير صالحة.")
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT id FROM quizora_users
+                        WHERE lower(email) = %s
+                        LIMIT 1
+                        FOR UPDATE
+                        """,
+                        (normalized_email,),
+                    )
+                    existing = cursor.fetchone()
+                    if existing:
+                        user_id = existing["id"]
+                        cursor.execute(
+                            """
+                            UPDATE quizora_users
+                            SET full_name = %s, password_hash = %s, role = 'admin',
+                                is_blocked = FALSE, updated_at = now()
+                            WHERE id = %s
+                            """,
+                            (normalized_name, password_hash, user_id),
+                        )
+                    else:
+                        user_id = uuid.uuid4()
+                        cursor.execute(
+                            """
+                            INSERT INTO quizora_users
+                                (id, full_name, email, password_hash, role)
+                            VALUES (%s, %s, %s, %s, 'admin')
+                            """,
+                            (user_id, normalized_name, normalized_email, password_hash),
+                        )
+                    cursor.execute(
+                        "DELETE FROM quizora_user_sessions WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    return str(user_id)
+        except self._psycopg.Error as error:
+            raise AuthStoreError("Could not provision the administrator account.") from error
 
     def allow_password_login(self, email, ip_address):
         try:

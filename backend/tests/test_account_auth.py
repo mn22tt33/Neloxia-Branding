@@ -22,6 +22,9 @@ class _QueueStoreStub:
     def get_site_enabled(self):
         return True
 
+    def get_public_unlimited(self):
+        return False
+
 
 class FirebaseAuthTests(unittest.TestCase):
     def test_server_binds_to_loopback_outside_railway(self):
@@ -106,7 +109,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             self._running_api() as base,
@@ -132,7 +134,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             self._running_api() as base,
@@ -155,7 +156,6 @@ class FirebaseAuthTests(unittest.TestCase):
     def test_app_page_fails_closed_when_authentication_is_not_configured(self):
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", ""),
-            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "_auth_store", None),
             patch.object(server, "_queue_store", None),
             self._running_api() as base,
@@ -239,6 +239,37 @@ class FirebaseAuthTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "بين 8 و128"):
             hash_password("short")
 
+    def test_admin_provisioning_stores_only_password_hash_in_database(self):
+        store = object.__new__(server.PostgresAuthStore)
+        password = "temporary-test-password"
+        encoded_hash = hash_password(password)
+        cursor = MagicMock()
+        cursor.fetchone.return_value = None
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+        store._connect = MagicMock(return_value=connection_context)
+
+        provisioned_id = store.provision_admin(
+            "admin@example.test",
+            "Site Admin",
+            encoded_hash,
+        )
+
+        insert = next(
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO quizora_users" in call.args[0]
+        )
+        self.assertIn("'admin'", insert.args[0])
+        self.assertEqual(insert.args[1][-1], encoded_hash)
+        self.assertNotIn(password, insert.args[0])
+        self.assertNotIn(password, insert.args[1])
+        self.assertTrue(verify_password(password, insert.args[1][-1]))
+        self.assertNotEqual(provisioned_id, password)
+
     def test_password_login_rejects_blocked_account(self):
         auth_store = MagicMock()
         auth_store.allow_password_login.return_value = True
@@ -247,7 +278,6 @@ class FirebaseAuthTests(unittest.TestCase):
         )
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -325,7 +355,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", False),
             patch.object(server, "FIREBASE_PROJECT_ID", ""),
-            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "_auth_store", None),
             patch.object(server, "_queue_store", None),
             self._running_api() as base,
@@ -348,7 +377,6 @@ class FirebaseAuthTests(unittest.TestCase):
         auth_store.create_session.return_value = "s" * 43
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -450,6 +478,27 @@ class FirebaseAuthTests(unittest.TestCase):
                 self.assertIn("Max-Age=0", response.headers["Set-Cookie"])
             auth_store.revoke_session.assert_called_once_with("session-1")
 
+    def test_logout_endpoint_revokes_bearer_session(self):
+        auth_store = MagicMock()
+        token = "s" * 43
+        with (
+            patch.object(server, "_queue_store", _QueueStoreStub()),
+            patch.object(server, "_auth_store", auth_store),
+            self._running_api() as base,
+        ):
+            request = urllib.request.Request(
+                base + "/api/auth/logout",
+                data=b"{}",
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + token,
+                },
+            )
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(response.status, 200)
+            auth_store.revoke_session.assert_called_once_with(token)
+
     def test_blocked_firebase_account_cannot_start_a_session(self):
         auth_store = MagicMock()
         auth_store.allow_login.return_value = True
@@ -458,7 +507,6 @@ class FirebaseAuthTests(unittest.TestCase):
         )
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -513,7 +561,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             self._running_api() as base,
@@ -574,7 +621,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             self._running_api() as base,
@@ -610,7 +656,6 @@ class FirebaseAuthTests(unittest.TestCase):
         auth_store.find_firebase_user.return_value = None
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -656,7 +701,6 @@ class FirebaseAuthTests(unittest.TestCase):
         }
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -686,7 +730,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 self.assertEqual(response.status, 201)
                 self.assertIn("HttpOnly", response.headers["Set-Cookie"])
         auth_store.create_firebase_user.assert_called_once_with(
-            identity, "New User", "stored-hash", ""
+            identity, "New User", "stored-hash"
         )
         self.assertNotIn("password", json.dumps(payload))
 
@@ -694,7 +738,6 @@ class FirebaseAuthTests(unittest.TestCase):
         auth_store = MagicMock()
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -732,7 +775,6 @@ class FirebaseAuthTests(unittest.TestCase):
         auth_store.create_session.return_value = "s" * 43
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -760,11 +802,10 @@ class FirebaseAuthTests(unittest.TestCase):
             "user@example.com", "correct horse battery"
         )
 
-    def test_auth_status_allows_regular_accounts_without_admin_email(self):
+    def test_auth_status_allows_regular_accounts_without_admin_configuration(self):
         auth_store = MagicMock()
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -779,7 +820,6 @@ class FirebaseAuthTests(unittest.TestCase):
     def test_auth_status_stays_disabled_without_firebase_project_id(self):
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", ""),
-            patch.object(server, "ADMIN_EMAIL", ""),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", MagicMock()),
             patch.object(server, "_queue_store", object()),
@@ -794,7 +834,6 @@ class FirebaseAuthTests(unittest.TestCase):
         auth_store = MagicMock()
         with (
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
@@ -824,7 +863,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             self._running_api() as base,
@@ -851,7 +889,7 @@ class FirebaseAuthTests(unittest.TestCase):
             self.assertEqual(rejected.exception.code, 401)
             rejected.exception.close()
 
-    def test_admin_routes_require_local_admin_role_after_auth_is_enabled(self):
+    def test_admin_routes_require_admin_role_after_auth_is_enabled(self):
         auth_store = MagicMock()
         auth_store.get_session_user.return_value = {
             "id": "user-1",
@@ -862,7 +900,6 @@ class FirebaseAuthTests(unittest.TestCase):
         with (
             patch.object(server, "AUTH_REQUIRED", True),
             patch.object(server, "FIREBASE_PROJECT_ID", "project-id"),
-            patch.object(server, "ADMIN_EMAIL", "admin@example.com"),
             patch.object(server, "_auth_store", auth_store),
             patch.object(server, "_queue_store", object()),
             patch.object(server, "_admin_queue_payload", return_value={"ok": True}),

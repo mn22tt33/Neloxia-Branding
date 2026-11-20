@@ -15,9 +15,6 @@ SUBMISSION_LOCK_ID = 731904222
 SOLVED_HISTORY_MIGRATION_LOCK_ID = 731904223
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 ACTIVE_STATUSES = ("queued", "running")
-UNLIMITED_SUBSCRIPTION_EMAILS = {
-    "mnwr225588@gmail.com",
-}
 SUBSCRIPTION_PLANS = {
     "basic": {"key": "basic", "name": "العادية", "price_egp": 25, "solves": 1},
     "premium": {"key": "premium", "name": "المميزة", "price_egp": 50, "solves": 3},
@@ -447,7 +444,7 @@ class PostgresQueue:
         except (self._psycopg.Error, ValueError, TypeError) as error:
             raise QueueStoreError("Could not read subscription codes.") from error
 
-    def subscription_status(self, user_id, owner_key, owner_email=None):
+    def subscription_status(self, user_id, owner_key):
         try:
             user_uuid = self._as_uuid(user_id)
             with self._connect() as connection:
@@ -456,16 +453,14 @@ class PostgresQueue:
                         cursor, user_uuid, owner_key
                     )
                     return self._subscription_status_payload(
-                        cursor, user_uuid, owner_email
+                        cursor, user_uuid
                     )
         except SubscriptionError:
             raise
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not read the user's subscription.") from error
 
-    def redeem_subscription_code(
-        self, user_id, owner_key, plan_key, code, owner_email=None
-    ):
+    def redeem_subscription_code(self, user_id, owner_key, plan_key, code):
         plan = SUBSCRIPTION_PLANS.get(plan_key)
         if not plan:
             raise SubscriptionError("اختر خطة اشتراك صحيحة.", 400)
@@ -543,7 +538,7 @@ class PostgresQueue:
                             (user_uuid,),
                         )
                     return self._subscription_status_payload(
-                        cursor, user_uuid, owner_email
+                        cursor, user_uuid
                     )
         except SubscriptionError:
             raise
@@ -687,7 +682,7 @@ class PostgresQueue:
             active = None
         return active, latest
 
-    def _subscription_status_payload(self, cursor, user_uuid, owner_email=None):
+    def _subscription_status_payload(self, cursor, user_uuid):
         active, latest = self._subscription_records(cursor, user_uuid)
         cursor.execute(
             """
@@ -703,7 +698,7 @@ class PostgresQueue:
         else:
             trial_status = "available"
         trial_available = trial_status == "available"
-        unlimited = str(owner_email or "").strip().lower() in UNLIMITED_SUBSCRIPTION_EMAILS
+        unlimited = self._is_unlimited_user(cursor, user_uuid)
         if unlimited:
             available_solves = 999999
         else:
@@ -719,14 +714,14 @@ class PostgresQueue:
             "subscription": active or latest,
             "available_solves": available_solves,
             "can_solve": available_solves > 0,
-            "can_subscribe": trial_status != "reserved",
+            "can_subscribe": not unlimited and trial_status != "reserved",
             "unlimited": unlimited,
         }
 
     def _authorize_subscription_accounts(
-        self, cursor, user_uuid, owner_key, code_fingerprints, owner_email=None
+        self, cursor, user_uuid, owner_key, code_fingerprints
     ):
-        if str(owner_email or "").strip().lower() in UNLIMITED_SUBSCRIPTION_EMAILS:
+        if self._is_unlimited_user(cursor, user_uuid):
             return None, False
         self._backfill_legacy_subscription_usage(cursor, user_uuid, owner_key)
         cursor.execute(
@@ -771,6 +766,26 @@ class PostgresQueue:
                 402,
             )
         return None, True
+
+    @staticmethod
+    def _public_unlimited_enabled(cursor):
+        cursor.execute(
+            "SELECT value FROM quizora_metadata WHERE key = %s",
+            ("public_unlimited",),
+        )
+        setting = cursor.fetchone()
+        return bool(isinstance(setting, dict) and setting.get("value"))
+
+    def _is_unlimited_user(self, cursor, user_uuid):
+        cursor.execute(
+            "SELECT role FROM quizora_users WHERE id = %s",
+            (user_uuid,),
+        )
+        user = cursor.fetchone()
+        return bool(
+            (isinstance(user, dict) and user.get("role") == "admin")
+            or self._public_unlimited_enabled(cursor)
+        )
 
     def _settle_subscription_use(
         self, cursor, owner_user_id, operation_id, code_fingerprint, success
@@ -871,6 +886,14 @@ class PostgresQueue:
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not read the site availability setting.") from error
 
+    def get_public_unlimited(self):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    return self._public_unlimited_enabled(cursor)
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not read the public unlimited setting.") from error
+
     def set_site_enabled(self, enabled):
         if type(enabled) is not bool:
             raise ValueError("Site availability must be a boolean.")
@@ -888,6 +911,24 @@ class PostgresQueue:
                     )
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not save the site availability setting.") from error
+
+    def set_public_unlimited(self, enabled):
+        if type(enabled) is not bool:
+            raise ValueError("Public unlimited mode must be a boolean.")
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO quizora_metadata (key, value)
+                        VALUES (%s, %s)
+                        ON CONFLICT (key)
+                        DO UPDATE SET value = EXCLUDED.value
+                        """,
+                        ("public_unlimited", int(enabled)),
+                    )
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not save the public unlimited setting.") from error
 
     def try_acquire_worker_lock(self):
         try:
@@ -1067,7 +1108,6 @@ class PostgresQueue:
                                 owner_user_uuid,
                                 owner_key,
                                 code_fingerprints,
-                                owner_email=str(owner_email) if owner_email else None,
                             )
                         )
 

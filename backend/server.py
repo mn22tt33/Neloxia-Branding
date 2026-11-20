@@ -37,7 +37,6 @@ from queue_store import (
     QueueStoreError,
     SubscriptionError,
 )
-from admin_page import ADMIN_PAGE
 from account_auth import (
     AccountExistsError,
     AccountBlockedError,
@@ -86,7 +85,6 @@ _auth_store = PostgresAuthStore(DATABASE_URL) if DATABASE_URL else None
 FIREBASE_PROJECT_ID = (
     os.environ.get("FIREBASE_PROJECT_ID", "").strip() or "quizora-auth-105be"
 )
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 AUTH_REQUIRED = True
 AUTH_DISABLED_MESSAGE = (
     "تسجيل الدخول غير مفعّل؛ يلزم ربط PostgreSQL وإعداد Firebase."
@@ -162,6 +160,8 @@ STATIC_ROUTES = {
     "/index.html": ("frontend/index.html", "text/html; charset=utf-8"),
     "/account": ("frontend/account.html", "text/html; charset=utf-8"),
     "/account.html": ("frontend/account.html", "text/html; charset=utf-8"),
+    "/admin": ("frontend/admin.html", "text/html; charset=utf-8"),
+    "/admin.html": ("frontend/admin.html", "text/html; charset=utf-8"),
     "/manifest.json": ("frontend/manifest.json", "application/manifest+json; charset=utf-8"),
     "/sw.js": ("frontend/sw.js", "application/javascript; charset=utf-8"),
     "/config.js": ("frontend/config.js", "application/javascript; charset=utf-8"),
@@ -1454,7 +1454,7 @@ def make_handler():
                         "message": "محاولات تسجيل الدخول كثيرة؛ حاول لاحقًا.",
                     })
                     return
-                user = _auth_store.find_firebase_user(identity, ADMIN_EMAIL)
+                user = _auth_store.find_firebase_user(identity)
                 if not user:
                     self._json(404, {
                         "ok": False,
@@ -1526,7 +1526,6 @@ def make_handler():
                     identity,
                     full_name.strip(),
                     password_hash,
-                    ADMIN_EMAIL,
                 )
                 token = _auth_store.create_session(user["id"])
             except ValueError as error:
@@ -1630,7 +1629,12 @@ def make_handler():
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("X-Content-Type-Options", "nosniff")
-            elif basename in ("index.html", "manifest.json", "config.js"):
+            elif basename in (
+                "index.html",
+                "admin.html",
+                "manifest.json",
+                "config.js",
+            ):
                 self.send_header("Cache-Control", "no-cache")
             cookie = getattr(self, "_pending_cookie", None)
             if cookie:
@@ -1692,7 +1696,9 @@ def make_handler():
             if self._local_request_allowed():
                 return False
             path = urlsplit(self.path).path
-            if path == "/api/health":
+            if path in ("/api/health", "/admin", "/admin.html"):
+                return False
+            if path.startswith("/api/admin/") and self._admin_request_allowed():
                 return False
             if not _queue_store:
                 return False
@@ -1761,7 +1767,7 @@ def make_handler():
             self._json(200, {"ok": True, **payload})
 
         def _admin_user_action(self):
-            if self.headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+            if not self._auth_mutation_allowed():
                 self._json(403, {
                     "ok": False,
                     "message": "مصدر الطلب غير مسموح.",
@@ -1942,21 +1948,8 @@ def make_handler():
             ) and not self._admin_request_allowed():
                 self._json(403, {
                     "ok": False,
-                    "error": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
+                    "error": "تتطلب الإدارة صلاحية المدير.",
                 })
-                return
-            if parsed_path.path == "/admin":
-                if not self._admin_request_allowed():
-                    self._redirect_to_account("/admin")
-                    return
-                body = ADMIN_PAGE.encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(body)
                 return
             if self._maintenance_gate():
                 return
@@ -1984,16 +1977,6 @@ def make_handler():
                     return
                 if not self._file("frontend/progress.html", "text/html; charset=utf-8"):
                     self._json(404, {"error": "resource not found"})
-                return
-            if parsed_path.path == "/admin":
-                body = ADMIN_PAGE.encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(body)
                 return
             if parsed_path.path == "/api/admin/queue":
                 try:
@@ -2029,6 +2012,24 @@ def make_handler():
                     self._json(503, {
                         "ok": False,
                         "message": "تعذّر قراءة حالة الموقع من قاعدة البيانات.",
+                    })
+                return
+            if parsed_path.path == "/api/admin/unlimited-mode":
+                if not _queue_store:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "التحكم في الحل المجاني يتطلب قاعدة بيانات PostgreSQL.",
+                    })
+                    return
+                try:
+                    self._json(200, {
+                        "ok": True,
+                        "enabled": _queue_store.get_public_unlimited(),
+                    })
+                except QueueStoreError:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "تعذّر قراءة حالة الحل المجاني.",
                     })
                 return
             if parsed_path.path in STATIC_ROUTES:
@@ -2081,7 +2082,6 @@ def make_handler():
                     status = _queue_store.subscription_status(
                         user["id"],
                         self._owner_key(user),
-                        user.get("email"),
                     )
                 except SubscriptionError as error:
                     self._json(error.status_code, {
@@ -2151,12 +2151,19 @@ def make_handler():
             if (
                 route == "/api/admin"
                 or route.startswith("/api/admin/")
-            ) and not self._admin_request_allowed():
-                self._json(403, {
-                    "ok": False,
-                    "message": "تتطلب الإدارة صلاحية المدير والاتصال المحلي.",
-                })
-                return
+            ):
+                if not self._auth_mutation_allowed():
+                    self._json(403, {
+                        "ok": False,
+                        "message": "مصدر الطلب غير مسموح.",
+                    })
+                    return
+                if not self._admin_request_allowed():
+                    self._json(403, {
+                        "ok": False,
+                        "message": "تتطلب الإدارة صلاحية مدير.",
+                    })
+                    return
             if self._maintenance_gate():
                 return
             if route == "/api/auth/register":
@@ -2211,7 +2218,6 @@ def make_handler():
                         self._owner_key(user),
                         plan_key,
                         code,
-                        user.get("email"),
                     )
                 except SubscriptionError as error:
                     self._json(error.status_code, {
@@ -2235,7 +2241,12 @@ def make_handler():
                 if not self._auth_mutation_allowed():
                     self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
                     return
-                token = self._cookie("quizora_session")
+                authorization = (self.headers.get("Authorization") or "").strip()
+                token = (
+                    authorization[7:].strip()
+                    if authorization.lower().startswith("bearer ")
+                    else self._cookie("quizora_session")
+                )
                 if token and _auth_store:
                     try:
                         _auth_store.revoke_session(token)
@@ -2301,6 +2312,44 @@ def make_handler():
                     self._json(503, {
                         "ok": False,
                         "message": "تعذّر حفظ حالة الموقع في قاعدة البيانات.",
+                    })
+                return
+            if route == "/api/admin/unlimited-mode":
+                try:
+                    data = self._read_json()
+                except (ValueError, json.JSONDecodeError):
+                    self._json(400, {
+                        "ok": False,
+                        "message": "حالة الحل المجاني غير صالحة.",
+                    })
+                    return
+                if not isinstance(data, dict) or type(data.get("enabled")) is not bool:
+                    self._json(400, {
+                        "ok": False,
+                        "message": "اختر حالة صحيحة للحل المجاني.",
+                    })
+                    return
+                if not _queue_store:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "التحكم في الحل المجاني يتطلب قاعدة بيانات PostgreSQL.",
+                    })
+                    return
+                try:
+                    _queue_store.set_public_unlimited(data["enabled"])
+                    self._json(200, {
+                        "ok": True,
+                        "enabled": data["enabled"],
+                        "message": (
+                            "تم إتاحة الحل بلا رسوم لجميع الحسابات."
+                            if data["enabled"]
+                            else "تم إيقاف الحل المجاني؛ عادت حدود الخطط."
+                        ),
+                    })
+                except QueueStoreError:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "تعذّر حفظ حالة الحل المجاني في قاعدة البيانات.",
                     })
                 return
             if urlsplit(self.path).path == "/api/admin/start-now":

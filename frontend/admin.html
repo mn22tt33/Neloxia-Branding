@@ -1,6 +1,4 @@
-"""Local-only queue administration page."""
-
-ADMIN_PAGE = r"""<!doctype html>
+<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
@@ -96,6 +94,16 @@ ADMIN_PAGE = r"""<!doctype html>
     .subscription-code-note { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
     .subscription-code-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
     .subscription-code-field { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
+    .admin-login { display: grid; place-items: center; min-height: 100vh; padding: 24px; }
+    .admin-login[hidden], #adminApp[hidden] { display: none !important; }
+    .admin-login-card { width: min(420px, 100%); padding: 28px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); box-shadow: 0 24px 70px rgba(0,0,0,.28); }
+    .admin-login-card h1 { margin: 0; font-size: 25px; }
+    .admin-login-card p { color: var(--muted); line-height: 1.7; }
+    .admin-login-form { display: grid; gap: 14px; margin-top: 20px; }
+    .admin-login-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+    .admin-login-form input { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; color: var(--text); background: #0b1828; font: inherit; }
+    .admin-login-error { color: var(--red) !important; }
+    .topbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
     .subscription-code-field select { min-width: 210px; }
     .switch { position: relative; flex: none; width: 48px; height: 27px; }
     .switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -400,13 +408,33 @@ ADMIN_PAGE = r"""<!doctype html>
   </style>
 </head>
 <body>
-  <main class="shell">
+  <section class="admin-login" id="adminLogin">
+    <div class="admin-login-card">
+      <p class="eyebrow">QUIZORA • الإدارة</p>
+      <h1>تسجيل دخول المدير</h1>
+      <p>استخدم حساب المدير المحفوظ بأمان في قاعدة البيانات.</p>
+      <form class="admin-login-form" id="adminLoginForm">
+        <label for="adminEmail">البريد الإلكتروني
+          <input id="adminEmail" type="email" autocomplete="username" maxlength="254" required>
+        </label>
+        <label for="adminPassword">كلمة المرور
+          <input id="adminPassword" type="password" autocomplete="current-password" maxlength="128" required>
+        </label>
+        <button class="refresh-button" id="adminLoginButton" type="submit">دخول لوحة الإدارة</button>
+      </form>
+      <p class="admin-login-error" id="adminLoginError" role="alert" hidden></p>
+    </div>
+  </section>
+  <main class="shell" id="adminApp" hidden>
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">Q</div>
         <div><p class="brand-name">QUIZORA</p><p class="brand-subtitle">لوحة إدارة التشغيل</p></div>
       </div>
-      <div class="local-badge"><span class="local-dot"></span>إدارة محلية آمنة</div>
+      <div class="topbar-actions">
+        <a class="refresh-button" href="/">فتح الموقع للحل</a>
+        <button class="refresh-button" id="adminLogout" type="button">تسجيل الخروج</button>
+      </div>
     </header>
 
     <div class="workspace">
@@ -446,6 +474,18 @@ ADMIN_PAGE = r"""<!doctype html>
           </label>
           <button class="refresh-button site-preview" id="previewSiteButton" type="button">عرض الموقع على جهازي</button>
         </div>
+      </section>
+
+      <section class="preferences" aria-labelledby="unlimitedPreferenceTitle">
+        <div>
+          <h2 class="preference-title" id="unlimitedPreferenceTitle">الحل بلا حدود للجميع</h2>
+          <p class="preference-hint">يسمح للحسابات المسجلة بتجاوز رصيد الخطط. تبقى حدود سعة الطابور والحماية من إساءة الاستخدام فعالة.</p>
+        </div>
+        <span class="preference-state" id="unlimitedSettingState">جارٍ تحميل الإعداد...</span>
+        <label class="switch" aria-label="السماح بالحل المجاني لجميع المستخدمين">
+          <input id="publicUnlimited" type="checkbox" role="switch" disabled>
+          <span class="switch-track"></span>
+        </label>
       </section>
 
     <section class="stats" aria-label="ملخص التشغيل">
@@ -596,11 +636,56 @@ ADMIN_PAGE = r"""<!doctype html>
     </div>
   </dialog>
   <div class="toast" id="toast" role="status"></div>
+  <script src="/config.js?v=1.2.4"></script>
   <script>
+    const API_BASE_URL = (
+      window.APP_CONFIG && typeof window.APP_CONFIG.apiBaseUrl === "string"
+        ? window.APP_CONFIG.apiBaseUrl.trim()
+        : ""
+    ).replace(/\/+$/, "") || location.origin;
+    const adminLogin = document.getElementById("adminLogin");
+    const adminLoginForm = document.getElementById("adminLoginForm");
+    const adminLoginError = document.getElementById("adminLoginError");
+    const adminApp = document.getElementById("adminApp");
+    let adminStarted = false;
+
+    function adminFetch(path, options) {
+      options = Object.assign({}, options || {}, { credentials: "include" });
+      const headers = new Headers(options.headers || {});
+      const token = sessionStorage.getItem("quizora_session_token");
+      if (token) headers.set("Authorization", "Bearer " + token);
+      options.headers = headers;
+      return fetch(API_BASE_URL + path, options);
+    }
+
+    function showAdminLogin(message) {
+      adminApp.hidden = true;
+      adminLogin.hidden = false;
+      adminLoginError.textContent = message || "";
+      adminLoginError.hidden = !message;
+    }
+
+    function showAdmin(user) {
+      adminLogin.hidden = true;
+      adminApp.hidden = false;
+      const identity = document.getElementById("adminIdentity");
+      identity.replaceChildren();
+      addText(identity, "strong", "", user.full_name);
+      addText(identity, "span", "", user.email);
+      if (adminStarted) return;
+      adminStarted = true;
+      refresh();
+      loadBrowserSetting();
+      loadSiteSetting();
+      loadUnlimitedSetting();
+      setInterval(refresh, 2000);
+    }
+
     const jobsRoot = document.getElementById("jobs");
     const errorBox = document.getElementById("error");
     const browserToggle = document.getElementById("browserVisible");
     const siteToggle = document.getElementById("siteEnabled");
+    const unlimitedToggle = document.getElementById("publicUnlimited");
     const solvedDialog = document.getElementById("solvedDialog");
     const userRows = document.getElementById("userRows");
     const usersError = document.getElementById("usersError");
@@ -749,7 +834,7 @@ ADMIN_PAGE = r"""<!doctype html>
       const error = document.getElementById("subscriptionCodesError");
       error.hidden = true;
       try {
-        const response = await fetch(
+        const response = await adminFetch(
           "/api/admin/subscription-codes?limit=100",
           { cache: "no-store" }
         );
@@ -772,7 +857,7 @@ ADMIN_PAGE = r"""<!doctype html>
       error.hidden = true;
       document.getElementById("subscriptionCodeResult").hidden = true;
       try {
-        const response = await fetch("/api/admin/subscription-codes", {
+        const response = await adminFetch("/api/admin/subscription-codes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -806,7 +891,7 @@ ADMIN_PAGE = r"""<!doctype html>
         status: document.getElementById("userStatus").value
       });
       try {
-        const response = await fetch("/api/admin/users?" + params.toString(), { cache: "no-store" });
+        const response = await adminFetch("/api/admin/users?" + params.toString(), { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || "تعذّر تحميل المستخدمين.");
         if (requestId !== usersRequestId) return;
@@ -833,7 +918,7 @@ ADMIN_PAGE = r"""<!doctype html>
       }
       button.disabled = true;
       try {
-        const response = await fetch("/api/admin/users", {
+        const response = await adminFetch("/api/admin/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: user.id, action })
@@ -845,25 +930,6 @@ ADMIN_PAGE = r"""<!doctype html>
       } catch (error) {
         showToast(error.message || "تعذّر تحديث المستخدم.");
         button.disabled = false;
-      }
-    }
-
-    async function loadAdminIdentity() {
-      try {
-        const response = await fetch("/api/auth/me", { cache: "no-store" });
-        const data = await response.json();
-        const identity = document.getElementById("adminIdentity");
-        identity.replaceChildren();
-        if (response.ok && data.user && data.user.role === "admin") {
-          addText(identity, "strong", "", data.user.full_name);
-          addText(identity, "span", "", data.user.email);
-        } else {
-          addText(identity, "strong", "", "المدير المحلي");
-          addText(identity, "span", "", "جلسة الإدارة المحلية");
-        }
-      } catch (error) {
-        document.getElementById("adminIdentity").textContent =
-          error.message || "تعذّر التحقق من حساب المدير.";
       }
     }
 
@@ -1047,7 +1113,7 @@ ADMIN_PAGE = r"""<!doctype html>
       if (refreshing) return;
       refreshing = true;
       try {
-        const response = await fetch("/api/admin/queue", { cache: "no-store" });
+        const response = await adminFetch("/api/admin/queue", { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || "تعذّر تحميل الطابور.");
         lastPayload = data;
@@ -1063,7 +1129,7 @@ ADMIN_PAGE = r"""<!doctype html>
     async function startNow(button) {
       button.disabled = true;
       try {
-        const response = await fetch("/api/admin/start-now", {
+        const response = await adminFetch("/api/admin/start-now", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: button.dataset.jobId })
@@ -1080,7 +1146,7 @@ ADMIN_PAGE = r"""<!doctype html>
 
     async function loadBrowserSetting() {
       try {
-        const response = await fetch("/api/admin/settings", { cache: "no-store" });
+        const response = await adminFetch("/api/admin/settings", { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || "تعذّر تحميل إعداد المتصفح.");
         browserToggle.checked = data.browser_visible;
@@ -1106,7 +1172,7 @@ ADMIN_PAGE = r"""<!doctype html>
     async function loadSiteSetting() {
       siteToggle.disabled = true;
       try {
-        const response = await fetch("/api/admin/site-status", { cache: "no-store" });
+        const response = await adminFetch("/api/admin/site-status", { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || !data.ok) {
           throw new Error(data.message || "تعذّر تحميل حالة الموقع.");
@@ -1120,11 +1186,35 @@ ADMIN_PAGE = r"""<!doctype html>
       }
     }
 
+    function renderUnlimitedSetting(enabled) {
+      unlimitedToggle.checked = enabled;
+      document.getElementById("unlimitedSettingState").textContent = enabled
+        ? "الحل المجاني مفعل للجميع"
+        : "حدود الخطط فعالة";
+    }
+
+    async function loadUnlimitedSetting() {
+      unlimitedToggle.disabled = true;
+      try {
+        const response = await adminFetch("/api/admin/unlimited-mode", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر تحميل إعداد الحل المجاني.");
+        }
+        renderUnlimitedSetting(data.enabled);
+        unlimitedToggle.disabled = false;
+      } catch (error) {
+        document.getElementById("unlimitedSettingState").textContent =
+          "تعذّر تحميل الإعداد من قاعدة البيانات";
+        showToast(error.message || "تعذّر تحميل إعداد الحل المجاني.");
+      }
+    }
+
     async function saveSiteSetting() {
       const nextValue = siteToggle.checked;
       renderSiteSetting(nextValue);
       try {
-        const response = await fetch("/api/admin/site-status", {
+        const response = await adminFetch("/api/admin/site-status", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ enabled: nextValue })
@@ -1141,11 +1231,40 @@ ADMIN_PAGE = r"""<!doctype html>
       }
     }
 
+    async function saveUnlimitedSetting() {
+      const nextValue = unlimitedToggle.checked;
+      if (nextValue && !window.confirm(
+        "سيتم تجاوز رصيد الاشتراك لكل الحسابات المسجلة. هل تريد المتابعة؟"
+      )) {
+        unlimitedToggle.checked = false;
+        return;
+      }
+      unlimitedToggle.disabled = true;
+      try {
+        const response = await adminFetch("/api/admin/unlimited-mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: nextValue })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر حفظ إعداد الحل المجاني.");
+        }
+        renderUnlimitedSetting(data.enabled);
+        showToast(data.message);
+      } catch (error) {
+        unlimitedToggle.checked = !nextValue;
+        showToast(error.message || "تعذّر حفظ إعداد الحل المجاني.");
+      } finally {
+        unlimitedToggle.disabled = false;
+      }
+    }
+
     async function saveBrowserSetting() {
       const nextValue = browserToggle.checked;
       browserToggle.disabled = true;
       try {
-        const response = await fetch("/api/admin/settings", {
+        const response = await adminFetch("/api/admin/settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ browser_visible: nextValue })
@@ -1209,16 +1328,82 @@ ADMIN_PAGE = r"""<!doctype html>
     document.getElementById("closeSolvedDialog").addEventListener("click", () => solvedDialog.close());
     browserToggle.addEventListener("change", saveBrowserSetting);
     siteToggle.addEventListener("change", saveSiteSetting);
+    unlimitedToggle.addEventListener("change", saveUnlimitedSetting);
     document.getElementById("previewSiteButton").addEventListener("click", () => {
       window.open("/", "_blank", "noopener");
     });
 
-    refresh();
-    loadBrowserSetting();
-    loadSiteSetting();
-    loadAdminIdentity();
-    setInterval(refresh, 2000);
+    adminLoginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("adminLoginButton");
+      button.disabled = true;
+      adminLoginError.hidden = true;
+      try {
+        const response = await adminFetch("/api/auth/password/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("adminEmail").value,
+            password: document.getElementById("adminPassword").value
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر تسجيل الدخول.");
+        }
+        if (data.session_token) {
+          sessionStorage.setItem("quizora_session_token", data.session_token);
+        }
+        document.getElementById("adminPassword").value = "";
+        if (!data.user || data.user.role !== "admin") {
+          await adminFetch("/api/auth/logout", { method: "POST" });
+          sessionStorage.removeItem("quizora_session_token");
+          throw new Error("هذا الحساب لا يملك صلاحية المدير.");
+        }
+        adminLoginForm.reset();
+        showAdmin(data.user);
+      } catch (error) {
+        adminLoginError.textContent = error.message || "تعذّر تسجيل الدخول.";
+        adminLoginError.hidden = false;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("adminLogout").addEventListener("click", async () => {
+      const button = document.getElementById("adminLogout");
+      button.disabled = true;
+      try {
+        const response = await adminFetch("/api/auth/logout", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر تسجيل الخروج.");
+        }
+        sessionStorage.removeItem("quizora_session_token");
+        location.reload();
+      } catch (error) {
+        showToast(error.message || "تعذّر تسجيل الخروج.");
+        button.disabled = false;
+      }
+    });
+
+    async function checkAdminSession() {
+      try {
+        const response = await adminFetch("/api/auth/me", { cache: "no-store" });
+        const data = await response.json();
+        if (response.ok && data.user && data.user.role === "admin") {
+          showAdmin(data.user);
+          return;
+        }
+        showAdminLogin(
+          data.user ? "هذا الحساب لا يملك صلاحية المدير." : ""
+        );
+      } catch (error) {
+        showAdminLogin(error.message || "تعذّر الاتصال بخادم تسجيل الدخول.");
+      }
+    }
+
+    checkAdminSession();
   </script>
 </body>
 </html>
-"""

@@ -1,0 +1,12 @@
+/
+  Cache-Control: no-store
+/index.html
+  Cache-Control: no-store
+/account.html
+  Cache-Control: no-store
+/admin.html
+  Cache-Control: no-store
+/sw.js
+  Cache-Control: no-store
+/config.js
+  Cache-Control: no-store

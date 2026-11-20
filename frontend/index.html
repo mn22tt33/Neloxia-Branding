@@ -18,7 +18,11 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.4").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.2.4", {
+        updateViaCache: "none"
+      }).then(function(registration){
+        return registration.update();
+      }).catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -1480,7 +1484,7 @@
     var detail = "";
     if (status.unlimited){
       title = "حل بلا حدود";
-      detail = "حساب mnwr225588@gmail.com غير محدود ولا يستهلك رصيدًا.";
+      detail = "حسابك مشمول بالحل بلا رسوم ولا يستهلك رصيد اشتراك.";
     } else if (current && current.status !== "exhausted"){
       title = "خطة " + current.plan_name + " — متبقي " + current.remaining +
         (current.remaining === 1 ? " طلب حل" : " طلبات حل");

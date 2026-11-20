@@ -25,6 +25,9 @@ class _QueueStoreStub:
     def get_site_enabled(self):
         return True
 
+    def get_public_unlimited(self):
+        return False
+
 
 class QueueStorageTests(unittest.TestCase):
     def setUp(self):
@@ -91,18 +94,21 @@ class QueueStorageTests(unittest.TestCase):
                 }
                 self.assertIn("ngrok-skip-browser-warning", allowed_headers)
 
-    def test_admin_panel_is_local_and_returns_queue_summary(self):
+    def test_frontend_admin_panel_and_local_queue_summary(self):
         with patch.object(server, "_queue_store", None), self._running_api() as base:
-            with urllib.request.urlopen(base + "/admin") as response:
+            with urllib.request.urlopen(base + "/admin.html") as response:
                 page = response.read().decode("utf-8")
                 self.assertEqual(response.status, 200)
                 self.assertIn("إدارة الطابور", page)
                 self.assertIn('data-view="usersView"', page)
+                self.assertIn('id="adminLoginForm"', page)
                 self.assertIn('id="userRows"', page)
                 self.assertIn('id="solvedCard"', page)
                 self.assertIn('id="solvedDialog"', page)
                 self.assertIn('id="solvedEvents"', page)
                 self.assertIn('id="siteEnabled"', page)
+                self.assertIn('id="publicUnlimited"', page)
+                self.assertIn('href="/"', page)
                 self.assertIn('id="previewSiteButton"', page)
                 self.assertIn("[...events].reverse().forEach", page)
 
@@ -126,6 +132,9 @@ class QueueStorageTests(unittest.TestCase):
         class FakeQueue:
             def __init__(self):
                 self.enabled = False
+
+            def get_site_enabled(self):
+                return True
 
             def get_site_enabled(self):
                 return self.enabled
@@ -241,6 +250,63 @@ class QueueStorageTests(unittest.TestCase):
                     urllib.request.urlopen(request)
                 self.assertEqual(invalid.exception.code, 400)
                 invalid.exception.close()
+
+    def test_public_unlimited_admin_switch_is_database_backed_and_origin_checked(self):
+        class FakeQueue:
+            def __init__(self):
+                self.enabled = False
+
+            def get_site_enabled(self):
+                return True
+
+            def get_public_unlimited(self):
+                return self.enabled
+
+            def set_public_unlimited(self, enabled):
+                self.enabled = enabled
+
+        fake_queue = FakeQueue()
+        with patch.object(server, "_queue_store", fake_queue), self._running_api() as base:
+            with urllib.request.urlopen(base + "/api/admin/unlimited-mode") as response:
+                status = json.loads(response.read().decode("utf-8"))
+            self.assertFalse(status["enabled"])
+
+            auth_store = MagicMock()
+            auth_store.get_session_user.return_value = {"role": "admin"}
+            rejected = urllib.request.Request(
+                base + "/api/admin/unlimited-mode",
+                data=b'{"enabled":true}',
+                headers={
+                   "Content-Type": "application/json",
+                   "Origin": "https://attacker.example",
+                   "Authorization": "Bearer " + "a" * 43,
+                },
+                method="POST",
+            )
+            request = urllib.request.Request(
+                base + "/api/admin/unlimited-mode",
+                data=b'{"enabled":true}',
+                headers={
+                   "Content-Type": "application/json",
+                   "Origin": "https://quizora.movb.workers.dev",
+                   "Sec-Fetch-Site": "cross-site",
+                   "Authorization": "Bearer " + "a" * 43,
+                },
+                method="POST",
+            )
+            with (
+                patch.object(server, "_auth_store", auth_store),
+                patch.object(server, "AUTH_REQUIRED", True),
+            ):
+                with self.assertRaises(urllib.error.HTTPError) as forbidden:
+                    urllib.request.urlopen(rejected)
+                self.assertEqual(forbidden.exception.code, 403)
+                forbidden.exception.close()
+
+                with urllib.request.urlopen(request) as response:
+                    enabled = json.loads(response.read().decode("utf-8"))
+            self.assertTrue(enabled["enabled"])
+            self.assertTrue(fake_queue.enabled)
 
     def test_legacy_solved_history_resets_and_only_successes_store_durations(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -835,21 +901,52 @@ class QueueStorageTests(unittest.TestCase):
         self.assertEqual(SUBSCRIPTION_PLANS["professional"]["price_egp"], 120)
         self.assertEqual(SUBSCRIPTION_PLANS["professional"]["solves"], 6)
 
-    def test_unlimited_admin_email_bypasses_subscription_credit(self):
+    def test_unlimited_admin_role_bypasses_subscription_credit(self):
         queue = PostgresQueue(
             "postgresql://unused",
             Fernet.generate_key().decode("ascii"),
         )
         cursor = MagicMock()
-        subscription_id, is_trial = queue._authorize_subscription_accounts(
-            cursor,
-            uuid.uuid4(),
-            "owner-key",
-            ["account-one", "account-two"],
-            "mnwr225588@gmail.com",
-        )
+        with patch.object(queue, "_is_unlimited_user", return_value=True):
+            subscription_id, is_trial = queue._authorize_subscription_accounts(
+                cursor,
+                uuid.uuid4(),
+                "owner-key",
+                ["account-one", "account-two"],
+            )
         self.assertIsNone(subscription_id)
         self.assertFalse(is_trial)
+
+    def test_public_unlimited_flag_is_read_from_database(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            {"role": "user"},
+            {"value": 1},
+        ]
+
+        self.assertTrue(queue._is_unlimited_user(cursor, uuid.uuid4()))
+        self.assertEqual(
+            cursor.execute.call_args_list[1].args[1],
+            ("public_unlimited",),
+        )
+
+    def test_admin_role_is_read_from_database(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            {"role": "admin"},
+            {"value": 0},
+        ]
+
+        self.assertTrue(queue._is_unlimited_user(cursor, uuid.uuid4()))
+        self.assertIn("SELECT role FROM quizora_users", cursor.execute.call_args_list[0].args[0])
 
     def test_subscription_code_rejects_a_mismatched_plan(self):
         queue = PostgresQueue(
@@ -932,6 +1029,24 @@ class QueueStorageTests(unittest.TestCase):
             self.assertTrue(available["can_solve"])
             self.assertTrue(available["can_subscribe"])
             self.assertEqual(available["available_solves"], 1)
+
+    def test_admin_subscription_status_is_unlimited_without_subscription_actions(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            None,
+            {"role": "admin"},
+            None,
+        ]
+        with patch.object(queue, "_subscription_records", return_value=(None, None)):
+            status = queue._subscription_status_payload(cursor, uuid.uuid4())
+
+        self.assertTrue(status["unlimited"])
+        self.assertTrue(status["can_solve"])
+        self.assertFalse(status["can_subscribe"])
 
     def test_subscription_plan_rejects_account_count_over_remaining_credit(self):
         queue = PostgresQueue(
@@ -1139,6 +1254,29 @@ class QueueStorageTests(unittest.TestCase):
             and call.args[1][0] == "site_enabled"
         )
         self.assertEqual(save.args[1], ("site_enabled", 0))
+
+    def test_public_unlimited_setting_defaults_to_off_and_persists(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [None, {"value": 1}]
+
+        with patch.object(queue, "_connect", return_value=connection):
+            self.assertFalse(queue.get_public_unlimited())
+            queue.set_public_unlimited(True)
+            self.assertTrue(queue.get_public_unlimited())
+
+        save = next(
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO quizora_metadata" in call.args[0]
+            and call.args[1][0] == "public_unlimited"
+        )
+        self.assertEqual(save.args[1], ("public_unlimited", 1))
 
     def test_successful_database_job_persists_encrypted_account_and_owner_details(self):
         queue = PostgresQueue(
