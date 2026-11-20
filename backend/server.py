@@ -31,7 +31,12 @@ if os.environ.get("QUIZORA_TEST_MODE") != "1":
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-from queue_store import PostgresQueue, QueueCapacityError, QueueStoreError
+from queue_store import (
+    PostgresQueue,
+    QueueCapacityError,
+    QueueStoreError,
+    SubscriptionError,
+)
 from admin_page import ADMIN_PAGE
 from account_auth import (
     AccountExistsError,
@@ -1075,6 +1080,7 @@ def _start(
     owner_key=None,
     owner_name=None,
     owner_email=None,
+    owner_user_id=None,
 ):
     global _accounts, _local_queue_sequence
     client_id = _normalize_client_id(client_id) or str(uuid.uuid4())
@@ -1087,6 +1093,7 @@ def _start(
             owner_key,
             owner_name,
             owner_email,
+            owner_user_id=owner_user_id,
         )
         if added == 0:
             return False, "هذه العمليات موجودة بالفعل في طابور الانتظار أو قيد التشغيل."
@@ -1359,6 +1366,29 @@ def make_handler():
                 self._json(401, {
                     "ok": False,
                     "message": "سجّل الدخول بحساب Google للمتابعة.",
+                })
+                return False, None
+            return True, user
+
+        def _require_subscription_user(self):
+            if not self._auth_enabled() or not _queue_store:
+                self._json(503, {
+                    "ok": False,
+                    "message": "الاشتراكات تتطلب تسجيل الدخول وقاعدة بيانات مفعّلة.",
+                })
+                return False, None
+            try:
+                user = self._auth_session()
+            except AuthStoreError:
+                self._json(503, {
+                    "ok": False,
+                    "message": "تعذّر التحقق من جلسة المستخدم.",
+                })
+                return False, None
+            if not user:
+                self._json(401, {
+                    "ok": False,
+                    "message": "سجّل الدخول أولًا لإدارة اشتراكك.",
                 })
                 return False, None
             return True, user
@@ -1780,6 +1810,77 @@ def make_handler():
                 return
             self._json(200, {"ok": True, "message": message})
 
+        def _admin_subscription_codes(self, query_string):
+            if not self._auth_enabled() or not _queue_store:
+                self._json(503, {
+                    "ok": False,
+                    "error": "إدارة أكواد الاشتراك تتطلب قاعدة بيانات ومصادقة مفعّلتين.",
+                })
+                return
+            try:
+                admin = self._auth_session()
+                if not admin or admin.get("role") != "admin":
+                    self._json(403, {
+                        "ok": False,
+                        "error": "تتطلب إدارة الأكواد جلسة مدير صالحة.",
+                    })
+                    return
+                query = parse_qs(query_string, keep_blank_values=True)
+                try:
+                    limit = int(query.get("limit", ["50"])[0])
+                except ValueError:
+                    self._json(400, {"ok": False, "error": "عدد الأكواد المطلوب غير صالح."})
+                    return
+                if not 1 <= limit <= 100:
+                    self._json(400, {"ok": False, "error": "عدد الأكواد المطلوب غير صالح."})
+                    return
+                codes = _queue_store.list_subscription_codes(limit)
+            except AuthStoreError:
+                self._json(503, {"ok": False, "error": "تعذّر التحقق من المدير."})
+                return
+            except QueueStoreError:
+                self._json(503, {"ok": False, "error": "تعذّر تحميل أكواد الاشتراك."})
+                return
+            self._json(200, {"ok": True, "codes": codes})
+
+        def _admin_create_subscription_code(self):
+            if not self._auth_enabled() or not _queue_store:
+                self._json(503, {
+                    "ok": False,
+                    "message": "إنشاء أكواد الاشتراك يتطلب قاعدة بيانات ومصادقة مفعّلتين.",
+                })
+                return
+            try:
+                data = self._read_json()
+                if not isinstance(data, dict):
+                    raise ValueError
+                plan_key = data.get("plan_key")
+                if not isinstance(plan_key, str):
+                    raise ValueError
+                admin = self._auth_session()
+                if not admin or admin.get("role") != "admin":
+                    self._json(403, {
+                        "ok": False,
+                        "message": "تتطلب إدارة الأكواد جلسة مدير صالحة.",
+                    })
+                    return
+                created = _queue_store.create_subscription_code(
+                    plan_key, admin["id"]
+                )
+            except (ValueError, TypeError, json.JSONDecodeError):
+                self._json(400, {"ok": False, "message": "بيانات إنشاء الكود غير صالحة."})
+                return
+            except AuthStoreError:
+                self._json(503, {"ok": False, "message": "تعذّر التحقق من المدير."})
+                return
+            except SubscriptionError as error:
+                self._json(error.status_code, {"ok": False, "message": str(error)})
+                return
+            except QueueStoreError:
+                self._json(503, {"ok": False, "message": "تعذّر إنشاء كود الاشتراك."})
+                return
+            self._json(201, {"ok": True, **created})
+
         def _status_payload(self, client_id=None, owner_key=None):
             if _queue_store:
                 return _queue_store.status_payload(
@@ -1899,6 +2000,9 @@ def make_handler():
             if parsed_path.path == "/api/admin/users":
                 self._admin_users_payload(parsed_path.query)
                 return
+            if parsed_path.path == "/api/admin/subscription-codes":
+                self._admin_subscription_codes(parsed_path.query)
+                return
             if parsed_path.path == "/api/admin/settings":
                 self._json(200, {
                     "ok": True,
@@ -1964,6 +2068,28 @@ def make_handler():
                     )
                 except QueueStoreError:
                     self._json(503, {"ok": False, "error": "تعذّر قراءة طابور الانتظار."})
+                return
+            if parsed_path.path == "/api/subscription":
+                authenticated, user = self._require_subscription_user()
+                if not authenticated:
+                    return
+                try:
+                    status = _queue_store.subscription_status(
+                        user["id"], self._owner_key(user)
+                    )
+                except SubscriptionError as error:
+                    self._json(error.status_code, {
+                        "ok": False,
+                        "message": str(error),
+                    })
+                    return
+                except QueueStoreError:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "تعذّر تحميل حالة الاشتراك.",
+                    })
+                    return
+                self._json(200, {"ok": True, **status})
                 return
             if parsed_path.path == "/api/auth/status":
                 enabled = self._auth_enabled()
@@ -2044,6 +2170,59 @@ def make_handler():
                 return
             if route == "/api/admin/users":
                 self._admin_user_action()
+                return
+            if route == "/api/admin/subscription-codes":
+                self._admin_create_subscription_code()
+                return
+            if route == "/api/subscription/redeem":
+                if not self._auth_mutation_allowed():
+                    self._json(403, {"ok": False, "message": "مصدر الطلب غير مسموح."})
+                    return
+                authenticated, user = self._require_subscription_user()
+                if not authenticated:
+                    return
+                try:
+                    data = self._read_json()
+                    if not isinstance(data, dict):
+                        raise ValueError
+                    plan_key = data.get("plan_key")
+                    code = data.get("code")
+                    if (
+                        not isinstance(plan_key, str)
+                        or not isinstance(code, str)
+                        or not 1 <= len(code.strip()) <= 64
+                    ):
+                        raise ValueError
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    self._json(400, {
+                        "ok": False,
+                        "message": "اختر الخطة واكتب كود الاشتراك بشكل صحيح.",
+                    })
+                    return
+                try:
+                    status = _queue_store.redeem_subscription_code(
+                        user["id"],
+                        self._owner_key(user),
+                        plan_key,
+                        code,
+                    )
+                except SubscriptionError as error:
+                    self._json(error.status_code, {
+                        "ok": False,
+                        "message": str(error),
+                    })
+                    return
+                except QueueStoreError:
+                    self._json(503, {
+                        "ok": False,
+                        "message": "تعذّر تفعيل كود الاشتراك.",
+                    })
+                    return
+                self._json(200, {
+                    "ok": True,
+                    "message": "تم تفعيل الخطة بنجاح.",
+                    **status,
+                })
                 return
             if route == "/api/auth/logout":
                 if not self._auth_mutation_allowed():
@@ -2136,6 +2315,12 @@ def make_handler():
                 authenticated, user = self._require_api_user()
                 if not authenticated:
                     return
+                if _queue_store and self._auth_enabled() and not user:
+                    self._json(401, {
+                        "ok": False,
+                        "message": "سجّل الدخول بحسابك قبل بدء الحل.",
+                    })
+                    return
                 try:
                     data = self._read_json()
                 except Exception:
@@ -2202,10 +2387,17 @@ def make_handler():
                         self._owner_key(user),
                         user.get("full_name") if user else None,
                         user.get("email") if user else None,
+                        user.get("id") if user else None,
                     )
                     self._json(200 if ok else 409, {
                         "ok": ok,
                         "message": msg,
+                        "client_id": client_id,
+                    })
+                except SubscriptionError as error:
+                    self._json(error.status_code, {
+                        "ok": False,
+                        "message": str(error),
                         "client_id": client_id,
                     })
                 except QueueCapacityError as e:
@@ -2347,8 +2539,8 @@ def main():
     sys.stdout = _StdoutSink()
     if _queue_store:
         try:
-            _queue_store.initialize()
             _auth_store.initialize()
+            _queue_store.initialize()
             _auth_store.cleanup_expired()
             _get_site_enabled_cached()
         except QueueStoreError as error:

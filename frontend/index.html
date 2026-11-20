@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.1.5"></script>
+<script src="/config.js?v=1.2.0"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.1.5").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.2.0").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -518,6 +518,44 @@
   .profile-field span{color:var(--muted);font-size:11px;font-weight:700}
   .profile-field strong{overflow-wrap:anywhere;font-size:14px}
   .profile-field.email strong{direction:ltr;text-align:right}
+  .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+  .subscription-summary{max-width:210px;color:var(--muted);font-size:11px;font-weight:700;text-align:left}
+  .subscription-banner{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;margin:12px auto;
+    padding:13px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);
+    box-shadow:0 8px 24px rgba(44,32,84,.06)
+  }
+  .subscription-banner strong{display:block;color:var(--brand-800);font-size:13px}
+  .subscription-banner p{margin:4px 0 0;color:var(--muted);font-size:11px}
+  .subscription-dialog{
+    width:min(820px,calc(100% - 24px));max-width:820px;max-height:min(88vh,900px);
+    padding:0;border:1px solid var(--line);border-radius:24px;
+    background:var(--surface);color:var(--ink);box-shadow:var(--shadow);overflow:auto
+  }
+  .subscription-dialog::backdrop{background:rgba(28,22,32,.58);backdrop-filter:blur(5px)}
+  .subscription-dialog-content{padding:24px}
+  .subscription-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:8px}
+  .subscription-dialog-head h2{margin:0;font-size:22px}
+  .subscription-dialog-head p{margin:6px 0 0;color:var(--muted);font-size:12px}
+  .subscription-status-box{margin:16px 0;padding:12px 14px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2);font-size:12px;line-height:1.7}
+  .subscription-plan-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}
+  .subscription-plan-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--line);border-radius:17px;background:#fff;box-shadow:0 8px 20px rgba(44,32,84,.045)}
+  .subscription-plan-card.featured{border-color:var(--brand-400);box-shadow:0 10px 24px rgba(90,69,172,.12)}
+  .subscription-plan-card h3{margin:0;font-size:16px;color:var(--brand-800)}
+  .subscription-plan-price{font-size:24px;font-weight:900;color:var(--ink)}
+  .subscription-plan-price small{font-size:11px;font-weight:700;color:var(--muted)}
+  .subscription-plan-card p{flex:1;margin:0;color:var(--muted);font-size:12px;line-height:1.7}
+  .subscription-plan-card .btn{width:100%}
+  .subscription-plan-card .btn:disabled{opacity:.55;cursor:not-allowed}
+  .subscription-redeem-panel{margin-top:16px;padding:17px;border:1px solid var(--line);border-radius:17px;background:var(--surface-2)}
+  .subscription-redeem-panel h3{margin:0 0 8px}
+  .subscription-code-label{display:grid;gap:7px;margin:14px 0;color:var(--ink-2);font-size:12px;font-weight:700}
+  .subscription-code-input{min-height:48px;padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font:700 16px/1.3 Consolas,monospace;letter-spacing:.08em;text-align:left}
+  .subscription-code-input:focus{outline:2px solid var(--brand-400);outline-offset:1px}
+  .subscription-dialog-actions{display:grid;gap:9px}
+  .subscription-dialog-actions .btn{width:100%;justify-content:center;text-decoration:none}
+  .subscription-contact-note{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.7;text-align:center}
+  .subscription-back{margin-top:10px}
   .server-offline-card{
     width:min(440px,100%);padding:28px 24px;text-align:center;
     background:var(--surface);border:1px solid var(--line);border-radius:24px;
@@ -536,6 +574,12 @@
   /* ===== Responsive ===== */
   @media (max-width:720px){
     .app-header{padding:14px 14px 4px}
+    .header-actions{gap:6px}
+    .header-actions .btn{min-height:38px;padding-inline:10px;font-size:11px}
+    .subscription-summary{display:none}
+    .subscription-banner{align-items:flex-start;margin:8px 0;flex-direction:column}
+    .subscription-plan-grid{grid-template-columns:1fr}
+    .subscription-dialog-content{padding:18px}
     .brand-avatar{width:40px;height:40px;border-radius:13px}
     .brand h1{font-size:16.5px}
     .wrap{padding:8px 12px 24px}
@@ -1148,10 +1192,14 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.1.4">v1.1.4</span>
+      <span class="brand-version" aria-label="الإصدار 1.2.0">v1.2.0</span>
     </div>
   </div>
-  <button class="btn secondary" id="profileButton" type="button" hidden>الملف الشخصي</button>
+  <div class="header-actions">
+    <span class="subscription-summary" id="subscriptionSummary" role="status">جارٍ تحميل الاشتراك...</span>
+    <button class="btn primary" id="subscriptionButton" type="button" hidden>خطط الاشتراك</button>
+    <button class="btn secondary" id="profileButton" type="button" hidden>الملف الشخصي</button>
+  </div>
 </header>
 
 <dialog class="profile-dialog" id="profileDialog" aria-labelledby="profileDialogTitle">
@@ -1177,6 +1225,34 @@
   </div>
 </dialog>
 
+<dialog class="subscription-dialog" id="subscriptionDialog" aria-labelledby="subscriptionDialogTitle">
+  <div class="subscription-dialog-content">
+    <header class="subscription-dialog-head">
+      <div>
+        <p class="profile-dialog-kicker">اشتراكك في QUIZORA</p>
+        <h2 id="subscriptionDialogTitle">اختر خطة الحل</h2>
+        <p>الرصيد لا تنتهي صلاحيته، ويُستهلك عند نجاح الحل لكل كود حساب.</p>
+      </div>
+      <button class="profile-dialog-close" id="closeSubscriptionDialog" type="button" aria-label="إغلاق">×</button>
+    </header>
+    <div class="subscription-status-box" id="subscriptionDialogStatus" role="status">جارٍ تحميل حالة الاشتراك...</div>
+    <div class="subscription-plan-grid" id="subscriptionPlanCards"></div>
+    <section class="subscription-redeem-panel" id="subscriptionRedeemPanel" hidden>
+      <h3 id="subscriptionSelectedPlan">أدخل كود الخطة</h3>
+      <label class="subscription-code-label" for="subscriptionCodeInput">
+        <span>كود الاشتراك</span>
+        <input class="subscription-code-input" id="subscriptionCodeInput" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="QZ-XXXXXXXX-XXXXXXXX-XXXXXXXX" dir="ltr">
+      </label>
+      <div class="alert error" id="subscriptionRedeemMessage" role="alert" hidden></div>
+      <div class="subscription-dialog-actions">
+        <button class="btn primary" id="redeemSubscriptionButton" type="button">اشتراك</button>
+        <a class="btn secondary" href="https://t.me/sprxui77" target="_blank" rel="noopener noreferrer">الحصول على كود الاشتراك</a>
+      </div>
+      <button class="btn secondary subscription-back" id="backToSubscriptionPlans" type="button">الرجوع للخطط</button>
+    </section>
+  </div>
+</dialog>
+
 <div class="startup-loader" id="startupLoader" role="status" aria-live="polite">
   <div class="startup-loader-inner">
     <div class="startup-loader-spinner" aria-hidden="true"></div>
@@ -1185,6 +1261,13 @@
 </div>
 
 <main class="wrap" hidden>
+  <section class="subscription-banner" aria-labelledby="subscriptionBannerTitle">
+    <div>
+      <strong id="subscriptionBannerTitle">جارٍ تحميل حالة الاشتراك...</strong>
+      <p id="subscriptionBannerDetail">تحقق من رصيد الحل قبل البدء.</p>
+    </div>
+    <button class="btn secondary" id="openSubscriptionPlans" type="button">عرض الخطط</button>
+  </section>
 
   <!-- STEP 1: school system -->
   <section class="panel active" data-panel="1" aria-labelledby="p1title">
@@ -1268,6 +1351,7 @@
       <p id="accountHint">اختار الخدمة الأول، وبعدها اكتب الكود وكلمة السر.</p>
     </div>
 
+    <div class="alert warn" id="subscriptionNotice" role="status" hidden></div>
     <div id="accounts"></div>
     <div class="alert error" id="accAlert" role="alert" hidden></div>
     <div class="alert error" id="runAlert" role="alert" hidden></div>
@@ -1346,10 +1430,230 @@
 
   var profileButton = document.getElementById("profileButton");
   var profileDialog = document.getElementById("profileDialog");
+  var subscriptionButton = document.getElementById("subscriptionButton");
+  var subscriptionDialog = document.getElementById("subscriptionDialog");
+  var subscriptionStatusData = null;
+  var subscriptionStatusError = "";
+  var subscriptionRequest = null;
+  var selectedSubscriptionPlan = "";
+
+  function renderSubscriptionStatus(){
+    var summary = document.getElementById("subscriptionSummary");
+    var bannerTitle = document.getElementById("subscriptionBannerTitle");
+    var bannerDetail = document.getElementById("subscriptionBannerDetail");
+    var dialogStatus = document.getElementById("subscriptionDialogStatus");
+    var notice = document.getElementById("subscriptionNotice");
+    if (!subscriptionStatusData){
+      var errorMessage = subscriptionStatusError || "جارٍ تحميل حالة الاشتراك...";
+      if (summary) summary.textContent = errorMessage;
+      if (bannerTitle) bannerTitle.textContent = "تعذّر تحميل حالة الاشتراك";
+      if (bannerDetail) bannerDetail.textContent = errorMessage;
+      if (dialogStatus) dialogStatus.textContent = errorMessage;
+      if (notice){
+        notice.textContent = errorMessage;
+        notice.hidden = false;
+      }
+      return;
+    }
+
+    var status = subscriptionStatusData;
+    var current = status.subscription;
+    var title = "";
+    var detail = "";
+    if (current && current.status !== "exhausted"){
+      title = "خطة " + current.plan_name + " — متبقي " + current.remaining;
+      detail = "تم استخدام " + current.used + " من " + current.solves +
+        " أشخاص" + (current.reserved ? "، و" + current.reserved + " قيد التنفيذ" : "") +
+        ". الرصيد لا تنتهي صلاحيته.";
+    } else if (status.trial && status.trial.status === "available"){
+      title = "لديك تجربة مجانية واحدة";
+      detail = "تُستهلك عند نجاح حل كود حساب واحد.";
+    } else if (status.trial && status.trial.status === "reserved"){
+      title = "تجربتك المجانية قيد التنفيذ";
+      detail = "انتظر نتيجة العملية الحالية قبل بدء حل آخر.";
+    } else if (current){
+      title = "انتهى رصيد خطة " + current.plan_name;
+      detail = "اختر خطة جديدة لمتابعة الحل.";
+    } else {
+      title = "انتهت تجربتك المجانية";
+      detail = "اختر خطة اشتراك لمتابعة الحل.";
+    }
+    if (summary) summary.textContent = title;
+    if (bannerTitle) bannerTitle.textContent = title;
+    if (bannerDetail) bannerDetail.textContent = detail;
+    if (dialogStatus) dialogStatus.textContent = detail;
+    if (notice){
+      notice.hidden = status.can_solve;
+      notice.textContent = detail;
+    }
+  }
+
+  function renderSubscriptionPlans(){
+    var host = document.getElementById("subscriptionPlanCards");
+    if (!host) return;
+    host.replaceChildren();
+    var plans = subscriptionStatusData && subscriptionStatusData.plans;
+    if (!Array.isArray(plans)) return;
+    plans.forEach(function(plan){
+      var card = document.createElement("article");
+      card.className = "subscription-plan-card" +
+        (plan.key === "premium" ? " featured" : "");
+      var title = document.createElement("h3");
+      title.textContent = plan.name;
+      var price = document.createElement("div");
+      price.className = "subscription-plan-price";
+      price.textContent = plan.price_egp + " ";
+      var currency = document.createElement("small");
+      currency.textContent = "جنيه";
+      price.appendChild(currency);
+      var description = document.createElement("p");
+      description.textContent = "حل " + plan.solves +
+        " " + (plan.solves === 1 ? "شخص واحد" : "أشخاص") +
+        " مرة واحدة لكل كود، بدون انتهاء صلاحية.";
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn primary";
+      button.textContent = subscriptionStatusData.can_subscribe
+        ? "اختيار الخطة"
+        : "استخدم رصيدك الحالي أولًا";
+      button.disabled = !subscriptionStatusData.can_subscribe;
+      button.addEventListener("click", function(){
+        selectSubscriptionPlan(plan);
+      });
+      card.appendChild(title);
+      card.appendChild(price);
+      card.appendChild(description);
+      card.appendChild(button);
+      host.appendChild(card);
+    });
+  }
+
+  function loadSubscriptionStatus(force){
+    if (subscriptionRequest) return subscriptionRequest;
+    if (!force && subscriptionStatusData){
+      return Promise.resolve(subscriptionStatusData);
+    }
+    subscriptionStatusError = "جارٍ تحميل حالة الاشتراك...";
+    renderSubscriptionStatus();
+    var request = apiFetch("/api/subscription", { cache: "no-store" })
+      .then(function(response){
+        return response.json().then(function(data){
+          if (!response.ok || !data || !data.ok){
+            throw new Error((data && data.message) || "تعذّر تحميل حالة الاشتراك.");
+          }
+          subscriptionStatusData = data;
+          subscriptionStatusError = "";
+          renderSubscriptionStatus();
+          renderSubscriptionPlans();
+          return data;
+        });
+      })
+      .catch(function(error){
+        subscriptionStatusData = null;
+        subscriptionStatusError = error.message || "تعذّر تحميل حالة الاشتراك.";
+        renderSubscriptionStatus();
+        renderSubscriptionPlans();
+        return null;
+      });
+    subscriptionRequest = request;
+    request.then(function(){
+      if (subscriptionRequest === request) subscriptionRequest = null;
+    });
+    return request;
+  }
+
+  function checkSubscriptionAllowance(accountCount, alertId){
+    if (!subscriptionStatusData){
+      showAlert(alertId, "جارٍ التحقق من رصيد الاشتراك. حاول مرة أخرى بعد لحظات.");
+      loadSubscriptionStatus(true);
+      return false;
+    }
+    var available = Number(subscriptionStatusData.available_solves) || 0;
+    if (available < 1){
+      showAlert(alertId, "لا يوجد رصيد متاح للحل. اختر خطة اشتراك للمتابعة.");
+      openSubscriptionDialog();
+      return false;
+    }
+    if (accountCount > available){
+      showAlert(
+        alertId,
+        "عدد الأكواد أكبر من رصيدك المتبقي (" + available + "). قلّل الأكواد أو اشترك في خطة جديدة."
+      );
+      openSubscriptionDialog();
+      return false;
+    }
+    return true;
+  }
+
+  function selectSubscriptionPlan(plan){
+    if (!subscriptionStatusData || !subscriptionStatusData.can_subscribe){
+      return;
+    }
+    selectedSubscriptionPlan = plan.key;
+    document.getElementById("subscriptionPlanCards").hidden = true;
+    document.getElementById("subscriptionRedeemPanel").hidden = false;
+    document.getElementById("subscriptionSelectedPlan").textContent =
+      plan.name + " — " + plan.price_egp + " جنيه";
+    document.getElementById("subscriptionCodeInput").value = "";
+    document.getElementById("subscriptionRedeemMessage").hidden = true;
+    document.getElementById("subscriptionCodeInput").focus();
+  }
+
+  function openSubscriptionDialog(){
+    if (!subscriptionDialog.open) subscriptionDialog.showModal();
+    document.getElementById("subscriptionPlanCards").hidden = false;
+    document.getElementById("subscriptionRedeemPanel").hidden = true;
+    loadSubscriptionStatus(true);
+  }
+
+  async function redeemSubscriptionCode(){
+    var button = document.getElementById("redeemSubscriptionButton");
+    var message = document.getElementById("subscriptionRedeemMessage");
+    var code = document.getElementById("subscriptionCodeInput").value.trim();
+    if (!selectedSubscriptionPlan || !code){
+      message.textContent = "اختر الخطة واكتب كود الاشتراك.";
+      message.hidden = false;
+      return;
+    }
+    button.disabled = true;
+    message.hidden = true;
+    try {
+      var response = await apiFetch("/api/subscription/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan_key: selectedSubscriptionPlan,
+          code: code
+        })
+      });
+      var data = await response.json();
+      if (!response.ok || !data || !data.ok){
+        throw new Error((data && data.message) || "تعذّر تفعيل كود الاشتراك.");
+      }
+      subscriptionStatusData = data;
+      subscriptionStatusError = "";
+      selectedSubscriptionPlan = "";
+      document.getElementById("subscriptionCodeInput").value = "";
+      document.getElementById("subscriptionPlanCards").hidden = false;
+      document.getElementById("subscriptionRedeemPanel").hidden = true;
+      renderSubscriptionStatus();
+      renderSubscriptionPlans();
+      toast("تم تفعيل الخطة بنجاح.");
+    } catch (error){
+      message.textContent = error.message || "تعذّر تفعيل كود الاشتراك.";
+      message.hidden = false;
+      await loadSubscriptionStatus(true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function showProfile(user){
     document.getElementById("profileName").textContent = user.full_name || "غير محدد";
     document.getElementById("profileEmail").textContent = user.email || "غير متوفر";
     profileButton.hidden = false;
+    subscriptionButton.hidden = false;
+    loadSubscriptionStatus();
   }
   function closeProfile(){
     if (profileDialog.open) profileDialog.close();
@@ -1359,6 +1663,27 @@
   });
   document.getElementById("closeProfileButton").addEventListener("click", closeProfile);
   document.getElementById("closeProfileFooter").addEventListener("click", closeProfile);
+  subscriptionButton.addEventListener("click", openSubscriptionDialog);
+  document.getElementById("openSubscriptionPlans").addEventListener("click", openSubscriptionDialog);
+  document.getElementById("closeSubscriptionDialog").addEventListener("click", function(){
+    subscriptionDialog.close();
+  });
+  document.getElementById("backToSubscriptionPlans").addEventListener("click", function(){
+    document.getElementById("subscriptionPlanCards").hidden = false;
+    document.getElementById("subscriptionRedeemPanel").hidden = true;
+  });
+  document.getElementById("redeemSubscriptionButton").addEventListener(
+    "click", redeemSubscriptionCode
+  );
+  subscriptionDialog.addEventListener("click", function(event){
+    if (event.target === subscriptionDialog) subscriptionDialog.close();
+  });
+  subscriptionDialog.addEventListener("close", function(){
+    selectedSubscriptionPlan = "";
+    document.getElementById("subscriptionCodeInput").value = "";
+    document.getElementById("subscriptionPlanCards").hidden = false;
+    document.getElementById("subscriptionRedeemPanel").hidden = true;
+  });
   profileDialog.addEventListener("click", function(event){
     if (event.target === profileDialog) closeProfile();
   });
@@ -2082,6 +2407,7 @@
         showAlert("accAlert", "الكود مكرر. راجعه قبل ما تكمل.");
         return;
       }
+      if (!checkSubscriptionAllowance(complete.length, "accAlert")) return;
       state.accounts = complete.map(function(a){ return { code: a.code.trim(), password: a.password }; });
       renderAccounts();
       startRun();
@@ -2202,6 +2528,7 @@
       showAlert("runAlert", "الطلب أكبر من الحد المسموح للخدمة. قلّل اختيارك وحاول تاني.");
       return;
     }
+    if (!checkSubscriptionAllowance(complete.length, "runAlert")) return;
 
     clearAlert("runAlert");
     state.starting = true;
@@ -2210,7 +2537,14 @@
     try {
       const res = await apiFetch("/api/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const r = await res.json();
-      if (!r || !r.ok) { showAlert("runAlert", (r && r.message) || "مش قادرين نبدأ."); return; }
+      if (!res.ok || !r || !r.ok) {
+        showAlert("runAlert", (r && r.message) || "مش قادرين نبدأ.");
+        if (res.status === 402){
+          await loadSubscriptionStatus(true);
+          openSubscriptionDialog();
+        }
+        return;
+      }
       if (r.client_id && CLIENT_ID_PATTERN.test(r.client_id)){
         state.clientId = r.client_id;
         try {
@@ -2224,6 +2558,7 @@
       state.step = 5;
       state.running = true;
       state.finished = false;
+      loadSubscriptionStatus(true);
       renderAll();
       poll();
     } catch (e) {
@@ -2238,6 +2573,7 @@
   function applyStatus(s){
     if (!s) return;
     var accs = s.accounts || [];
+    var wasFinished = state.finished;
     state.serverRunningCount = s.running_count != null ? s.running_count : accs.filter(function(a){ return a.running; }).length;
     state.queueTotal = s.queue_total != null ? s.queue_total : state.serverRunningCount;
     state.queueAhead = s.queue_ahead != null ? s.queue_ahead : null;
@@ -2260,6 +2596,7 @@
         lines: a.lines || []
       };
     });
+    if (state.finished && !wasFinished) loadSubscriptionStatus(true);
 
     if (state.step === 5) {
       renderReview();
@@ -2436,6 +2773,10 @@
       seen[p.code] = true;
       return true;
     });
+    if (state.accounts.filter(function(account){ return account.code.trim(); }).length + toAdd.length > 8){
+      showAlert("accAlert", "يمكن إضافة 8 أكواد كحد أقصى في خطة الاحترافية.");
+      return;
+    }
     if (state.accounts[idx] && !state.accounts[idx].code.trim()){
       state.accounts.splice(idx, 1);
     }

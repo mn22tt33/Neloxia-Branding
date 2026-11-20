@@ -89,6 +89,14 @@ ADMIN_PAGE = r"""<!doctype html>
     .preference-title { margin: 0; font-size: 14px; font-weight: 800; }
     .preference-hint { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
     .preference-state { flex: none; min-width: 115px; color: var(--muted); font-size: 11px; }
+    .subscription-code-output {
+      display: block; margin-top: 9px; color: var(--teal); font: 800 17px/1.5 Consolas, monospace;
+      letter-spacing: .08em; overflow-wrap: anywhere;
+    }
+    .subscription-code-note { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+    .subscription-code-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+    .subscription-code-field { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
+    .subscription-code-field select { min-width: 210px; }
     .switch { position: relative; flex: none; width: 48px; height: 27px; }
     .switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .switch-track {
@@ -411,6 +419,9 @@ ADMIN_PAGE = r"""<!doctype html>
           <button class="nav-item" type="button" data-view="usersView">
             <span class="nav-icon" aria-hidden="true">♙</span>المستخدمون
           </button>
+          <button class="nav-item" type="button" data-view="subscriptionCodesView">
+            <span class="nav-icon" aria-hidden="true">◇</span>إنشاء كود الاشتراك
+          </button>
         </nav>
         <div class="sidebar-divider"></div>
         <div class="sidebar-account" id="adminIdentity">جارٍ التحقق من حساب المدير...</div>
@@ -523,6 +534,52 @@ ADMIN_PAGE = r"""<!doctype html>
             </footer>
           </section>
         </section>
+
+        <section class="view" id="subscriptionCodesView" hidden>
+          <section class="hero">
+            <div><p class="eyebrow">إدارة الاشتراكات</p><h1>إنشاء كود الاشتراك</h1><p class="intro">أنشئ كودًا لخطة محددة وشاركه بعد استلام الدفع.</p></div>
+            <div class="refresh-label" id="subscriptionCodesUpdated">الأكواد لا تُعرض كاملة بعد الإنشاء</div>
+          </section>
+          <section class="preferences">
+            <div>
+              <h2 class="preference-title">كود جديد</h2>
+              <p class="preference-hint">كل كود يُستخدم مرة واحدة فقط، ويرتبط بالخطة المختارة ولا يعمل مع خطة أخرى.</p>
+            </div>
+            <div class="subscription-code-actions">
+              <label class="subscription-code-field" for="subscriptionPlan">
+                <span>الخطة</span>
+                <select class="status-filter" id="subscriptionPlan">
+                  <option value="basic">العادية — 25 جنيه — شخص واحد</option>
+                  <option value="premium">المميزة — 50 جنيه — 3 أشخاص</option>
+                  <option value="professional">الاحترافية — 120 جنيه — 8 أشخاص</option>
+                </select>
+              </label>
+              <button class="refresh-button" id="createSubscriptionCode" type="button">إنشاء كود</button>
+            </div>
+          </section>
+          <div class="error users-error" id="subscriptionCodesError" role="alert" hidden></div>
+          <section class="preferences" id="subscriptionCodeResult" aria-live="polite" hidden>
+            <div>
+              <h2 class="preference-title">الكود جاهز للمشاركة</h2>
+              <p class="subscription-code-note">احتفظ بنسخة منه الآن؛ لن يظهر الكود كاملًا مرة أخرى.</p>
+              <output class="subscription-code-output" id="subscriptionCodeValue" dir="ltr"></output>
+            </div>
+            <button class="refresh-button" id="copySubscriptionCode" type="button">نسخ الكود</button>
+          </section>
+          <section class="user-board">
+            <header class="board-head">
+              <div><h2 class="board-title">الأكواد المنشأة</h2><p class="board-caption">تظهر حالة الكود وخطته فقط، دون كشف الكود نفسه.</p></div>
+              <button class="refresh-button" id="subscriptionCodesRefresh" type="button">تحديث</button>
+            </header>
+            <div class="user-table-wrap">
+              <table class="user-table">
+                <thead><tr><th scope="col">الخطة</th><th scope="col">الحالة</th><th scope="col">تاريخ الإنشاء</th><th scope="col">تاريخ الاستخدام</th><th scope="col">معرّف المستخدم</th></tr></thead>
+                <tbody id="subscriptionCodeRows" aria-live="polite"></tbody>
+              </table>
+              <div class="users-empty" id="subscriptionCodesEmpty" hidden>لم يتم إنشاء أكواد بعد.</div>
+            </div>
+          </section>
+        </section>
       </div>
     </div>
   </main>
@@ -555,6 +612,7 @@ ADMIN_PAGE = r"""<!doctype html>
     let usersLoaded = false;
     let usersSearchTimer;
     let toastTimer;
+    let subscriptionCodesLoaded = false;
 
     function showToast(message) {
       const toast = document.getElementById("toast");
@@ -655,6 +713,88 @@ ADMIN_PAGE = r"""<!doctype html>
       });
     }
 
+    function renderSubscriptionCodes(codes) {
+      const rows = document.getElementById("subscriptionCodeRows");
+      rows.replaceChildren();
+      document.getElementById("subscriptionCodesEmpty").hidden = codes.length > 0;
+      codes.forEach((code) => {
+        const row = document.createElement("tr");
+        addText(row, "td", "", code.plan_name);
+        addText(
+          row,
+          "td",
+          "",
+          code.status === "redeemed" ? "مستخدم" : "متاح"
+        );
+        addText(row, "td", "", formatUserDate(code.created_at));
+        addText(
+          row,
+          "td",
+          "",
+          code.redeemed_at ? formatUserDate(code.redeemed_at) : "—"
+        );
+        addText(
+          row,
+          "td",
+          "user-email",
+          code.redeemed_by ? code.redeemed_by.slice(0, 8) : "—"
+        );
+        rows.appendChild(row);
+      });
+      document.getElementById("subscriptionCodesUpdated").textContent =
+        "آخر تحديث " + new Date().toLocaleTimeString("ar-EG");
+    }
+
+    async function loadSubscriptionCodes() {
+      const error = document.getElementById("subscriptionCodesError");
+      error.hidden = true;
+      try {
+        const response = await fetch(
+          "/api/admin/subscription-codes?limit=100",
+          { cache: "no-store" }
+        );
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "تعذّر تحميل أكواد الاشتراك.");
+        }
+        subscriptionCodesLoaded = true;
+        renderSubscriptionCodes(data.codes || []);
+      } catch (loadError) {
+        error.textContent = loadError.message || "تعذّر تحميل أكواد الاشتراك.";
+        error.hidden = false;
+      }
+    }
+
+    async function createSubscriptionCode() {
+      const button = document.getElementById("createSubscriptionCode");
+      const error = document.getElementById("subscriptionCodesError");
+      button.disabled = true;
+      error.hidden = true;
+      document.getElementById("subscriptionCodeResult").hidden = true;
+      try {
+        const response = await fetch("/api/admin/subscription-codes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan_key: document.getElementById("subscriptionPlan").value
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "تعذّر إنشاء كود الاشتراك.");
+        }
+        document.getElementById("subscriptionCodeValue").textContent = data.code;
+        document.getElementById("subscriptionCodeResult").hidden = false;
+        showToast("تم إنشاء الكود. انسخه الآن وشاركه مع صاحبه.");
+        await loadSubscriptionCodes();
+      } catch (createError) {
+        error.textContent = createError.message || "تعذّر إنشاء كود الاشتراك.";
+        error.hidden = false;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     async function loadUsers(offset) {
       const requestId = ++usersRequestId;
       usersOffset = Math.max(0, offset || 0);
@@ -737,6 +877,9 @@ ADMIN_PAGE = r"""<!doctype html>
         button.setAttribute("aria-current", active ? "page" : "false");
       });
       if (viewId === "usersView" && !usersLoaded) loadUsers(0);
+      if (viewId === "subscriptionCodesView" && !subscriptionCodesLoaded) {
+        loadSubscriptionCodes();
+      }
     }
 
     function formatDuration(seconds) {
@@ -1038,6 +1181,26 @@ ADMIN_PAGE = r"""<!doctype html>
     document.getElementById("usersNext").addEventListener("click", () => {
       loadUsers(usersOffset + userPageSize);
     });
+    document.getElementById("createSubscriptionCode").addEventListener(
+      "click",
+      createSubscriptionCode
+    );
+    document.getElementById("subscriptionCodesRefresh").addEventListener(
+      "click",
+      loadSubscriptionCodes
+    );
+    document.getElementById("copySubscriptionCode").addEventListener(
+      "click",
+      async () => {
+        const code = document.getElementById("subscriptionCodeValue").textContent;
+        try {
+          await navigator.clipboard.writeText(code);
+          showToast("تم نسخ الكود.");
+        } catch (error) {
+          showToast("انسخ الكود يدويًا من الحقل.");
+        }
+      }
+    );
     document.getElementById("statusFilter").addEventListener("change", () => {
       if (lastPayload) render(lastPayload);
     });

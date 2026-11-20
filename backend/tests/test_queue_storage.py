@@ -18,7 +18,7 @@ os.environ["QUIZORA_TEST_MODE"] = "1"
 from cryptography.fernet import Fernet
 
 from backend import server
-from backend.queue_store import PostgresQueue
+from backend.queue_store import PostgresQueue, SubscriptionError
 
 
 class _QueueStoreStub:
@@ -594,6 +594,7 @@ class QueueStorageTests(unittest.TestCase):
                 owner_key,
                 owner_name,
                 owner_email,
+                owner_user_id=None,
             ):
                 self.request = (
                     plan,
@@ -603,6 +604,7 @@ class QueueStorageTests(unittest.TestCase):
                     owner_key,
                     owner_name,
                     owner_email,
+                    owner_user_id,
                 )
                 return 2, 0, "operation-id"
 
@@ -628,6 +630,7 @@ class QueueStorageTests(unittest.TestCase):
             "hashed-owner",
             "Quizora User",
             "user@example.test",
+            None,
         ))
         thread.assert_not_called()
 
@@ -789,7 +792,7 @@ class QueueStorageTests(unittest.TestCase):
         self.assertEqual(unpadded_queue._decrypt(encrypted), "existing-account-code")
         self.assertEqual(padded_queue._fingerprint_key, unpadded_queue._fingerprint_key)
 
-    def test_enqueue_encrypts_owner_details_for_pending_jobs(self):
+    def test_subscription_code_generation_persists_only_a_plan_bound_hash(self):
         queue = PostgresQueue(
             "postgresql://unused",
             Fernet.generate_key().decode("ascii"),
@@ -797,11 +800,193 @@ class QueueStorageTests(unittest.TestCase):
         connection = MagicMock()
         connection.__enter__.return_value = connection
         cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.return_value = {
+            "id": uuid.uuid4(),
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }
+
+        with patch.object(queue, "_connect", return_value=connection):
+            created = queue.create_subscription_code(
+                "premium",
+                "123e4567-e89b-12d3-a456-426614174000",
+            )
+
+        self.assertRegex(created["code"], r"^QZ-(?:[0-9A-F]{8}-){2}[0-9A-F]{8}$")
+        self.assertEqual(created["plan"]["key"], "premium")
+        insert = next(
+            call for call in cursor.execute.call_args_list
+            if "INSERT INTO quizora_subscription_codes" in call.args[0]
+        )
+        self.assertEqual(insert.args[1][1], queue._subscription_code_hash(created["code"]))
+        self.assertNotIn(created["code"], insert.args[1])
+        self.assertEqual(
+            queue._subscription_code_hash(created["code"].lower()),
+            insert.args[1][1],
+        )
+
+    def test_subscription_code_rejects_a_mismatched_plan(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [
+            None,
+            {
+                "id": uuid.uuid4(),
+                "plan_key": "premium",
+                "redeemed_at": None,
+            },
+        ]
+
+        with (
+            patch.object(queue, "_connect", return_value=connection),
+            self.assertRaises(SubscriptionError) as raised,
+        ):
+            queue.redeem_subscription_code(
+                "123e4567-e89b-12d3-a456-426614174000",
+                "owner-key",
+                "basic",
+                "QZ-01234567-89ABCDEF-01234567",
+            )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertFalse(any(
+            "UPDATE quizora_subscription_codes" in call.args[0]
+            for call in cursor.execute.call_args_list
+        ))
+
+    def test_free_trial_allows_one_unique_account_only(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        with (
+            patch.object(queue, "_backfill_legacy_subscription_usage"),
+            patch.object(queue, "_subscription_records", return_value=(None, None)),
+        ):
+            cursor.fetchone.return_value = None
+            self.assertEqual(
+                queue._authorize_subscription_accounts(
+                    cursor, uuid.uuid4(), "owner-key", ["fingerprint-1"]
+                ),
+                (None, True),
+            )
+            with self.assertRaises(SubscriptionError) as raised:
+                queue._authorize_subscription_accounts(
+                    cursor,
+                    uuid.uuid4(),
+                    "owner-key",
+                    ["fingerprint-1", "fingerprint-2"],
+                )
+
+        self.assertEqual(raised.exception.status_code, 402)
+
+    def test_subscription_status_disables_redemption_while_trial_is_reserved(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        with patch.object(queue, "_subscription_records", return_value=(None, None)):
+            cursor.fetchone.return_value = {"status": "reserved"}
+            pending = queue._subscription_status_payload(cursor, uuid.uuid4())
+            self.assertFalse(pending["can_solve"])
+            self.assertFalse(pending["can_subscribe"])
+            self.assertEqual(pending["trial"]["status"], "reserved")
+
+            cursor.fetchone.return_value = None
+            available = queue._subscription_status_payload(cursor, uuid.uuid4())
+            self.assertTrue(available["can_solve"])
+            self.assertTrue(available["can_subscribe"])
+            self.assertEqual(available["available_solves"], 1)
+
+    def test_subscription_plan_rejects_account_count_over_remaining_credit(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        active = {
+            "id": "subscription-id",
+            "remaining": 1,
+            "reserved": 0,
+        }
+        with (
+            patch.object(queue, "_backfill_legacy_subscription_usage"),
+            patch.object(queue, "_subscription_records", return_value=(active, active)),
+        ):
+            with self.assertRaises(SubscriptionError) as raised:
+                queue._authorize_subscription_accounts(
+                    cursor,
+                    uuid.uuid4(),
+                    "owner-key",
+                    ["fingerprint-1", "fingerprint-2"],
+                )
+
+        self.assertEqual(raised.exception.status_code, 402)
+
+    def test_free_trial_success_consumes_credit_and_failure_releases_reservation(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        user_id = uuid.uuid4()
+        operation_id = uuid.uuid4()
+        cursor = MagicMock()
+        cursor.fetchone.return_value = {"subscription_id": None}
+
+        queue._settle_subscription_use(
+            cursor, user_id, operation_id, "fingerprint-1", True
+        )
+        self.assertTrue(any(
+            "SET status = 'consumed'" in call.args[0]
+            and "quizora_subscription_trials" in call.args[0]
+            for call in cursor.execute.call_args_list
+        ))
+
+        cursor.reset_mock()
+        cursor.fetchone.side_effect = [{"subscription_id": None}, None]
+        queue._settle_subscription_use(
+            cursor, user_id, operation_id, "fingerprint-2", False
+        )
+        self.assertTrue(any(
+            "DELETE FROM quizora_subscription_uses" in call.args[0]
+            for call in cursor.execute.call_args_list
+        ))
+        self.assertTrue(any(
+            "DELETE FROM quizora_subscription_trials" in call.args[0]
+            for call in cursor.execute.call_args_list
+        ))
+
+    def test_enqueue_encrypts_owner_details_for_pending_jobs(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        user_id = "123e4567-e89b-12d3-a456-426614174000"
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
         cursor.rowcount = 1
         connection.cursor.return_value.__enter__.return_value = cursor
         cursor.fetchone.side_effect = [{"total": 0}, None]
 
-        with patch.object(queue, "_connect", return_value=connection):
+        with (
+            patch.object(queue, "_connect", return_value=connection),
+            patch.object(
+                queue,
+                "_authorize_subscription_accounts",
+                return_value=("subscription-id", False),
+            ),
+        ):
             added, skipped, _ = queue.enqueue(
                 [{"mode": "spx", "detail": "SPX"}],
                 [("student-code", "platform-password")],
@@ -810,6 +995,7 @@ class QueueStorageTests(unittest.TestCase):
                 "hashed-owner",
                 "Quizora User",
                 "user@example.test",
+                owner_user_id=user_id,
             )
 
         self.assertEqual((added, skipped), (1, 0))
@@ -819,10 +1005,27 @@ class QueueStorageTests(unittest.TestCase):
         )
         values = operation_insert.args[1]
         self.assertEqual(values[2], "hashed-owner")
-        self.assertNotEqual(values[3], "Quizora User")
-        self.assertNotEqual(values[4], "user@example.test")
-        self.assertEqual(queue._decrypt(values[3]), "Quizora User")
-        self.assertEqual(queue._decrypt(values[4]), "user@example.test")
+        self.assertEqual(values[3], uuid.UUID(user_id))
+        self.assertNotEqual(values[4], "Quizora User")
+        self.assertNotEqual(values[5], "user@example.test")
+        self.assertEqual(queue._decrypt(values[4]), "Quizora User")
+        self.assertEqual(queue._decrypt(values[5]), "user@example.test")
+
+    def test_enqueue_rejects_missing_authenticated_user(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+
+        with self.assertRaises(SubscriptionError) as raised:
+            queue.enqueue(
+                [{"mode": "spx", "detail": "SPX"}],
+                [("student-code", "platform-password")],
+                10,
+                owner_key="owner-key",
+            )
+
+        self.assertEqual(raised.exception.status_code, 401)
 
     def test_site_availability_setting_defaults_to_enabled_and_persists(self):
         queue = PostgresQueue(

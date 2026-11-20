@@ -4,6 +4,8 @@ import base64
 import hashlib
 import hmac
 import json
+import re
+import secrets
 import time
 import uuid
 
@@ -13,6 +15,16 @@ SUBMISSION_LOCK_ID = 731904222
 SOLVED_HISTORY_MIGRATION_LOCK_ID = 731904223
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 ACTIVE_STATUSES = ("queued", "running")
+SUBSCRIPTION_PLANS = {
+    "basic": {"key": "basic", "name": "العادية", "price_egp": 25, "solves": 1},
+    "premium": {"key": "premium", "name": "المميزة", "price_egp": 50, "solves": 3},
+    "professional": {
+        "key": "professional",
+        "name": "الاحترافية",
+        "price_egp": 120,
+        "solves": 8,
+    },
+}
 
 
 class QueueStoreError(RuntimeError):
@@ -21,6 +33,12 @@ class QueueStoreError(RuntimeError):
 
 class QueueCapacityError(QueueStoreError):
     pass
+
+
+class SubscriptionError(QueueStoreError):
+    def __init__(self, message, status_code=409):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class PostgresQueue:
@@ -96,6 +114,7 @@ class PostgresQueue:
                 id UUID PRIMARY KEY,
                 client_id UUID,
                 owner_key TEXT,
+                owner_user_id UUID REFERENCES quizora_users(id) ON DELETE SET NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 status TEXT NOT NULL,
                 total_jobs INTEGER NOT NULL DEFAULT 0
@@ -108,6 +127,11 @@ class PostgresQueue:
             """
             ALTER TABLE quizora_operations
                 ADD COLUMN IF NOT EXISTS owner_key TEXT
+            """,
+            """
+            ALTER TABLE quizora_operations
+                ADD COLUMN IF NOT EXISTS owner_user_id UUID
+                    REFERENCES quizora_users(id) ON DELETE SET NULL
             """,
             """
             ALTER TABLE quizora_operations
@@ -207,6 +231,62 @@ class PostgresQueue:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS quizora_subscription_codes (
+                id UUID PRIMARY KEY,
+                code_hash TEXT NOT NULL UNIQUE,
+                plan_key TEXT NOT NULL
+                    CHECK (plan_key IN ('basic', 'premium', 'professional')),
+                created_by_user_id UUID REFERENCES quizora_users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                redeemed_by_user_id UUID REFERENCES quizora_users(id) ON DELETE SET NULL,
+                redeemed_at TIMESTAMPTZ
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS quizora_user_subscriptions (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES quizora_users(id) ON DELETE CASCADE,
+                code_id UUID NOT NULL UNIQUE
+                    REFERENCES quizora_subscription_codes(id) ON DELETE RESTRICT,
+                plan_key TEXT NOT NULL
+                    CHECK (plan_key IN ('basic', 'premium', 'professional')),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS quizora_subscription_uses (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES quizora_users(id) ON DELETE CASCADE,
+                subscription_id UUID
+                    REFERENCES quizora_user_subscriptions(id) ON DELETE CASCADE,
+                code_fingerprint TEXT NOT NULL,
+                operation_id UUID NOT NULL
+                    REFERENCES quizora_operations(id) ON DELETE CASCADE,
+                status TEXT NOT NULL CHECK (status IN ('reserved', 'consumed')),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                consumed_at TIMESTAMPTZ,
+                UNIQUE (user_id, code_fingerprint)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS quizora_subscription_trials (
+                user_id UUID PRIMARY KEY
+                    REFERENCES quizora_users(id) ON DELETE CASCADE,
+                status TEXT NOT NULL
+                    CHECK (status IN ('reserved', 'consumed', 'waived')),
+                code_fingerprint TEXT,
+                operation_id UUID REFERENCES quizora_operations(id) ON DELETE SET NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS quizora_subscription_backfills (
+                user_id UUID PRIMARY KEY
+                    REFERENCES quizora_users(id) ON DELETE CASCADE,
+                completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """,
+            """
             CREATE INDEX IF NOT EXISTS quizora_jobs_queue_order
                 ON quizora_jobs (queue_order) WHERE status = 'queued'
             """,
@@ -230,6 +310,18 @@ class PostgresQueue:
             """
             CREATE INDEX IF NOT EXISTS quizora_job_logs_recent
                 ON quizora_job_logs (job_id, id DESC)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS quizora_subscription_codes_recent
+                ON quizora_subscription_codes (created_at DESC)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS quizora_user_subscriptions_recent
+                ON quizora_user_subscriptions (user_id, created_at DESC)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS quizora_subscription_uses_operation
+                ON quizora_subscription_uses (operation_id, code_fingerprint)
             """,
         )
         try:
@@ -275,6 +367,449 @@ class PostgresQueue:
                             self._decrypt(encrypted_values["password_ciphertext"])
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not initialize the PostgreSQL queue.") from error
+
+    @staticmethod
+    def subscription_plans():
+        return [dict(plan) for plan in SUBSCRIPTION_PLANS.values()]
+
+    def create_subscription_code(self, plan_key, admin_user_id):
+        plan = SUBSCRIPTION_PLANS.get(plan_key)
+        if not plan:
+            raise SubscriptionError("اختر خطة اشتراك صحيحة.", 400)
+        admin_uuid = self._as_uuid(admin_user_id)
+        code = "QZ-" + "-".join(
+            secrets.token_hex(4).upper() for _ in range(3)
+        )
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO quizora_subscription_codes
+                            (id, code_hash, plan_key, created_by_user_id)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING id, created_at
+                        """,
+                        (
+                            uuid.uuid4(),
+                            self._subscription_code_hash(code),
+                            plan_key,
+                            admin_uuid,
+                        ),
+                    )
+                    row = cursor.fetchone()
+            return {
+                "code": code,
+                "plan": dict(plan),
+                "created_at": row["created_at"].isoformat(),
+            }
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not create a subscription code.") from error
+
+    def list_subscription_codes(self, limit=50):
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT code.plan_key, code.created_at,
+                               code.redeemed_at,
+                               code.redeemed_by_user_id::text AS redeemed_by
+                        FROM quizora_subscription_codes AS code
+                        ORDER BY code.created_at DESC
+                        LIMIT %s
+                        """,
+                        (max(1, min(int(limit), 100)),),
+                    )
+                    rows = cursor.fetchall()
+            return [
+                {
+                    "plan_key": row["plan_key"],
+                    "plan_name": SUBSCRIPTION_PLANS[row["plan_key"]]["name"],
+                    "status": "redeemed" if row["redeemed_at"] else "available",
+                    "created_at": row["created_at"].isoformat(),
+                    "redeemed_at": (
+                        row["redeemed_at"].isoformat() if row["redeemed_at"] else None
+                    ),
+                    "redeemed_by": row["redeemed_by"],
+                }
+                for row in rows
+            ]
+        except (self._psycopg.Error, ValueError, TypeError) as error:
+            raise QueueStoreError("Could not read subscription codes.") from error
+
+    def subscription_status(self, user_id, owner_key):
+        try:
+            user_uuid = self._as_uuid(user_id)
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    self._backfill_legacy_subscription_usage(
+                        cursor, user_uuid, owner_key
+                    )
+                    return self._subscription_status_payload(cursor, user_uuid)
+        except SubscriptionError:
+            raise
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not read the user's subscription.") from error
+
+    def redeem_subscription_code(self, user_id, owner_key, plan_key, code):
+        plan = SUBSCRIPTION_PLANS.get(plan_key)
+        if not plan:
+            raise SubscriptionError("اختر خطة اشتراك صحيحة.", 400)
+        user_uuid = self._as_uuid(user_id)
+        code_hash = self._subscription_code_hash(code)
+        try:
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(%s)", (SUBMISSION_LOCK_ID,)
+                    )
+                    self._backfill_legacy_subscription_usage(
+                        cursor, user_uuid, owner_key
+                    )
+                    cursor.execute(
+                        """
+                        SELECT id, plan_key, redeemed_at
+                        FROM quizora_subscription_codes
+                        WHERE code_hash = %s
+                        FOR UPDATE
+                        """,
+                        (code_hash,),
+                    )
+                    code_row = cursor.fetchone()
+                    if not code_row:
+                        raise SubscriptionError("كود الاشتراك غير صحيح.", 400)
+                    if code_row["redeemed_at"]:
+                        raise SubscriptionError("تم استخدام كود الاشتراك من قبل.")
+                    if code_row["plan_key"] != plan_key:
+                        correct_plan = SUBSCRIPTION_PLANS[code_row["plan_key"]]["name"]
+                        raise SubscriptionError(
+                            "هذا الكود مخصص لخطة %s؛ اخترها ثم أدخل الكود." % correct_plan,
+                            409,
+                        )
+
+                    current, _ = self._subscription_records(cursor, user_uuid)
+                    if current:
+                        raise SubscriptionError(
+                            "لديك رصيد في خطتك الحالية. استخدمه قبل تفعيل كود جديد."
+                        )
+                    cursor.execute(
+                        """
+                        SELECT status FROM quizora_subscription_trials
+                        WHERE user_id = %s
+                        FOR UPDATE
+                        """,
+                        (user_uuid,),
+                    )
+                    trial = cursor.fetchone()
+                    if trial and trial["status"] == "reserved":
+                        raise SubscriptionError(
+                            "انتظر حتى تنتهي تجربة الحل الحالية قبل تفعيل الاشتراك."
+                        )
+
+                    subscription_id = uuid.uuid4()
+                    cursor.execute(
+                        """
+                        UPDATE quizora_subscription_codes
+                        SET redeemed_by_user_id = %s, redeemed_at = now()
+                        WHERE id = %s AND redeemed_at IS NULL
+                        """,
+                        (user_uuid, code_row["id"]),
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO quizora_user_subscriptions
+                            (id, user_id, code_id, plan_key)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (subscription_id, user_uuid, code_row["id"], plan_key),
+                    )
+                    if not trial:
+                        cursor.execute(
+                            """
+                            INSERT INTO quizora_subscription_trials
+                                (user_id, status)
+                            VALUES (%s, 'waived')
+                            ON CONFLICT (user_id) DO NOTHING
+                            """,
+                            (user_uuid,),
+                        )
+                    return self._subscription_status_payload(cursor, user_uuid)
+        except SubscriptionError:
+            raise
+        except self._psycopg.Error as error:
+            raise QueueStoreError("Could not redeem the subscription code.") from error
+
+    def _subscription_code_hash(self, code):
+        normalized = re.sub(r"[\s-]", "", str(code or "")).upper()
+        if not re.fullmatch(r"QZ[0-9A-F]{24}", normalized):
+            raise SubscriptionError("تحقق من كتابة كود الاشتراك.", 400)
+        return hmac.new(
+            self._fingerprint_key,
+            b"QUIZORA subscription code\x00" + normalized.encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _backfill_legacy_subscription_usage(self, cursor, user_uuid, owner_key):
+        cursor.execute(
+            """
+            INSERT INTO quizora_subscription_backfills (user_id)
+            VALUES (%s)
+            ON CONFLICT (user_id) DO NOTHING
+            RETURNING user_id
+            """,
+            (user_uuid,),
+        )
+        if not cursor.fetchone():
+            return
+        cursor.execute(
+            """
+            SELECT DISTINCT ON (job.code_fingerprint)
+                   job.code_fingerprint, job.operation_id
+            FROM quizora_jobs AS job
+            JOIN quizora_operations AS operation
+              ON operation.id = job.operation_id
+            WHERE operation.owner_key = %s
+              AND job.status = 'succeeded' AND job.success = TRUE
+            ORDER BY job.code_fingerprint, job.finished_at
+            """,
+            (owner_key,),
+        )
+        legacy_uses = cursor.fetchall()
+        for use in legacy_uses:
+            cursor.execute(
+                """
+                INSERT INTO quizora_subscription_uses
+                    (id, user_id, subscription_id, code_fingerprint,
+                     operation_id, status, consumed_at)
+                VALUES (%s, %s, NULL, %s, %s, 'consumed', now())
+                ON CONFLICT (user_id, code_fingerprint) DO NOTHING
+                """,
+                (
+                    uuid.uuid4(),
+                    user_uuid,
+                    use["code_fingerprint"],
+                    use["operation_id"],
+                ),
+            )
+        if legacy_uses:
+            cursor.execute(
+                """
+                INSERT INTO quizora_subscription_trials (user_id, status)
+                VALUES (%s, 'consumed')
+                ON CONFLICT (user_id) DO NOTHING
+                """,
+                (user_uuid,),
+            )
+
+    def _subscription_records(self, cursor, user_uuid):
+        cursor.execute(
+            """
+            SELECT subscription.id::text AS id, subscription.plan_key,
+                   subscription.created_at,
+                   count(usage.id) FILTER (
+                       WHERE usage.status = 'consumed'
+                   ) AS consumed,
+                   count(usage.id) FILTER (
+                       WHERE usage.status = 'reserved'
+                   ) AS reserved
+            FROM quizora_user_subscriptions AS subscription
+            LEFT JOIN quizora_subscription_uses AS usage
+              ON usage.subscription_id = subscription.id
+            WHERE subscription.user_id = %s
+            GROUP BY subscription.id
+            ORDER BY subscription.created_at DESC
+            """,
+            (user_uuid,),
+        )
+        rows = cursor.fetchall()
+        active = None
+        latest = None
+        for row in rows:
+            plan = SUBSCRIPTION_PLANS.get(row["plan_key"])
+            if not plan:
+                raise QueueStoreError("A stored subscription has an unknown plan.")
+            consumed = int(row["consumed"] or 0)
+            reserved = int(row["reserved"] or 0)
+            remaining = max(0, plan["solves"] - consumed - reserved)
+            record = {
+                "id": row["id"],
+                "plan_key": plan["key"],
+                "plan_name": plan["name"],
+                "price_egp": plan["price_egp"],
+                "solves": plan["solves"],
+                "used": consumed,
+                "reserved": reserved,
+                "remaining": remaining,
+                "status": (
+                    "processing" if remaining == 0 and reserved
+                    else "active" if remaining
+                    else "exhausted"
+                ),
+                "created_at": row["created_at"].isoformat(),
+            }
+            if latest is None:
+                latest = record
+            if active is None and (remaining or reserved):
+                active = record
+        return active, latest
+
+    def _subscription_status_payload(self, cursor, user_uuid):
+        active, latest = self._subscription_records(cursor, user_uuid)
+        cursor.execute(
+            """
+            SELECT status FROM quizora_subscription_trials WHERE user_id = %s
+            """,
+            (user_uuid,),
+        )
+        trial_row = cursor.fetchone()
+        if trial_row:
+            trial_status = trial_row["status"]
+        elif latest:
+            trial_status = "waived"
+        else:
+            trial_status = "available"
+        trial_available = trial_status == "available"
+        available_solves = (
+            active["remaining"] if active else (1 if trial_available else 0)
+        )
+        return {
+            "plans": self.subscription_plans(),
+            "trial": {
+                "status": trial_status,
+                "available": trial_available,
+            },
+            "subscription": active or latest,
+            "available_solves": available_solves,
+            "can_solve": available_solves > 0,
+            "can_subscribe": active is None and trial_status != "reserved",
+        }
+
+    def _authorize_subscription_accounts(
+        self, cursor, user_uuid, owner_key, code_fingerprints
+    ):
+        self._backfill_legacy_subscription_usage(cursor, user_uuid, owner_key)
+        cursor.execute(
+            """
+            SELECT code_fingerprint, status
+            FROM quizora_subscription_uses
+            WHERE user_id = %s AND code_fingerprint = ANY(%s)
+            """,
+            (user_uuid, code_fingerprints),
+        )
+        existing = cursor.fetchall()
+        if existing:
+            if any(row["status"] == "reserved" for row in existing):
+                raise SubscriptionError(
+                    "يوجد طلب قيد التنفيذ لهذا الكود؛ انتظر حتى ينتهي."
+                )
+            raise SubscriptionError(
+                "تم حل هذا الحساب من قبل؛ كل كود حساب يُستخدم مرة واحدة."
+            )
+
+        active, _ = self._subscription_records(cursor, user_uuid)
+        if active:
+            if len(code_fingerprints) > active["remaining"]:
+                if active["reserved"]:
+                    raise SubscriptionError(
+                        "بعض رصيد الخطة قيد التنفيذ؛ انتظر حتى تنتهي العمليات الحالية."
+                    )
+                raise SubscriptionError(
+                    "عدد الأكواد يتجاوز الرصيد المتبقي في خطتك؛ اختر أكوادًا أقل أو اشترك في خطة جديدة.",
+                    402,
+                )
+            return active["id"], False
+
+        cursor.execute(
+            """
+            SELECT status FROM quizora_subscription_trials WHERE user_id = %s
+            """,
+            (user_uuid,),
+        )
+        trial = cursor.fetchone()
+        if trial and trial["status"] == "reserved":
+            raise SubscriptionError("تجربة الحل قيد التنفيذ؛ انتظر حتى تنتهي.")
+        if trial or self._subscription_records(cursor, user_uuid)[1]:
+            raise SubscriptionError(
+                "انتهت تجربتك المجانية. اختر خطة اشتراك لمتابعة الحل.",
+                402,
+            )
+        if len(code_fingerprints) > 1:
+            raise SubscriptionError(
+                "التجربة المجانية مخصصة لكود واحد فقط؛ اختر خطة لإضافة أكواد أخرى.",
+                402,
+            )
+        return None, True
+
+    def _settle_subscription_use(
+        self, cursor, owner_user_id, operation_id, code_fingerprint, success
+    ):
+        if not owner_user_id or not code_fingerprint:
+            return
+        if success:
+            cursor.execute(
+                """
+                UPDATE quizora_subscription_uses
+                SET status = 'consumed', consumed_at = now()
+                WHERE user_id = %s AND operation_id = %s
+                  AND code_fingerprint = %s AND status = 'reserved'
+                RETURNING subscription_id
+                """,
+                (owner_user_id, operation_id, code_fingerprint),
+            )
+            use = cursor.fetchone()
+            if use and use["subscription_id"] is None:
+                cursor.execute(
+                    """
+                    UPDATE quizora_subscription_trials
+                    SET status = 'consumed', updated_at = now()
+                    WHERE user_id = %s AND operation_id = %s
+                      AND status = 'reserved'
+                    """,
+                    (owner_user_id, operation_id),
+                )
+            return
+
+        cursor.execute(
+            """
+            SELECT subscription_id FROM quizora_subscription_uses
+            WHERE user_id = %s AND operation_id = %s
+              AND code_fingerprint = %s AND status = 'reserved'
+            FOR UPDATE
+            """,
+            (owner_user_id, operation_id, code_fingerprint),
+        )
+        use = cursor.fetchone()
+        if not use:
+            return
+        cursor.execute(
+            """
+            SELECT 1 FROM quizora_jobs
+            WHERE operation_id = %s AND code_fingerprint = %s
+              AND status IN ('queued', 'running')
+            LIMIT 1
+            """,
+            (operation_id, code_fingerprint),
+        )
+        if cursor.fetchone():
+            return
+        cursor.execute(
+            """
+            DELETE FROM quizora_subscription_uses
+            WHERE user_id = %s AND operation_id = %s
+              AND code_fingerprint = %s AND status = 'reserved'
+            """,
+            (owner_user_id, operation_id, code_fingerprint),
+        )
+        if use["subscription_id"] is None:
+            cursor.execute(
+                """
+                DELETE FROM quizora_subscription_trials
+                WHERE user_id = %s AND operation_id = %s
+                  AND code_fingerprint = %s AND status = 'reserved'
+                """,
+                (owner_user_id, operation_id, code_fingerprint),
+            )
 
     def health(self):
         try:
@@ -366,7 +901,7 @@ class PostgresQueue:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        UPDATE quizora_jobs
+                        UPDATE quizora_jobs AS job
                         SET status = CASE WHEN cancel_requested THEN 'cancelled' ELSE 'failed' END,
                             success = FALSE,
                             phase = CASE WHEN cancel_requested THEN 'متوقّف' ELSE 'فشل' END,
@@ -377,13 +912,25 @@ class PostgresQueue:
                             password_ciphertext = NULL,
                             finished_at = now(),
                             worker_id = NULL
-                        WHERE status = 'running'
-                        RETURNING operation_id
+                        FROM quizora_operations AS operation
+                        WHERE job.status = 'running'
+                          AND operation.id = job.operation_id
+                        RETURNING job.operation_id, job.code_fingerprint,
+                                  operation.owner_user_id
                         """
                     )
+                    recovered = cursor.fetchall()
                     self._refresh_operations(
-                        cursor, {row["operation_id"] for row in cursor.fetchall()}
+                        cursor, {row["operation_id"] for row in recovered}
                     )
+                    for row in recovered:
+                        self._settle_subscription_use(
+                            cursor,
+                            row["owner_user_id"],
+                            row["operation_id"],
+                            row["code_fingerprint"],
+                            False,
+                        )
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not recover interrupted queue jobs.") from error
 
@@ -396,8 +943,14 @@ class PostgresQueue:
         owner_key=None,
         owner_name=None,
         owner_email=None,
+        owner_user_id=None,
     ):
         client_uuid = self._as_uuid(client_id) if client_id else uuid.uuid4()
+        owner_user_uuid = self._as_uuid(owner_user_id) if owner_user_id else None
+        if not owner_user_uuid:
+            raise SubscriptionError(
+                "تسجيل الدخول مطلوب للتحقق من رصيد الاشتراك.", 401
+            )
         owner_name = str(owner_name or "").strip()[:120]
         owner_email = str(owner_email or "").strip()[:254]
         owner_name_ciphertext = self._encrypt(owner_name) if owner_name else None
@@ -461,25 +1014,45 @@ class PostgresQueue:
                         raise QueueCapacityError(
                             "عدد العمليات في الانتظار والتشغيل تجاوز الحد المسموح."
                         )
+                    code_fingerprints = []
+                    seen_fingerprints = set()
+                    for _, _, fingerprint, _ in additions:
+                        if fingerprint not in seen_fingerprints:
+                            seen_fingerprints.add(fingerprint)
+                            code_fingerprints.append(fingerprint)
+                    subscription_id = None
+                    is_trial = False
+                    if owner_user_uuid:
+                        subscription_id, is_trial = (
+                            self._authorize_subscription_accounts(
+                                cursor,
+                                owner_user_uuid,
+                                owner_key,
+                                code_fingerprints,
+                            )
+                        )
 
                     operation_id = uuid.uuid4()
                     cursor.execute(
                         """
                         INSERT INTO quizora_operations
-                            (id, client_id, owner_key, owner_name_ciphertext,
-                             owner_email_ciphertext, status, total_jobs)
-                        VALUES (%s, %s, %s, %s, %s, 'queued', %s)
+                            (id, client_id, owner_key, owner_user_id,
+                             owner_name_ciphertext, owner_email_ciphertext,
+                             status, total_jobs)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'queued', %s)
                         """,
                         (
                             operation_id,
                             client_uuid,
                             owner_key,
+                            owner_user_uuid,
                             owner_name_ciphertext,
                             owner_email_ciphertext,
                             len(additions),
                         ),
                     )
                     inserted = 0
+                    inserted_fingerprints = set()
                     for position, (code, password, fingerprint, item) in enumerate(
                         additions, start=1
                     ):
@@ -508,7 +1081,9 @@ class PostgresQueue:
                                 json.dumps(item, ensure_ascii=False),
                             ),
                         )
-                        inserted += cursor.rowcount
+                        if cursor.rowcount:
+                            inserted += cursor.rowcount
+                            inserted_fingerprints.add(fingerprint)
 
                     if inserted == 0:
                         cursor.execute(
@@ -516,6 +1091,32 @@ class PostgresQueue:
                             (operation_id,),
                         )
                         return 0, skipped + len(additions), None
+                    if owner_user_uuid:
+                        for fingerprint in inserted_fingerprints:
+                            cursor.execute(
+                                """
+                                INSERT INTO quizora_subscription_uses
+                                    (id, user_id, subscription_id, code_fingerprint,
+                                     operation_id, status)
+                                VALUES (%s, %s, %s, %s, %s, 'reserved')
+                                """,
+                                (
+                                    uuid.uuid4(),
+                                    owner_user_uuid,
+                                    subscription_id,
+                                    fingerprint,
+                                    operation_id,
+                                ),
+                            )
+                            if is_trial:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO quizora_subscription_trials
+                                        (user_id, status, code_fingerprint, operation_id)
+                                    VALUES (%s, 'reserved', %s, %s)
+                                    """,
+                                    (owner_user_uuid, fingerprint, operation_id),
+                                )
                     cursor.execute(
                         """
                         UPDATE quizora_operations
@@ -677,12 +1278,15 @@ class PostgresQueue:
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        UPDATE quizora_jobs
+                        UPDATE quizora_jobs AS job
                         SET status = %s, success = %s, message = %s, phase = %s,
                             password_ciphertext = NULL, finished_at = now(),
                             worker_id = NULL
-                        WHERE id = %s AND status = 'running'
-                        RETURNING operation_id, code_ciphertext
+                        FROM quizora_operations AS operation
+                        WHERE job.id = %s AND job.status = 'running'
+                          AND operation.id = job.operation_id
+                        RETURNING job.operation_id, job.code_ciphertext,
+                                  job.code_fingerprint, operation.owner_user_id
                         """,
                         (
                             status,
@@ -723,6 +1327,13 @@ class PostgresQueue:
                                     owner.get("owner_email_ciphertext"),
                                 ),
                             )
+                        self._settle_subscription_use(
+                            cursor,
+                            row.get("owner_user_id"),
+                            row["operation_id"],
+                            row.get("code_fingerprint"),
+                            bool(success),
+                        )
                         self._refresh_operations(cursor, {row["operation_id"]})
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not persist the queue job result.") from error
@@ -757,13 +1368,24 @@ class PostgresQueue:
                         FROM quizora_operations AS operation
                         WHERE job.operation_id = operation.id
                           AND job.status = 'queued' {filter_sql}
-                        RETURNING job.operation_id
+                        RETURNING job.operation_id, job.code_fingerprint,
+                                  operation.owner_user_id
                         """,
                         filter_params,
                     )
-                    rows = cursor.fetchall()
-                    operation_ids = {row["operation_id"] for row in rows}
-                    queued_count = len(rows)
+                    queued_rows = cursor.fetchall()
+                    operation_ids = {
+                        row["operation_id"] for row in queued_rows
+                    }
+                    queued_count = len(queued_rows)
+                    for row in queued_rows:
+                        self._settle_subscription_use(
+                            cursor,
+                            row["owner_user_id"],
+                            row["operation_id"],
+                            row["code_fingerprint"],
+                            False,
+                        )
                     cursor.execute(
                         f"""
                         UPDATE quizora_jobs AS job
