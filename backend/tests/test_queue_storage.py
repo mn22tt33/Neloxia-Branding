@@ -933,6 +933,32 @@ class QueueStorageTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 402)
 
+    def test_one_account_reserves_one_unique_slot_regardless_of_course_count(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        active = {
+            "id": "subscription-id",
+            "remaining": 3,
+            "reserved": 0,
+        }
+        with (
+            patch.object(queue, "_backfill_legacy_subscription_usage"),
+            patch.object(queue, "_subscription_records", return_value=(active, active)),
+        ):
+            subscription_id, is_trial = queue._authorize_subscription_accounts(
+                cursor,
+                uuid.uuid4(),
+                "owner-key",
+                ["one-python-and-javascript-account"],
+            )
+
+        self.assertEqual(subscription_id, "subscription-id")
+        self.assertFalse(is_trial)
+
     def test_free_trial_success_consumes_credit_and_failure_releases_reservation(self):
         queue = PostgresQueue(
             "postgresql://unused",

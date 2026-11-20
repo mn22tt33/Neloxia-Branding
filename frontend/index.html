@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.2.0"></script>
+<script src="/config.js?v=1.2.1"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.0").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.2.1").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -1192,7 +1192,7 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.2.0">v1.2.0</span>
+      <span class="brand-version" aria-label="الإصدار 1.2.1">v1.2.1</span>
     </div>
   </div>
   <div class="header-actions">
@@ -1461,7 +1461,8 @@
     var title = "";
     var detail = "";
     if (current && current.status !== "exhausted"){
-      title = "خطة " + current.plan_name + " — متبقي " + current.remaining;
+      title = "خطة " + current.plan_name + " — متبقي " + current.remaining +
+        (current.remaining === 1 ? " حساب" : " حسابات");
       detail = "تم استخدام " + current.used + " من " + current.solves +
         " أشخاص" + (current.reserved ? "، و" + current.reserved + " قيد التنفيذ" : "") +
         ". الرصيد لا تنتهي صلاحيته.";
@@ -1507,9 +1508,10 @@
       currency.textContent = "جنيه";
       price.appendChild(currency);
       var description = document.createElement("p");
-      description.textContent = "حل " + plan.solves +
-        " " + (plan.solves === 1 ? "شخص واحد" : "أشخاص") +
-        " مرة واحدة لكل كود، بدون انتهاء صلاحية.";
+      description.textContent =
+        plan.solves === 1
+          ? "حساب واحد؛ يمكن حل مساراته كلها في الطلب الواحد، بدون انتهاء صلاحية."
+          : "حتى " + plan.solves + " حسابات مختلفة؛ كل حساب يُستعمل مرة واحدة بغض النظر عن عدد مساراته، بدون انتهاء صلاحية.";
       var button = document.createElement("button");
       button.type = "button";
       button.className = "btn primary";
