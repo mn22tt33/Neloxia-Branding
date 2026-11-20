@@ -16,7 +16,7 @@ SOLVED_HISTORY_MIGRATION_LOCK_ID = 731904223
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 ACTIVE_STATUSES = ("queued", "running")
 SUBSCRIPTION_PLANS = {
-    "basic": {"key": "basic", "name": "العادية", "price_egp": 25, "solves": 1},
+    "basic": {"key": "basic", "name": "العادية", "price_egp": 25, "solves": 3},
     "premium": {"key": "premium", "name": "المميزة", "price_egp": 50, "solves": 3},
     "professional": {
         "key": "professional",
@@ -264,9 +264,15 @@ class PostgresQueue:
                     REFERENCES quizora_operations(id) ON DELETE CASCADE,
                 status TEXT NOT NULL CHECK (status IN ('reserved', 'consumed')),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                consumed_at TIMESTAMPTZ,
-                UNIQUE (user_id, code_fingerprint)
+                consumed_at TIMESTAMPTZ
             )
+            """,
+            """
+            ALTER TABLE quizora_subscription_uses
+                DROP CONSTRAINT IF EXISTS quizora_subscription_uses_user_id_code_fingerprint_key
+            """,
+            """
+            DROP INDEX IF EXISTS quizora_subscription_uses_user_id_code_fingerprint_key
             """,
             """
             CREATE TABLE IF NOT EXISTS quizora_subscription_trials (
@@ -607,10 +613,10 @@ class PostgresQueue:
             """
             SELECT subscription.id::text AS id, subscription.plan_key,
                    subscription.created_at,
-                   count(usage.id) FILTER (
+                   count(DISTINCT usage.operation_id) FILTER (
                        WHERE usage.status = 'consumed'
                    ) AS consumed,
-                   count(usage.id) FILTER (
+                   count(DISTINCT usage.operation_id) FILTER (
                        WHERE usage.status = 'reserved'
                    ) AS reserved
             FROM quizora_user_subscriptions AS subscription
@@ -698,24 +704,20 @@ class PostgresQueue:
             (user_uuid, code_fingerprints),
         )
         existing = cursor.fetchall()
-        if existing:
-            if any(row["status"] == "reserved" for row in existing):
-                raise SubscriptionError(
-                    "يوجد طلب قيد التنفيذ لهذا الكود؛ انتظر حتى ينتهي."
-                )
+        if any(row["status"] == "reserved" for row in existing):
             raise SubscriptionError(
-                "تم حل هذا الحساب من قبل؛ كل كود حساب يُستخدم مرة واحدة."
+                "يوجد طلب حل قيد التنفيذ لهذا الحساب؛ انتظر حتى ينتهي."
             )
 
         active, _ = self._subscription_records(cursor, user_uuid)
         if active:
-            if len(code_fingerprints) > active["remaining"]:
+            if 1 > active["remaining"]:
                 if active["reserved"]:
                     raise SubscriptionError(
                         "بعض رصيد الخطة قيد التنفيذ؛ انتظر حتى تنتهي العمليات الحالية."
                     )
                 raise SubscriptionError(
-                    "عدد الأكواد يتجاوز الرصيد المتبقي في خطتك؛ اختر أكوادًا أقل أو اشترك في خطة جديدة.",
+                    "انتهى رصيد هذه الخطة؛ اشترك في خطة جديدة لمتابعة الحل.",
                     402,
                 )
             return active["id"], False
@@ -732,11 +734,6 @@ class PostgresQueue:
         if trial or self._subscription_records(cursor, user_uuid)[1]:
             raise SubscriptionError(
                 "انتهت تجربتك المجانية. اختر خطة اشتراك لمتابعة الحل.",
-                402,
-            )
-        if len(code_fingerprints) > 1:
-            raise SubscriptionError(
-                "التجربة المجانية مخصصة لكود واحد فقط؛ اختر خطة لإضافة أكواد أخرى.",
                 402,
             )
         return None, True

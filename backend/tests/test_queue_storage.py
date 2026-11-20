@@ -860,7 +860,7 @@ class QueueStorageTests(unittest.TestCase):
             for call in cursor.execute.call_args_list
         ))
 
-    def test_free_trial_allows_one_unique_account_only(self):
+    def test_free_trial_allows_one_request_and_any_accounts(self):
         queue = PostgresQueue(
             "postgresql://unused",
             Fernet.generate_key().decode("ascii"),
@@ -878,15 +878,15 @@ class QueueStorageTests(unittest.TestCase):
                 ),
                 (None, True),
             )
-            with self.assertRaises(SubscriptionError) as raised:
-                queue._authorize_subscription_accounts(
-                    cursor,
-                    uuid.uuid4(),
-                    "owner-key",
-                    ["fingerprint-1", "fingerprint-2"],
-                )
+            subscription_id, is_trial = queue._authorize_subscription_accounts(
+                cursor,
+                uuid.uuid4(),
+                "owner-key",
+                ["fingerprint-1", "fingerprint-2"],
+            )
 
-        self.assertEqual(raised.exception.status_code, 402)
+        self.assertIsNone(subscription_id)
+        self.assertTrue(is_trial)
 
     def test_subscription_status_disables_redemption_while_trial_is_reserved(self):
         queue = PostgresQueue(
@@ -923,15 +923,15 @@ class QueueStorageTests(unittest.TestCase):
             patch.object(queue, "_backfill_legacy_subscription_usage"),
             patch.object(queue, "_subscription_records", return_value=(active, active)),
         ):
-            with self.assertRaises(SubscriptionError) as raised:
-                queue._authorize_subscription_accounts(
-                    cursor,
-                    uuid.uuid4(),
-                    "owner-key",
-                    ["fingerprint-1", "fingerprint-2"],
-                )
+            subscription_id, is_trial = queue._authorize_subscription_accounts(
+                cursor,
+                uuid.uuid4(),
+                "owner-key",
+                ["fingerprint-1", "fingerprint-2"],
+            )
 
-        self.assertEqual(raised.exception.status_code, 402)
+        self.assertEqual(subscription_id, "subscription-id")
+        self.assertFalse(is_trial)
 
     def test_one_account_reserves_one_unique_slot_regardless_of_course_count(self):
         queue = PostgresQueue(
@@ -958,6 +958,36 @@ class QueueStorageTests(unittest.TestCase):
 
         self.assertEqual(subscription_id, "subscription-id")
         self.assertFalse(is_trial)
+
+    def test_three_successful_requests_use_three_credits_but_one_request_uses_one(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        active = {
+            "id": "subscription-id",
+            "remaining": 3,
+            "reserved": 0,
+        }
+        with (
+            patch.object(queue, "_backfill_legacy_subscription_usage"),
+            patch.object(queue, "_subscription_records", return_value=(active, active)),
+        ):
+            for fingerprints in (
+                ["python-account"],
+                ["financial-account"],
+                ["javascript-account"],
+            ):
+                subscription_id, is_trial = queue._authorize_subscription_accounts(
+                    cursor,
+                    uuid.uuid4(),
+                    "owner-key",
+                    fingerprints,
+                )
+                self.assertEqual(subscription_id, "subscription-id")
+                self.assertFalse(is_trial)
 
     def test_free_trial_success_consumes_credit_and_failure_releases_reservation(self):
         queue = PostgresQueue(

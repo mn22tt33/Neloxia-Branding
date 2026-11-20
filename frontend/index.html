@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.2.1"></script>
+<script src="/config.js?v=1.2.2"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.1").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.2.2").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -1192,7 +1192,7 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.2.1">v1.2.1</span>
+      <span class="brand-version" aria-label="الإصدار 1.2.2">v1.2.2</span>
     </div>
   </div>
   <div class="header-actions">
@@ -1231,7 +1231,7 @@
       <div>
         <p class="profile-dialog-kicker">اشتراكك في QUIZORA</p>
         <h2 id="subscriptionDialogTitle">اختر خطة الحل</h2>
-        <p>الرصيد لا تنتهي صلاحيته، ويُستهلك عند نجاح الحل لكل كود حساب.</p>
+        <p>الرصيد لا تنتهي صلاحيته، ويُستهلك عند نجاح طلب الحل الكامل.</p>
       </div>
       <button class="profile-dialog-close" id="closeSubscriptionDialog" type="button" aria-label="إغلاق">×</button>
     </header>
@@ -1462,13 +1462,13 @@
     var detail = "";
     if (current && current.status !== "exhausted"){
       title = "خطة " + current.plan_name + " — متبقي " + current.remaining +
-        (current.remaining === 1 ? " حساب" : " حسابات");
-      detail = "تم استخدام " + current.used + " من " + current.solves +
-        " أشخاص" + (current.reserved ? "، و" + current.reserved + " قيد التنفيذ" : "") +
+        (current.remaining === 1 ? " طلب حل" : " طلبات حل");
+      detail = "تم نجاح " + current.used + " من " + current.solves +
+        " طلبات" + (current.reserved ? "، و" + current.reserved + " طلب قيد التنفيذ" : "") +
         ". الرصيد لا تنتهي صلاحيته.";
     } else if (status.trial && status.trial.status === "available"){
       title = "لديك تجربة مجانية واحدة";
-      detail = "تُستهلك عند نجاح حل كود حساب واحد.";
+      detail = "تُستهلك عند نجاح أول طلب حل كامل.";
     } else if (status.trial && status.trial.status === "reserved"){
       title = "تجربتك المجانية قيد التنفيذ";
       detail = "انتظر نتيجة العملية الحالية قبل بدء حل آخر.";
@@ -1509,9 +1509,7 @@
       price.appendChild(currency);
       var description = document.createElement("p");
       description.textContent =
-        plan.solves === 1
-          ? "حساب واحد؛ يمكن حل مساراته كلها في الطلب الواحد، بدون انتهاء صلاحية."
-          : "حتى " + plan.solves + " حسابات مختلفة؛ كل حساب يُستعمل مرة واحدة بغض النظر عن عدد مساراته، بدون انتهاء صلاحية.";
+        plan.solves + " طلبات حل ناجحة؛ الفشل لا يستهلك الرصيد، ولا تنتهي صلاحية الخطة.";
       var button = document.createElement("button");
       button.type = "button";
       button.className = "btn primary";
@@ -1573,14 +1571,6 @@
     var available = Number(subscriptionStatusData.available_solves) || 0;
     if (available < 1){
       showAlert(alertId, "لا يوجد رصيد متاح للحل. اختر خطة اشتراك للمتابعة.");
-      openSubscriptionDialog();
-      return false;
-    }
-    if (accountCount > available){
-      showAlert(
-        alertId,
-        "عدد الأكواد أكبر من رصيدك المتبقي (" + available + "). قلّل الأكواد أو اشترك في خطة جديدة."
-      );
       openSubscriptionDialog();
       return false;
     }
@@ -2775,10 +2765,6 @@
       seen[p.code] = true;
       return true;
     });
-    if (state.accounts.filter(function(account){ return account.code.trim(); }).length + toAdd.length > 8){
-      showAlert("accAlert", "يمكن إضافة 8 أكواد كحد أقصى في خطة الاحترافية.");
-      return;
-    }
     if (state.accounts[idx] && !state.accounts[idx].code.trim()){
       state.accounts.splice(idx, 1);
     }

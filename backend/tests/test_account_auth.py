@@ -49,7 +49,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.2.0", page)
+        self.assertIn("v1.2.2", page)
         self.assertIn('id="continueToSite"', page)
         self.assertIn('<main id="accountMain" hidden>', page)
         self.assertIn('id="serverOfflineNotice"', page)
