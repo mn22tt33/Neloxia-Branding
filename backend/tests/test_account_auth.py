@@ -49,12 +49,24 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.2.2", page)
+        self.assertIn("v1.2.3", page)
         self.assertIn('id="continueToSite"', page)
         self.assertIn('<main id="accountMain" hidden>', page)
         self.assertIn('id="serverOfflineNotice"', page)
         self.assertIn('class="server-offline-overlay" id="serverOfflineNotice"', page)
         self.assertNotIn('id="logout"', page)
+
+    def test_app_does_not_persist_account_credentials_in_browser_state(self):
+        import pathlib
+
+        page = pathlib.Path(
+            server.APP_DIR
+        ).joinpath("frontend", "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('autocomplete="off"', page)
+        self.assertIn('autocomplete="new-password"', page)
+        self.assertNotIn("accounts: state.accounts.map", page)
+        self.assertNotIn("password: account.password", page)
 
     def test_app_page_redirects_to_login_without_a_session(self):
         auth_store = MagicMock()

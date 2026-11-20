@@ -7,7 +7,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
-<script src="/config.js?v=1.2.2"></script>
+<script src="/config.js?v=1.2.3"></script>
 <script>
   window.__IS_PHONE =
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.2").catch(function(error){
+      navigator.serviceWorker.register("/sw.js?v=1.2.3").catch(function(error){
         console.warn("تعذر تحديث ملفات التطبيق المخزنة.", error);
       });
     });
@@ -1192,7 +1192,7 @@
     <img class="brand-logo" src="/assets/quizora-logo.png" alt="شعار QUIZORA الجديد">
     <div class="brand-copy">
       <h1>QUIZORA</h1>
-      <span class="brand-version" aria-label="الإصدار 1.2.2">v1.2.2</span>
+      <span class="brand-version" aria-label="الإصدار 1.2.3">v1.2.3</span>
     </div>
   </div>
   <div class="header-actions">
@@ -1910,10 +1910,7 @@
         step: state.step,
         track: state.track,
         year: state.year,
-        services: state.services,
-        accounts: state.accounts.map(function(account){
-          return { code: account.code, password: account.password };
-        })
+        services: state.services
       }));
     } catch (error) {
       console.warn("مش قادرين نحفظ تقدم الجلسة.", error);
@@ -1921,6 +1918,17 @@
   }
 
   function restoreWizardState(){
+    try {
+      var stale = JSON.parse(sessionStorage.getItem(WIZARD_STATE_KEY) || "{}");
+      if (stale.accounts || stale.password || stale.code) {
+        sessionStorage.removeItem(WIZARD_STATE_KEY);
+        sessionStorage.removeItem(CLIENT_ID_KEY);
+        state.accounts = [{ code: "", password: "" }];
+        return;
+      }
+    } catch (error) {
+      try { sessionStorage.removeItem(WIZARD_STATE_KEY); } catch (_) {}
+    }
     var saved;
     try {
       var serialized = sessionStorage.getItem(WIZARD_STATE_KEY);
@@ -1959,18 +1967,6 @@
     }
 
     if (state.year) syncServiceSelection();
-
-    if (Array.isArray(saved.accounts)){
-      state.accounts = saved.accounts.filter(function(account){
-        return account && typeof account === "object";
-      }).map(function(account){
-        return {
-          code: typeof account.code === "string" ? account.code : "",
-          password: typeof account.password === "string" ? account.password : ""
-        };
-      });
-      if (!state.accounts.length) state.accounts = [{ code: "", password: "" }];
-    }
 
     var maxRestorableStep = state.year ? (state.type ? 4 : 3) : 2;
     var requestedStep = Number(saved.step);
@@ -2113,10 +2109,10 @@
     }
     host.innerHTML = state.accounts.map(function(a, i){
       return '<div class="account" data-i="' + i + '">' +
-        '<input class="acc-code" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" ' +
+        '<input class="acc-code" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" ' +
           'value="' + esc(a.code) + '" placeholder="' + esc(codeLabel) + '" aria-label="' + esc(codeLabel) + '" dir="ltr">' +
         '<div class="pw-wrap">' +
-          '<input class="acc-pw" type="password" autocomplete="off" spellcheck="false" ' +
+          '<input class="acc-pw" type="password" autocomplete="new-password" spellcheck="false" ' +
             'value="' + esc(a.password) + '" placeholder="كلمة السر" aria-label="كلمة السر ' + (i + 1) + '" dir="ltr">' +
           '<button type="button" class="eye" data-action="eye" aria-label="إظهار كلمة السر" aria-pressed="false">إظهار</button>' +
         '</div>' +
