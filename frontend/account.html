@@ -271,9 +271,11 @@
       "auth/unauthorized-domain": "أضف نطاق الواجهة إلى النطاقات المسموح بها في Firebase Authentication.",
       "auth/operation-not-allowed": "فعّل مزوّد Google من Firebase Authentication.",
       "auth/popup-closed-by-user": "أُغلقت نافذة اختيار حساب Google قبل اكتمال الدخول.",
+      "auth/popup-blocked": "المتصفح منع نافذة Google؛ أعد المحاولة وسيفتح تسجيل الدخول بطريقة بديلة.",
+      "auth/operation-not-supported-in-this-environment": "سيفتح تسجيل الدخول باستخدام Google في صفحة آمنة.",
       "auth/network-request-failed": "تعذّر الاتصال بـGoogle؛ تحقق من الإنترنت وحاول مجددًا."
     };
-    message.textContent = messages[error.code] || error.message || "تعذّر تسجيل الدخول باستخدام Google.";
+    message.textContent = messages[error.code] || "تعذّر تسجيل الدخول باستخدام Google. حاول مرة أخرى.";
   }
 
   function showUser(user) {
@@ -352,8 +354,23 @@
         await loginWithGoogle(result.user);
       }
     } catch (error) {
+      let signInError = error;
+      if (
+        signInError.code === "auth/popup-blocked" ||
+        signInError.code === "auth/operation-not-supported-in-this-environment"
+      ) {
+        if (flow === "register") {
+          sessionStorage.setItem(signupIntentKey, "register");
+        }
+        try {
+          await signInWithRedirect(auth, provider);
+          return;
+        } catch (redirectError) {
+          signInError = redirectError;
+        }
+      }
       if (flow === "register") sessionStorage.removeItem(signupIntentKey);
-      showSignInError(error);
+      showSignInError(signInError);
       button.disabled = false;
       button.textContent = flow === "register"
         ? "إنشاء حساب باستخدام Google"
