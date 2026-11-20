@@ -2,8 +2,11 @@
   "use strict";
 
   var appConfig = window.APP_CONFIG || {};
-  var apiBaseUrl = "https://slouchy-grappling-stingily.ngrok-free.dev";
   var hostname = location.hostname.toLowerCase();
+  var isHostedSite = hostname === "quizora.movb.workers.dev";
+  var apiBaseUrl = isHostedSite
+    ? "https://quizora55.up.railway.app"
+    : "https://slouchy-grappling-stingily.ngrok-free.dev";
   var isLocalHost = /^(localhost|127\.0\.0\.1)$/.test(hostname);
   var isQuickTunnel = /^[a-z0-9-]+\.trycloudflare\.com$/i.test(hostname);
 
@@ -11,7 +14,7 @@
     isLocalHost || isQuickTunnel || location.origin === apiBaseUrl
       ? ""
       : apiBaseUrl;
-  appConfig.backendMode = "local";
+  appConfig.backendMode = isHostedSite ? "railway" : "local";
   appConfig.firebase = {
     apiKey: "AIzaSyCg2xh6IwR8WpYSX3S7EZosCB351rWyYSg",
     authDomain: "quizora-auth-105be.firebaseapp.com",
