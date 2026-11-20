@@ -137,6 +137,20 @@ class CompletionReportingTests(unittest.TestCase):
 
         self.assertEqual(solver._course_content_id("Python"), "python_ar")
 
+    def test_qureo_course_match_falls_back_to_courses_api(self):
+        solver = qureo_solver.QureoSolver.__new__(qureo_solver.QureoSolver)
+        solver.lang = "ar"
+        solver._id_token = lambda: {}
+        solver.api_get_json = lambda _path, default=None: [
+            {
+                "content_id": "python_ar",
+                "course_lang_code": "ar",
+                "course_name": "بايثون",
+            }
+        ]
+
+        self.assertEqual(solver._course_content_id("Python"), "python_ar")
+
     def test_qureo_native_course_selection_searches_iframe_and_localized_label(self):
         class Locator:
             def __init__(self):

@@ -448,11 +448,24 @@ class QureoSolver:
         payload = self._id_token()
         courses = (payload or {}).get("available_courses") or []
         if not courses:
+            api_courses = self.api_get_json("/api/study/courses", []) or []
+            if isinstance(api_courses, dict):
+                api_courses = (
+                    api_courses.get("data")
+                    or api_courses.get("courses")
+                    or api_courses.get("items")
+                    or []
+                )
+            if isinstance(api_courses, list):
+                courses = api_courses
+        if not courses:
             return ""
         norm = self._norm_name(name)
         lang = (self.lang or "").lower()
         hits = []
         for e in courses:
+            if not isinstance(e, dict):
+                continue
             fields = (
                 e.get("course_code"),
                 e.get("content_id"),
@@ -461,6 +474,7 @@ class QureoSolver:
                 e.get("name"),
                 e.get("title"),
                 e.get("display_name"),
+                e.get("content_name"),
             )
             values = [str(value or "").strip().lower() for value in fields]
             cc = values[0]
@@ -472,11 +486,17 @@ class QureoSolver:
                 or e.get("lang")
                 or ""
             ).strip().lower()
-            # فلترة اللغة إن طُلبت: إما course_lang_code أو لاحقة content_id
-            if lang and elang != lang and not cid.endswith("_" + lang):
+            # If language metadata exists, enforce it; if absent, allow the
+            # content-id suffix or the course name to settle the match.
+            if lang and elang and elang != lang:
                 continue
+            if lang and not elang and cid and not cid.endswith("_" + lang):
+                known_suffix = cid.rsplit("_", 1)[-1] if "_" in cid else ""
+                if known_suffix in ("ar", "en"):
+                    continue
             if norm == "python" and any(
-                token in course_text for token in ("python", "بايثون")
+                token in course_text
+                for token in ("python", "بايثون", "بايتون")
             ):
                 hits.append(e)
             elif norm in ("javascript", "js") and any(
