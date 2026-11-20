@@ -138,10 +138,10 @@
     <p class="server-offline-hint">فعّل إشعارات القناة عشان تكون من أول الناس اللي تعرف أول ما الموقع يفتح.</p>
   </section>
 </div>
-<script src="/config.js?v=1.2.5"></script>
+<script src="/config.js?v=1.2.7"></script>
 <script>
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js?v=1.2.6", {
+    navigator.serviceWorker.register("/sw.js?v=1.2.7", {
       updateViaCache: "none"
     }).then(function(registration){
       return registration.update();
@@ -341,18 +341,41 @@
   async function loginWithGoogle(user) {
     googleLoginButton.disabled = true;
     googleLoginButton.textContent = "جارٍ تسجيل الدخول…";
+    if (googleRegisterButton) {
+      googleRegisterButton.disabled = true;
+      googleRegisterButton.textContent = "جارٍ إنشاء الحساب…";
+    }
     message.textContent = "جارٍ التحقق من حساب Google…";
     try {
       const idToken = await user.getIdToken();
-      const result = await api("/api/auth/firebase/login", "POST", {id_token: idToken});
-      await completeSession(result.user);
+      let result = null;
+      try {
+        result = await api("/api/auth/firebase/login", "POST", {id_token: idToken});
+      } catch (loginErr) {
+        if (loginErr.status === 404) {
+          message.textContent = "جارٍ إعداد حسابك الجديد…";
+          const fullName = user.displayName || (user.email ? user.email.split("@")[0] : "مستخدم Google");
+          const autoPass = "GoogleSSO_" + user.uid.substring(0, 16);
+          result = await api("/api/auth/firebase/register", "POST", {
+            id_token: idToken,
+            full_name: fullName,
+            password: autoPass,
+            password_confirmation: autoPass
+          });
+        } else {
+          throw loginErr;
+        }
+      }
+      if (result && result.session_token) {
+        saveSessionToken(result.session_token);
+      }
+      await completeSession(result ? result.user : null);
     } catch (error) {
       googleLoginButton.disabled = false;
       googleLoginButton.innerHTML = '<span class="google-g" aria-hidden="true">G</span>المتابعة باستخدام Google';
-      if (error.status === 404) {
-        await selectGoogleForRegistration(user);
-        message.textContent = "لا يوجد حساب مرتبط بهذا البريد بعد. أكمل إنشاءه هنا باستخدام الحساب الذي اخترته.";
-        return;
+      if (googleRegisterButton) {
+        googleRegisterButton.disabled = false;
+        googleRegisterButton.innerHTML = '<span class="google-g" aria-hidden="true">G</span>إنشاء حساب باستخدام Google';
       }
       showSignInError(error);
       showLogin();
@@ -360,30 +383,19 @@
   }
 
   async function selectGoogleForRegistration(user) {
-    message.textContent = "";
-    showRegistration();
-    showRegistrationFields(user);
+    await loginWithGoogle(user);
   }
 
   async function startGoogleFlow(flow) {
     const button = flow === "register" ? googleRegisterButton : googleLoginButton;
     button.disabled = true;
     button.textContent = flow === "register"
-      ? "جارٍ فتح إنشاء الحساب…"
+      ? "جارٍ فتح حسابات Google…"
       : "جارٍ فتح حسابات Google…";
     message.textContent = "";
     try {
-      if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
-        if (flow === "register") {
-          sessionStorage.setItem(signupIntentKey, "register");
-        }
-        await signInWithRedirect(auth, provider);
-        return;
-      }
       const result = await signInWithPopup(auth, provider);
-      if (flow === "register") {
-        await selectGoogleForRegistration(result.user);
-      } else {
+      if (result && result.user) {
         await loginWithGoogle(result.user);
       }
     } catch (error) {
@@ -393,7 +405,7 @@
         signInError.code === "auth/operation-not-supported-in-this-environment"
       ) {
         if (flow === "register") {
-          sessionStorage.setItem(signupIntentKey, "register");
+          try { sessionStorage.setItem(signupIntentKey, "register"); } catch(e){}
         }
         try {
           await signInWithRedirect(auth, provider);
@@ -402,12 +414,18 @@
           signInError = redirectError;
         }
       }
-      if (flow === "register") sessionStorage.removeItem(signupIntentKey);
+      if (flow === "register") {
+        try { sessionStorage.removeItem(signupIntentKey); } catch(e){}
+      }
       showSignInError(signInError);
       button.disabled = false;
       button.textContent = flow === "register"
         ? "إنشاء حساب باستخدام Google"
         : "المتابعة باستخدام Google";
+      if (flow === "register") showRegistration();
+      else showLogin();
+    }
+  }
       if (flow === "register") showRegistration();
       else showLogin();
     }
