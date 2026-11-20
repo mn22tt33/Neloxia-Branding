@@ -18,7 +18,7 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("/sw.js?v=1.2.5", {
+      navigator.serviceWorker.register("/sw.js?v=1.2.6", {
         updateViaCache: "none"
       }).then(function(registration){
         return registration.update();
@@ -1232,7 +1232,10 @@
         <strong id="profileEmail">—</strong>
       </div>
     </div>
-    <button class="btn secondary" id="closeProfileFooter" type="button">إغلاق</button>
+    <div style="display:flex;gap:10px;margin-top:14px;">
+      <button class="btn secondary" id="closeProfileFooter" type="button" style="flex:1;">إغلاق</button>
+      <button class="btn danger" id="profileLogoutButton" type="button" style="flex:1;background:#c0392b;color:#fff;border:0;border-radius:12px;font-weight:700;cursor:pointer;min-height:44px;">تسجيل الخروج</button>
+    </div>
   </div>
 </dialog>
 
@@ -1685,6 +1688,16 @@
   });
   document.getElementById("closeProfileButton").addEventListener("click", closeProfile);
   document.getElementById("closeProfileFooter").addEventListener("click", closeProfile);
+  document.getElementById("profileLogoutButton").addEventListener("click", async function(){
+    var btn = document.getElementById("profileLogoutButton");
+    btn.disabled = true;
+    btn.textContent = "جارٍ الخروج…";
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } catch(e){}
+    clearSessionToken();
+    location.replace("/account.html");
+  });
   subscriptionButton.addEventListener("click", openSubscriptionDialog);
   document.getElementById("openSubscriptionPlans").addEventListener("click", openSubscriptionDialog);
   document.getElementById("closeSubscriptionDialog").addEventListener("click", function(){
@@ -1719,6 +1732,25 @@
     if (event.target === profileDialog) closeProfile();
   });
 
+  function saveSessionToken(token) {
+    if (!token) return;
+    try { localStorage.setItem("quizora_session_token", token); } catch(e){}
+    try { sessionStorage.setItem("quizora_session_token", token); } catch(e){}
+  }
+
+  function clearSessionToken() {
+    try { localStorage.removeItem("quizora_session_token"); } catch(e){}
+    try { sessionStorage.removeItem("quizora_session_token"); } catch(e){}
+  }
+
+  function getSessionToken() {
+    try {
+      return localStorage.getItem("quizora_session_token") || sessionStorage.getItem("quizora_session_token") || null;
+    } catch(e) {
+      return null;
+    }
+  }
+
   function redirectToAccount(){
     redirectingToAccount = true;
     var returnTo = location.pathname + location.search + location.hash;
@@ -1729,10 +1761,7 @@
 
   function apiFetch(path, options){
     options = Object.assign({}, options || {}, { credentials: "include" });
-    var sessionToken = null;
-    try {
-      sessionToken = sessionStorage.getItem("quizora_session_token");
-    } catch (error) {}
+    var sessionToken = getSessionToken();
     if (sessionToken) {
       var headers = new Headers(options.headers || {});
       headers.set("Authorization", "Bearer " + sessionToken);
@@ -1757,6 +1786,11 @@
           }
           return response;
         }).catch(function(){ return response; });
+      }
+      if (response.ok && /application\/json/i.test(contentType)) {
+        response.clone().json().then(function(body){
+          if (body && body.session_token) saveSessionToken(body.session_token);
+        }).catch(function(){});
       }
       var unavailable = !/application\/json/i.test(contentType) ||
         response.status === 404 ||

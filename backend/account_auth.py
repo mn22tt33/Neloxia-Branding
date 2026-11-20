@@ -4,6 +4,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import uuid
@@ -11,6 +12,7 @@ import threading
 import time
 
 
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 365 * 10
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
@@ -313,7 +315,7 @@ class PostgresAuthStore:
                         cursor.execute(
                             """
                             SELECT id, is_blocked FROM quizora_users
-                            WHERE lower(email) = %s AND google_sub IS NOT NULL
+                            WHERE lower(email) = %s
                             LIMIT 1
                             FOR UPDATE
                             """,
@@ -325,12 +327,14 @@ class PostgresAuthStore:
                         return None
                     if existing["is_blocked"]:
                         raise AccountBlockedError("تم حظر هذا الحساب؛ تواصل مع الإدارة.")
+                    role_clause = ", role = 'admin'" if (ADMIN_EMAIL and email == ADMIN_EMAIL) else ""
                     cursor.execute(
-                        """
+                        f"""
                         UPDATE quizora_users
                         SET email = %s,
                             firebase_uid = %s,
                             updated_at = now()
+                            {role_clause}
                         WHERE id = %s
                         RETURNING id, full_name, email, role
                         """,
@@ -364,12 +368,13 @@ class PostgresAuthStore:
                         raise AccountExistsError(
                             "هذا الحساب مسجل بالفعل؛ سجّل الدخول بدلًا من إنشاء حساب جديد."
                         )
+                    role = "admin" if (ADMIN_EMAIL and email == ADMIN_EMAIL) else "user"
                     cursor.execute(
                         """
                         INSERT INTO quizora_users
                             (id, full_name, email, firebase_uid, password_hash,
                              phone_verified, role)
-                        VALUES (%s, %s, %s, %s, %s, TRUE, 'user')
+                        VALUES (%s, %s, %s, %s, %s, TRUE, %s)
                         RETURNING id, full_name, email, role
                         """,
                         (
@@ -378,6 +383,7 @@ class PostgresAuthStore:
                             email,
                             identity["firebase_uid"],
                             password_hash,
+                            role,
                         ),
                     )
                     return cursor.fetchone()
