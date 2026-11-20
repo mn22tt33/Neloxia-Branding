@@ -827,6 +827,17 @@ class FirebaseAuthTests(unittest.TestCase):
             with urllib.request.urlopen(request) as response:
                 self.assertEqual(response.status, 200)
 
+    def test_local_admin_routes_work_without_account_auth_configuration(self):
+        with (
+            patch.object(server, "AUTH_REQUIRED", True),
+            patch.object(server, "_auth_store", None),
+            patch.object(server, "_queue_store", _QueueStoreStub()),
+            self._running_api() as base,
+        ):
+            with urllib.request.urlopen(base + "/api/admin/settings") as response:
+                self.assertEqual(response.status, 200)
+                self.assertTrue(json.loads(response.read())["ok"])
+
     @staticmethod
     def _running_api():
         from contextlib import contextmanager

@@ -81,6 +81,19 @@ if [ "$server_ready" -ne 1 ]; then
     exit 1
 fi
 
+auth_status="$(curl --silent --fail --max-time 5 \
+    "http://127.0.0.1:$PORT/api/auth/status" 2>/dev/null || true)"
+if [ -z "$auth_status" ] || ! printf '%s' "$auth_status" | python -c \
+    'import json,sys; sys.exit(0 if json.load(sys.stdin).get("enabled") is True else 1)'; then
+    echo "❌ تعذّر تشغيل الموقع. حاول مرة أخرى لاحقًا." >&2
+    echo "🔐 لوحة الإدارة المحلية: http://127.0.0.1:$PORT/admin"
+    if command -v termux-open-url >/dev/null 2>&1; then
+        termux-open-url "http://127.0.0.1:$PORT/admin" >/dev/null 2>&1 || true
+    fi
+    wait "$SERVER_PID"
+    exit 0
+fi
+
 proot-distro login debian -- ngrok http "127.0.0.1:$PORT" --url "$API_URL" &
 TUNNEL_PID=$!
 tunnel_ready=0
@@ -108,6 +121,7 @@ echo "✅ الخادم والنفق يعملان."
 echo "📱 الموقع العام: https://quizora.movb.workers.dev"
 echo "🔗 عنوان الـAPI: $API_URL"
 echo "🏠 الواجهة المحلية: http://localhost:$PORT"
+echo "🔐 لوحة الإدارة المحلية: http://127.0.0.1:$PORT/admin"
 echo "💡 للإيقاف اضغط Ctrl+C. لا تشغّل ngrok على الكمبيوتر والهاتف في الوقت نفسه."
 if command -v termux-open-url >/dev/null 2>&1; then
     termux-open-url "https://quizora.movb.workers.dev" >/dev/null 2>&1 || true

@@ -158,6 +158,17 @@ try {
         throw "لم يستجب الخادم المحلي خلال المهلة المحددة. راجع السجل: $serverStderr"
     }
 
+    try {
+        $localAuthStatus = Invoke-RestMethod `
+            -Uri "http://127.0.0.1:$port/api/auth/status" `
+            -TimeoutSec 10
+    } catch {
+        throw "تعذّر تشغيل الموقع. حاول مرة أخرى لاحقًا."
+    }
+    if (-not $localAuthStatus.enabled) {
+        throw "تعذّر تشغيل الموقع. حاول مرة أخرى لاحقًا."
+    }
+
     $tunnelProcess = Start-Process `
         -FilePath $ngrokPath `
         -ArgumentList @("http", "$port", "--url", $apiUrl) `
@@ -201,8 +212,15 @@ try {
         if (-not $publicHealth.ok) {
             throw "فحص صحة الخادم العام لم ينجح."
         }
+        $publicAuthStatus = Invoke-RestMethod `
+            -Uri "$publicUrl/api/auth/status" `
+            -Headers @{ "ngrok-skip-browser-warning" = "true" } `
+            -TimeoutSec 10
+        if (-not $publicAuthStatus.enabled) {
+            throw "تعذّر تشغيل الموقع."
+        }
     } catch {
-        throw "عنوان ngrok ظهر، بس الخادم مش بيرد من خلاله: $($_.Exception.Message)"
+        throw "تعذّر توصيل الموقع. أوقف أي تشغيل آخر وحاول مرة أخرى."
     }
 
     $shareUrl = ""

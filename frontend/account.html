@@ -450,8 +450,10 @@
 
   async function initializeAccountPage() {
     if (!firebaseConfig || !auth) {
-      availability.textContent = "إعداد Firebase غير موجود في الواجهة.";
+      showLogin();
+      availability.textContent = "تسجيل الدخول غير متاح حاليًا. حاول مرة أخرى لاحقًا.";
       availability.hidden = false;
+      hideStartupLoader();
       return;
     }
     try {
@@ -464,15 +466,15 @@
       setBackendUnavailable(true);
       return;
     }
-    const [status, result] = await Promise.all([
-      api("/api/auth/status"),
-      api("/api/auth/me")
-    ]);
+    const status = await api("/api/auth/status");
     if (!status.enabled) {
-      availability.textContent = status.message || "تسجيل الدخول غير مفعّل حاليًا.";
+      showLogin();
+      availability.textContent = "تسجيل الدخول غير متاح حاليًا. حاول مرة أخرى لاحقًا.";
       availability.hidden = false;
+      hideStartupLoader();
       return;
     }
+    const result = await api("/api/auth/me");
     availability.hidden = true;
     document.getElementById("serverOfflineNotice").hidden = true;
     hideStartupLoader();

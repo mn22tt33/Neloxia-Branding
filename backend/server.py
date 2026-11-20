@@ -1643,18 +1643,8 @@ def make_handler():
                 return False
             # لوحة الأدمن المحلية لا تحتاج إلى كوكي نطاق خارجي:
             # الاتصال يقتصر على 127.0.0.1 ولا يقبل رؤوس proxy أو forwarding.
-            if _auth_store:
-                try:
-                    session_user = self._auth_session()
-                except AuthStoreError:
-                    return False
-                if session_user and session_user.get("role") != "admin":
-                    return False
+            if not _auth_store or not AUTH_REQUIRED:
                 return True
-            if not AUTH_REQUIRED:
-                return True
-            if not self._auth_enabled():
-                return False
             try:
                 user = self._auth_session()
             except AuthStoreError:

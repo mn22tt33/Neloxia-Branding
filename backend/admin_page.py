@@ -350,6 +350,45 @@ ADMIN_PAGE = r"""<!doctype html>
       .hero { padding: 18px 16px; border-radius: 18px; }
       .stat { min-height: 96px; border-radius: 15px; }
     }
+    @media (max-width: 760px) {
+      body { overflow-x: hidden; line-height: 1.65; }
+      .shell { width: calc(100% - 20px); min-width: 0; padding: 12px 0 28px; }
+      .topbar { min-width: 0; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+      .brand { min-width: 0; flex: 1 1 180px; }
+      .brand-subtitle, .local-badge { line-height: 1.5; }
+      .local-badge { max-width: 100%; white-space: normal; }
+      .workspace, .content, .view { min-width: 0; width: 100%; }
+      .hero { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .intro, .preference-hint, .board-caption { line-height: 1.7; overflow-wrap: anywhere; }
+      .refresh-label { white-space: normal; }
+      .preferences { min-width: 0; flex-wrap: wrap; align-items: flex-start; padding: 14px; }
+      .preferences > div { min-width: 0; flex: 1 1 100%; }
+      .site-actions { min-width: 0; flex: 1 1 100%; flex-wrap: wrap; }
+      .site-state { flex: 1 0 100%; line-height: 1.6; }
+      .preference-state { display: block; min-width: 0; flex: 1 1 100%; }
+      .site-preview { min-width: 0; white-space: normal; }
+      .board-head { align-items: flex-start; flex-wrap: wrap; padding: 15px; }
+      .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+      .toolbar .search { grid-column: 1 / -1; min-width: 0; }
+      .status-filter { min-width: 0; width: 100%; }
+      .refresh-button { min-height: 42px; }
+      .job { min-width: 0; }
+      .detail, .phase, .elapsed, .field-label { line-height: 1.65; overflow-wrap: anywhere; }
+      .user-table-wrap { max-width: 100%; }
+      .users-meta { flex-wrap: wrap; }
+    }
+    @media (max-width: 380px) {
+      .topbar { align-items: center; }
+      .local-badge { flex: 1 1 100%; justify-content: center; }
+      .stats { gap: 7px; }
+      .stat { min-width: 0; padding: 12px 10px; }
+      .stat-label { line-height: 1.55; overflow-wrap: anywhere; }
+      .site-actions { gap: 8px; }
+      .site-preview { flex: 1 1 100%; }
+      .nav-item { min-height: 42px; padding-inline: 8px; white-space: nowrap; }
+      .job { grid-template-columns: 34px minmax(0, 1fr); }
+      .position { width: 32px; height: 32px; }
+    }
   </style>
 </head>
 <body>
