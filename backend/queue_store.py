@@ -15,14 +15,17 @@ SUBMISSION_LOCK_ID = 731904222
 SOLVED_HISTORY_MIGRATION_LOCK_ID = 731904223
 TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
 ACTIVE_STATUSES = ("queued", "running")
+UNLIMITED_SUBSCRIPTION_EMAILS = {
+    "mnwr225588@gmail.com",
+}
 SUBSCRIPTION_PLANS = {
-    "basic": {"key": "basic", "name": "العادية", "price_egp": 25, "solves": 3},
+    "basic": {"key": "basic", "name": "العادية", "price_egp": 25, "solves": 1},
     "premium": {"key": "premium", "name": "المميزة", "price_egp": 50, "solves": 3},
     "professional": {
         "key": "professional",
         "name": "الاحترافية",
         "price_egp": 120,
-        "solves": 8,
+        "solves": 6,
     },
 }
 
@@ -444,7 +447,7 @@ class PostgresQueue:
         except (self._psycopg.Error, ValueError, TypeError) as error:
             raise QueueStoreError("Could not read subscription codes.") from error
 
-    def subscription_status(self, user_id, owner_key):
+    def subscription_status(self, user_id, owner_key, owner_email=None):
         try:
             user_uuid = self._as_uuid(user_id)
             with self._connect() as connection:
@@ -452,13 +455,17 @@ class PostgresQueue:
                     self._backfill_legacy_subscription_usage(
                         cursor, user_uuid, owner_key
                     )
-                    return self._subscription_status_payload(cursor, user_uuid)
+                    return self._subscription_status_payload(
+                        cursor, user_uuid, owner_email
+                    )
         except SubscriptionError:
             raise
         except self._psycopg.Error as error:
             raise QueueStoreError("Could not read the user's subscription.") from error
 
-    def redeem_subscription_code(self, user_id, owner_key, plan_key, code):
+    def redeem_subscription_code(
+        self, user_id, owner_key, plan_key, code, owner_email=None
+    ):
         plan = SUBSCRIPTION_PLANS.get(plan_key)
         if not plan:
             raise SubscriptionError("اختر خطة اشتراك صحيحة.", 400)
@@ -494,11 +501,6 @@ class PostgresQueue:
                             409,
                         )
 
-                    current, _ = self._subscription_records(cursor, user_uuid)
-                    if current:
-                        raise SubscriptionError(
-                            "لديك رصيد في خطتك الحالية. استخدمه قبل تفعيل كود جديد."
-                        )
                     cursor.execute(
                         """
                         SELECT status FROM quizora_subscription_trials
@@ -540,7 +542,9 @@ class PostgresQueue:
                             """,
                             (user_uuid,),
                         )
-                    return self._subscription_status_payload(cursor, user_uuid)
+                    return self._subscription_status_payload(
+                        cursor, user_uuid, owner_email
+                    )
         except SubscriptionError:
             raise
         except self._psycopg.Error as error:
@@ -629,8 +633,12 @@ class PostgresQueue:
             (user_uuid,),
         )
         rows = cursor.fetchall()
-        active = None
         latest = None
+        active_records = []
+        total_remaining = 0
+        total_used = 0
+        total_reserved = 0
+        total_solves = 0
         for row in rows:
             plan = SUBSCRIPTION_PLANS.get(row["plan_key"])
             if not plan:
@@ -656,11 +664,30 @@ class PostgresQueue:
             }
             if latest is None:
                 latest = record
-            if active is None and (remaining or reserved):
-                active = record
+            total_used += consumed
+            total_reserved += reserved
+            total_solves += plan["solves"]
+            total_remaining += remaining
+            if remaining or reserved:
+                active_records.append(record)
+        if active_records:
+            active = {
+                "id": active_records[0]["id"],
+                "plan_key": "stacked",
+                "plan_name": "اشتراكات متراكمة",
+                "price_egp": 0,
+                "solves": total_solves,
+                "used": total_used,
+                "reserved": total_reserved,
+                "remaining": total_remaining,
+                "status": "processing" if total_remaining == 0 and total_reserved else "active",
+                "created_at": active_records[0]["created_at"],
+            }
+        else:
+            active = None
         return active, latest
 
-    def _subscription_status_payload(self, cursor, user_uuid):
+    def _subscription_status_payload(self, cursor, user_uuid, owner_email=None):
         active, latest = self._subscription_records(cursor, user_uuid)
         cursor.execute(
             """
@@ -676,9 +703,13 @@ class PostgresQueue:
         else:
             trial_status = "available"
         trial_available = trial_status == "available"
-        available_solves = (
-            active["remaining"] if active else (1 if trial_available else 0)
-        )
+        unlimited = str(owner_email or "").strip().lower() in UNLIMITED_SUBSCRIPTION_EMAILS
+        if unlimited:
+            available_solves = 999999
+        else:
+            available_solves = (
+                active["remaining"] if active else (1 if trial_available else 0)
+            )
         return {
             "plans": self.subscription_plans(),
             "trial": {
@@ -688,12 +719,15 @@ class PostgresQueue:
             "subscription": active or latest,
             "available_solves": available_solves,
             "can_solve": available_solves > 0,
-            "can_subscribe": active is None and trial_status != "reserved",
+            "can_subscribe": trial_status != "reserved",
+            "unlimited": unlimited,
         }
 
     def _authorize_subscription_accounts(
-        self, cursor, user_uuid, owner_key, code_fingerprints
+        self, cursor, user_uuid, owner_key, code_fingerprints, owner_email=None
     ):
+        if str(owner_email or "").strip().lower() in UNLIMITED_SUBSCRIPTION_EMAILS:
+            return None, False
         self._backfill_legacy_subscription_usage(cursor, user_uuid, owner_key)
         cursor.execute(
             """
@@ -1033,6 +1067,7 @@ class PostgresQueue:
                                 owner_user_uuid,
                                 owner_key,
                                 code_fingerprints,
+                                owner_email=str(owner_email) if owner_email else None,
                             )
                         )
 

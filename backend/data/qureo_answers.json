@@ -312,7 +312,7 @@
   ],
   "511012040": [
    "description",
-   "import math\n\nprint(round(5.5))\nprint(math.floor(8.8))"
+   "import math\nprint(round(5.5))\nprint(math.floor(8.8))"
   ],
   "511012050": [
    "description",
@@ -320,7 +320,7 @@
   ],
   "511012060": [
    "description",
-   "print(math.floor(random.random() * 10))"
+   "import math\nimport random\nprint(math.floor(random.random() * 10))"
   ]
  },
  "511013": {
@@ -420,7 +420,7 @@
   ],
   "511016030": [
    "description",
-   "import array\n\nround_array = array.array('i', [1, 2, 3, 4, 5])\nprint(round_array[1])\nprint(round_array[4])"
+   "import array\nround_array = array.array('i', [1, 2, 3, 4, 5])\nprint(round_array[1])\nprint(round_array[4])"
   ]
  },
  "511017": {
@@ -490,7 +490,7 @@
   ],
   "511019050": [
    "description",
-   "import random\nif random.random() >= 0.7:\n    print(\"Grand prize!\")\nelse:\n    print(\"Consolation prize\")"
+   "import random\nif random.random() >= 0.7:\n    print(\"Grand prize\")\nelse:\n    print(\"Consolation prize\")"
   ]
  },
  "511020": {
@@ -516,7 +516,7 @@
   ],
   "511020060": [
    "description",
-   "import random\nif random.random() >= 0.7:\n    print(\"Grand prize!\")\nelse:\n    print(\"Consolation prize\")"
+   "import random\nif random.random() >= 0.7:\n    print(\"Grand prize\")\nelse:\n    print(\"Consolation prize\")"
   ]
  },
  "511021": {
@@ -525,8 +525,8 @@
    5110210201
   ],
   "511021050": [
-   "choice",
-   5110210501
+   "description",
+   "for i in range(7):\n    print(\"Good morning\")"
   ],
   "511021060": [
    "choice",
@@ -545,12 +545,12 @@
    "A = 5\nB = 10\nif A > B:\n    print(\"A is bigger\")\nelif A < B:\n    print(\"B is bigger\")"
   ],
   "511021030": [
-   "description",
-   "math = 100\nenglish = 100\nif math == 100:\n    print(\"Math is 100 points\")\nif english == 100:\n    print(\"Math and English are 100 points\")"
+   "choice",
+   5110210301
   ],
   "511021040": [
    "description",
-   "for i in range(7):\n    print(\"Good morning\")"
+   "math = 100\nenglish = 100\nif math == 100:\n    print(\"Math is 100 points\")\n    if english == 100:\n        print(\"Math and English are 100 points\")"
   ],
   "511021080": [
    "description",
@@ -584,7 +584,7 @@
   ],
   "511022060": [
    "description",
-   "mark_list = [48, 55, 74, 85, 63, 57, 91]\nfor i in range(len(mark_list)):\n    if mark_list[i] >= 85:\n        print(\"85 or above\")"
+   "mark_list = [48, 55, 74, 85, 63, 57, 91]\nfor i in range(len(mark_list)):\n    if mark_list[i] >= 85:\n        print(\"At least 85\")"
   ]
  },
  "511023": {
@@ -662,7 +662,7 @@
   ],
   "511025060": [
    "description",
-   "score_list = [70, 80, 66, 88, 92]\n\nfor score in score_list:\n    if score >= 80:\n        print(score)"
+   "score_list = [70, 80, 66, 88, 92]\nfor score in score_list:\n    if score >= 80:\n        print(score)"
   ]
  },
  "90001": {

@@ -1271,7 +1271,7 @@ def make_handler():
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.send_header(
                     "Access-Control-Allow-Headers",
-                    "Content-Type, ngrok-skip-browser-warning",
+                    "Content-Type, ngrok-skip-browser-warning, Authorization",
                 )
                 self.send_header("Access-Control-Allow-Credentials", "true")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
@@ -1337,7 +1337,11 @@ def make_handler():
             )
 
         def _auth_session(self):
-            session = self._cookie("quizora_session")
+            authorization = (self.headers.get("Authorization") or "").strip()
+            if authorization.lower().startswith("bearer "):
+                session = authorization[7:].strip()
+            else:
+                session = self._cookie("quizora_session")
             if not _auth_store or not session:
                 return None
             user = _auth_store.get_session_user(session)
@@ -1471,6 +1475,7 @@ def make_handler():
             self._json(200, {
                 "ok": True,
                 "user": self._public_user(user),
+                "session_token": token,
             })
 
         def _firebase_register(self):
@@ -1540,6 +1545,7 @@ def make_handler():
             self._json(201, {
                 "ok": True,
                 "user": self._public_user(user),
+                "session_token": token,
             })
 
         def _password_login(self):
@@ -1601,6 +1607,7 @@ def make_handler():
             self._json(200, {
                 "ok": True,
                 "user": self._public_user(user),
+                "session_token": token,
             })
 
         def _file(self, name, ctype, status=200):
@@ -1669,12 +1676,12 @@ def make_handler():
                 return False
 
         def _admin_request_allowed(self):
-            if not self._local_request_allowed():
-                return False
-            # لوحة الأدمن المحلية لا تحتاج إلى كوكي نطاق خارجي:
-            # الاتصال يقتصر على 127.0.0.1 ولا يقبل رؤوس proxy أو forwarding.
-            if not _auth_store or not AUTH_REQUIRED:
+            if self._local_request_allowed() and (
+                not _auth_store or not AUTH_REQUIRED
+            ):
                 return True
+            if not _auth_store or not AUTH_REQUIRED:
+                return False
             try:
                 user = self._auth_session()
             except AuthStoreError:
@@ -1939,11 +1946,8 @@ def make_handler():
                 })
                 return
             if parsed_path.path == "/admin":
-                if not self._local_request_allowed():
-                    self._json(403, {
-                        "ok": False,
-                        "error": "تتطلب الإدارة الاتصال المحلي.",
-                    })
+                if not self._admin_request_allowed():
+                    self._redirect_to_account("/admin")
                     return
                 body = ADMIN_PAGE.encode("utf-8")
                 self.send_response(200)
@@ -2075,7 +2079,9 @@ def make_handler():
                     return
                 try:
                     status = _queue_store.subscription_status(
-                        user["id"], self._owner_key(user)
+                        user["id"],
+                        self._owner_key(user),
+                        user.get("email"),
                     )
                 except SubscriptionError as error:
                     self._json(error.status_code, {
@@ -2205,6 +2211,7 @@ def make_handler():
                         self._owner_key(user),
                         plan_key,
                         code,
+                        user.get("email"),
                     )
                 except SubscriptionError as error:
                     self._json(error.status_code, {

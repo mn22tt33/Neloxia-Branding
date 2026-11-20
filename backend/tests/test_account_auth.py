@@ -49,7 +49,7 @@ class FirebaseAuthTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
         self.assertIn('class="version-badge"', page)
-        self.assertIn("v1.2.3", page)
+        self.assertIn("v1.2.4", page)
         self.assertIn('id="continueToSite"', page)
         self.assertIn('<main id="accountMain" hidden>', page)
         self.assertIn('id="serverOfflineNotice"', page)
@@ -67,6 +67,33 @@ class FirebaseAuthTests(unittest.TestCase):
         self.assertIn('autocomplete="new-password"', page)
         self.assertNotIn("accounts: state.accounts.map", page)
         self.assertNotIn("password: account.password", page)
+
+    def test_account_page_treats_missing_session_as_login_not_offline(self):
+        import pathlib
+
+        page = pathlib.Path(
+            server.APP_DIR
+        ).joinpath("frontend", "account.html").read_text(encoding="utf-8")
+
+        self.assertIn("if (error.status !== 401) throw error;", page)
+        self.assertIn("if (result && result.user)", page)
+        self.assertIn("showLogin();", page)
+
+    def test_account_page_stores_and_sends_bearer_session_fallback(self):
+        import pathlib
+
+        account_page = pathlib.Path(
+            server.APP_DIR
+        ).joinpath("frontend", "account.html").read_text(encoding="utf-8")
+        main_page = pathlib.Path(
+            server.APP_DIR
+        ).joinpath("frontend", "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("quizora_session_token", account_page)
+        self.assertIn("Authorization", account_page)
+        self.assertIn("Bearer", account_page)
+        self.assertIn("quizora_session_token", main_page)
+        self.assertIn("Authorization", main_page)
 
     def test_app_page_redirects_to_login_without_a_session(self):
         auth_store = MagicMock()
@@ -356,7 +383,8 @@ class FirebaseAuthTests(unittest.TestCase):
         self.assertIn("Secure", cookie)
         self.assertIn("SameSite=None", cookie)
         self.assertIn("Max-Age=%d" % SESSION_TTL_SECONDS, cookie)
-        self.assertNotIn("s" * 43, json.dumps(payload))
+        self.assertIn("session_token", payload)
+        self.assertEqual(payload["session_token"], "s" * 43)
         auth_store.find_firebase_user.assert_called_once()
 
     def test_created_sessions_have_no_database_expiration(self):

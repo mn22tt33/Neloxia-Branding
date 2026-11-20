@@ -549,9 +549,9 @@ ADMIN_PAGE = r"""<!doctype html>
               <label class="subscription-code-field" for="subscriptionPlan">
                 <span>الخطة</span>
                 <select class="status-filter" id="subscriptionPlan">
-                  <option value="basic">العادية — 25 جنيه — شخص واحد</option>
-                  <option value="premium">المميزة — 50 جنيه — 3 أشخاص</option>
-                  <option value="professional">الاحترافية — 120 جنيه — 8 أشخاص</option>
+                  <option value="basic">العادية — 25 جنيه — طلب حل واحد</option>
+                  <option value="premium">المميزة — 50 جنيه — 3 طلبات حل</option>
+                  <option value="professional">الاحترافية — 120 جنيه — 6 طلبات حل</option>
                 </select>
               </label>
               <button class="refresh-button" id="createSubscriptionCode" type="button">إنشاء كود</button>

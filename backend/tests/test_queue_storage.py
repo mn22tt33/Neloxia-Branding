@@ -825,6 +825,32 @@ class QueueStorageTests(unittest.TestCase):
             insert.args[1][1],
         )
 
+    def test_subscription_plans_have_requested_limits_and_prices(self):
+        from backend.queue_store import SUBSCRIPTION_PLANS
+
+        self.assertEqual(SUBSCRIPTION_PLANS["basic"]["price_egp"], 25)
+        self.assertEqual(SUBSCRIPTION_PLANS["basic"]["solves"], 1)
+        self.assertEqual(SUBSCRIPTION_PLANS["premium"]["price_egp"], 50)
+        self.assertEqual(SUBSCRIPTION_PLANS["premium"]["solves"], 3)
+        self.assertEqual(SUBSCRIPTION_PLANS["professional"]["price_egp"], 120)
+        self.assertEqual(SUBSCRIPTION_PLANS["professional"]["solves"], 6)
+
+    def test_unlimited_admin_email_bypasses_subscription_credit(self):
+        queue = PostgresQueue(
+            "postgresql://unused",
+            Fernet.generate_key().decode("ascii"),
+        )
+        cursor = MagicMock()
+        subscription_id, is_trial = queue._authorize_subscription_accounts(
+            cursor,
+            uuid.uuid4(),
+            "owner-key",
+            ["account-one", "account-two"],
+            "mnwr225588@gmail.com",
+        )
+        self.assertIsNone(subscription_id)
+        self.assertFalse(is_trial)
+
     def test_subscription_code_rejects_a_mismatched_plan(self):
         queue = PostgresQueue(
             "postgresql://unused",

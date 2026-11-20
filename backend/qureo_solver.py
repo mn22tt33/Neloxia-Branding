@@ -369,7 +369,7 @@ class QureoSolver:
                 "لم يتأكد تسجيل الدخول: ما زالت البوابة على صفحة الدخول ولم يظهر رمز جلسة."
             )
         self._authenticated = True
-        time.sleep(0.4)
+        time.sleep(0.25)
         print("✅ تم تسجيل الدخول بنجاح وتأكيد الجلسة.", flush=True)
 
     def _turbo_login(self, student_id, password):
@@ -610,7 +610,7 @@ class QureoSolver:
                     if course_locator is not None:
                         break
                 if course_locator is None:
-                    time.sleep(0.25)
+                    time.sleep(0.12)
             if course_locator is None:
                 page_url = self.page.url
                 try:
@@ -636,7 +636,7 @@ class QureoSolver:
                 )
             course_locator.click()
             self.page.wait_for_url("**/me-tp.qureo.education/**", timeout=30000)
-            time.sleep(0.8)
+            time.sleep(0.45)
             print(f"✅ تم الدخول إلى مسار {name}: {self.page.url}", flush=True)
         finally:
             self.page.remove_listener("response", capture_forbidden_response)
@@ -1095,7 +1095,7 @@ class QureoSolver:
         attempt = 1
         while last_correct < total and attempt < 3:
             attempt += 1
-            time.sleep(0.3)
+            time.sleep(0.12)
             result = self._submit_attempt(cid, questions, base, result_path, key)
             last_correct = int(result.get("correct_count") or 0)
             key.update(self._extract_key(result))
